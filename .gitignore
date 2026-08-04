@@ -1,0 +1,14 @@
+# Build and IDE output
+[Bb]in/
+[Oo]bj/
+.vs/
+
+# Local audio artifacts and generated transcripts
+spike-output/
+*.wav
+transcript-*.txt
+
+# Local secrets
+.env
+.env.*
+appsettings.Development.json
