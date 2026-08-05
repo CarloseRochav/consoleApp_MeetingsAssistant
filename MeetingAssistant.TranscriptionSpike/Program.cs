@@ -2,12 +2,19 @@ using System.Diagnostics;
 using System.Text.Json;
 using Deepgram;
 using Deepgram.Models.Listen.v1.REST;
+using Microsoft.Extensions.Configuration;
 
 const string apiKeyVariable = "DEEPGRAM_API_KEY";
-string? apiKey = Environment.GetEnvironmentVariable(apiKeyVariable);
+IConfiguration configuration = new ConfigurationBuilder()
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+    .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables()
+    .Build();
+string? apiKey = configuration[apiKeyVariable];
 if (string.IsNullOrWhiteSpace(apiKey))
 {
-    Console.Error.WriteLine($"Falta la variable de entorno {apiKeyVariable}.");
+    Console.Error.WriteLine($"Falta {apiKeyVariable} en appsettings.json/appsettings.Development.json o variable de entorno.");
     return 1;
 }
 
@@ -29,7 +36,7 @@ Library.Initialize();
 try
 {
     var stopwatch = Stopwatch.StartNew();
-    var client = ClientFactory.CreateListenRESTClient();
+    var client = ClientFactory.CreateListenRESTClient(apiKey);
     var response = await client.TranscribeFile(
         await File.ReadAllBytesAsync(audioPath),
         new PreRecordedSchema
@@ -154,6 +161,12 @@ static bool TryGetPath(JsonElement root, out JsonElement result, params string[]
 
 static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
 {
+    if (element.ValueKind != JsonValueKind.Object)
+    {
+        value = default;
+        return false;
+    }
+
     foreach (JsonProperty property in element.EnumerateObject())
     {
         if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))

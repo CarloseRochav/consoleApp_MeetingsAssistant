@@ -9,6 +9,13 @@
 
   <ItemGroup>
     <PackageReference Include="Deepgram" Version="6.9.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

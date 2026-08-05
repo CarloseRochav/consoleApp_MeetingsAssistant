@@ -12,3 +12,8 @@ transcript-*.txt
 .env
 .env.*
 appsettings.Development.json
+appsettings.json
+
+# Logs
+*.log
+log.txt

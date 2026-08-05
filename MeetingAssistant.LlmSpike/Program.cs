@@ -4,11 +4,12 @@ using System.Text;
 using System.Text.Json;
 
 const string apiKeyVariable = "GEMINI_API_KEY";
+const string appSettingsFileName = "appsettings.json";
 const string model = "gemini-3.5-flash-lite";
-string? apiKey = Environment.GetEnvironmentVariable(apiKeyVariable);
+string? apiKey = ReadApiKeyFromAppSettings() ?? Environment.GetEnvironmentVariable(apiKeyVariable);
 if (string.IsNullOrWhiteSpace(apiKey))
 {
-    Console.Error.WriteLine($"Falta la variable de entorno {apiKeyVariable}.");
+    Console.Error.WriteLine($"Falta la clave de Gemini. Ponla en {appSettingsFileName} o en la variable de entorno {apiKeyVariable}.");
     return 1;
 }
 
@@ -111,4 +112,19 @@ static int ReadInt(JsonElement root, params string[] path)
         if (!current.TryGetProperty(property, out current)) return 0;
     }
     return current.ValueKind == JsonValueKind.Number && current.TryGetInt32(out int value) ? value : 0;
+}
+
+static string? ReadApiKeyFromAppSettings()
+{
+    string path = Path.Combine(AppContext.BaseDirectory, appSettingsFileName);
+    if (!File.Exists(path)) return null;
+
+    using FileStream stream = File.OpenRead(path);
+    using JsonDocument document = JsonDocument.Parse(stream);
+    JsonElement root = document.RootElement;
+    if (!root.TryGetProperty("Gemini", out JsonElement gemini)) return null;
+    if (!gemini.TryGetProperty("ApiKey", out JsonElement apiKey)) return null;
+
+    string? value = apiKey.GetString();
+    return string.IsNullOrWhiteSpace(value) || value == "PUT_YOUR_API_KEY_HERE" ? null : value;
 }
