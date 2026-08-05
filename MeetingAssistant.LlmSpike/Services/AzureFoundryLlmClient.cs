@@ -50,7 +50,10 @@ internal sealed class AzureFoundryLlmClient : ILlmClient
         ResponseResult response = result.Value;
 
         return new LlmProviderResponse(
-            response.GetOutputText());
+            response.GetOutputText(),
+            response.Usage?.InputTokenCount ?? 0,
+            response.Usage?.OutputTokenCount ?? 0,
+            response.Usage?.OutputTokenDetails?.ReasoningTokenCount ?? 0);
     }
 
     private static ResponsesClient CreateEntraClient(Uri endpoint)
