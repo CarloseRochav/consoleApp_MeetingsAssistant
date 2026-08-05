@@ -11,4 +11,10 @@
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Google.GenAI" Version="1.16.0" />
+    <PackageReference Include="OpenAI" Version="2.12.0" />
+  </ItemGroup>
+
 </Project>
