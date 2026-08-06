@@ -1,9 +1,10 @@
-using System.Text;
-using System.Text.Json;
 using MeetingAssistant.Core.Abstractions;
+using MeetingAssistant.Core.Models;
 using MeetingAssistant.Infrastructure.Audio;
+using MeetingAssistant.Infrastructure.Cost;
 using MeetingAssistant.Infrastructure.Llm;
 using MeetingAssistant.Infrastructure.Transcription;
+using Microsoft.Extensions.Configuration;
 
 const string appSettingsFileName = "appsettings.json";
 int durationSeconds = args.Length > 0 && int.TryParse(args[0], out int parsedDuration) ? parsedDuration : 15;
@@ -15,8 +16,17 @@ if (durationSeconds <= 0)
 
 try
 {
-    ITranscriptionClient transcriptionClient = new DeepgramTranscriptionClient(ReadRequiredSetting("Deepgram", "ApiKey", "DEEPGRAM_API_KEY"));
-    ILlmClient llmClient = CreateLlmClient();
+    IConfiguration configuration = new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .Build();
+
+    ITranscriptionClient transcriptionClient = new DeepgramTranscriptionClient(ReadRequiredSetting(configuration, "Deepgram", "ApiKey", "DEEPGRAM_API_KEY"));
+    ILlmClient llmClient = CreateLlmClient(configuration);
+    ILlmReportExtractor reportExtractor = new LlmReportExtractor(
+        llmClient,
+        new ConfigPricingCostEstimator(configuration));
     IAudioCaptureService audioCapture = new AudioCaptureService();
 
     Console.WriteLine("=== Meeting Assistant Harness ===");
@@ -36,19 +46,17 @@ try
         Console.WriteLine($"Speaker {utterance.Speaker}: {utterance.Transcript}");
     Console.WriteLine($"Duracion: {transcription.AudioDuration.TotalSeconds:F2} s; transcripcion: {transcription.Latency.TotalSeconds:F2} s.");
 
-    const string instruction = "Resume la siguiente transcripcion de reunion en exactamente 3 puntos breves. " +
-        "Conserva los nombres, decisiones y pendientes cuando existan.\n\n";
-    string promptTranscript = RepeatToMinimumLength(transcription.Transcript, 16_000, out bool extended);
-    Console.WriteLine($"Llamando {llmClient.Provider} ({llmClient.Model})..." +
-        (extended ? " Transcript repetido para conservar la carga de latencia del spike LLM." : string.Empty));
-    LlmProviderResponse response = await llmClient.GenerateAsync(new LlmRequest(instruction + promptTranscript, 300));
-    if (string.IsNullOrWhiteSpace(response.Text)) throw new InvalidOperationException($"{llmClient.Provider} no devolvio texto.");
-
-    Console.WriteLine();
-    Console.WriteLine("=== Respuesta LLM ===");
-    Console.WriteLine(response.Text);
-    Console.WriteLine($"Uso reportado: {response.InputTokens} input, {response.OutputTokens} output, {response.ThinkingTokens} reasoning tokens.");
+    Console.WriteLine($"Extrayendo reporte con {llmClient.Provider} ({llmClient.Model})...");
+    MeetingReport report = await reportExtractor.ExtractAsync(transcription.Transcript);
+    PrintReport(report);
     return 0;
+}
+catch (MeetingReportParseException exception)
+{
+    Console.Error.WriteLine($"Error al interpretar el reporte: {exception.Message}");
+    Console.Error.WriteLine("=== Output LLM que no pudo interpretarse ===");
+    Console.Error.WriteLine(exception.RawOutput);
+    return 1;
 }
 catch (Exception exception)
 {
@@ -56,43 +64,57 @@ catch (Exception exception)
     return 1;
 }
 
-static ILlmClient CreateLlmClient()
+static ILlmClient CreateLlmClient(IConfiguration configuration)
 {
-    string provider = ReadSetting("Llm", "Provider") ?? "Gemini";
+    string provider = ReadSetting(configuration, "Llm", "Provider") ?? "Gemini";
     return provider.ToLowerInvariant() switch
     {
-        "gemini" => new GeminiLlmClient(ReadRequiredSetting("Gemini", "ApiKey", "GEMINI_API_KEY")),
+        "gemini" => new GeminiLlmClient(ReadRequiredSetting(configuration, "Gemini", "ApiKey", "GEMINI_API_KEY")),
         "azurefoundry" => new AzureFoundryLlmClient(
-            ReadRequiredSetting("AzureFoundry", "Endpoint"),
-            ReadRequiredSetting("AzureFoundry", "Deployment"),
-            ReadSetting("AzureFoundry", "ApiKey")),
+            ReadRequiredSetting(configuration, "AzureFoundry", "Endpoint"),
+            ReadRequiredSetting(configuration, "AzureFoundry", "Deployment"),
+            ReadSetting(configuration, "AzureFoundry", "ApiKey")),
         _ => throw new InvalidOperationException($"Proveedor '{provider}' no soportado. Usa 'Gemini' o 'AzureFoundry'.")
     };
 }
 
-static string ReadRequiredSetting(string section, string property, string? environmentVariable = null) =>
-    ReadSetting(section, property, environmentVariable) ?? throw new InvalidOperationException(
+static string ReadRequiredSetting(IConfiguration configuration, string section, string property, string? environmentVariable = null) =>
+    ReadSetting(configuration, section, property, environmentVariable) ?? throw new InvalidOperationException(
         $"Falta configurar {section}:{property} en {appSettingsFileName} o la variable de entorno {environmentVariable}.");
 
-static string? ReadSetting(string section, string property, string? environmentVariable = null)
+static string? ReadSetting(IConfiguration configuration, string section, string property, string? environmentVariable = null)
 {
-    string? environmentValue = environmentVariable is null ? null : Environment.GetEnvironmentVariable(environmentVariable);
-    if (!string.IsNullOrWhiteSpace(environmentValue)) return environmentValue;
-    string path = Path.Combine(AppContext.BaseDirectory, appSettingsFileName);
-    if (!File.Exists(path)) return null;
-    using FileStream stream = File.OpenRead(path);
-    using JsonDocument document = JsonDocument.Parse(stream);
-    if (!document.RootElement.TryGetProperty(section, out JsonElement configuration) ||
-        !configuration.TryGetProperty(property, out JsonElement value)) return null;
-    string? text = value.GetString();
+    string? text = configuration[$"{section}:{property}"] ??
+        (environmentVariable is null ? null : configuration[environmentVariable]);
     return string.IsNullOrWhiteSpace(text) || text.StartsWith("<", StringComparison.Ordinal) ? null : text;
 }
 
-static string RepeatToMinimumLength(string text, int minimumLength, out bool extended)
+static void PrintReport(MeetingReport report)
 {
-    extended = text.Length < minimumLength;
-    if (!extended) return text;
-    var builder = new StringBuilder(minimumLength + text.Length);
-    while (builder.Length < minimumLength) builder.AppendLine(text);
-    return builder.ToString();
+    Console.WriteLine();
+    Console.WriteLine("=== Reporte de reunion ===");
+    Console.WriteLine($"Resumen: {report.Summary}");
+    PrintList("Insights", report.Insights);
+    PrintList("Requirements", report.Requirements);
+    PrintList("Indications", report.Indications);
+    PrintList("Open questions", report.OpenQuestions);
+    Console.WriteLine("Task list:");
+    foreach (TaskItem task in report.TaskList)
+        Console.WriteLine($"- [{task.Priority}] {task.Task}\n  Context: {task.Context}");
+
+    if (report.Metadata is not null)
+    {
+        Console.WriteLine("Metadata:");
+        Console.WriteLine($"Provider: {report.Metadata.LlmProvider}");
+        Console.WriteLine($"Model: {report.Metadata.LlmModel}");
+        Console.WriteLine($"Prompt version: {report.Metadata.PromptVersion}");
+        Console.WriteLine($"Tokens: {report.Metadata.InputTokens} input, {report.Metadata.OutputTokens} output");
+        Console.WriteLine($"Estimated cost: US${report.Metadata.EstimatedCostUsd:F6}");
+    }
+}
+
+static void PrintList(string title, IReadOnlyList<string> values)
+{
+    Console.WriteLine($"{title}:");
+    foreach (string value in values) Console.WriteLine($"- {value}");
 }
