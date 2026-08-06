@@ -17,3 +17,4 @@ appsettings.json
 # Logs
 *.log
 log.txt
+*.tmp
