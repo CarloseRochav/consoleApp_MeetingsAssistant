@@ -3,6 +3,7 @@ using MeetingAssistant.Core.Models;
 using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Cost;
 using MeetingAssistant.Infrastructure.Llm;
+using MeetingAssistant.Infrastructure.Storage;
 using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 
@@ -28,27 +29,29 @@ try
         llmClient,
         new ConfigPricingCostEstimator(configuration));
     IAudioCaptureService audioCapture = new AudioCaptureService();
+    IReportStorage reportStorage = new MarkdownReportStorage(configuration);
+    string outputDirectory = Path.Combine(AppContext.BaseDirectory, "meeting-output");
+    IMeetingPipeline pipeline = new MeetingPipeline(
+        audioCapture,
+        transcriptionClient,
+        reportExtractor,
+        reportStorage,
+        outputDirectory);
 
     Console.WriteLine("=== Meeting Assistant Harness ===");
-    Console.WriteLine($"Grabando {durationSeconds} segundos...");
-    string outputDirectory = Path.Combine(AppContext.BaseDirectory, "meeting-output");
-    AudioCaptureResult capture = await audioCapture.CaptureAsync(TimeSpan.FromSeconds(durationSeconds), outputDirectory);
-    Console.WriteLine($"Audio: {capture.AudioPath}");
-    Console.WriteLine($"Loopback: {capture.LoopbackDevice}");
-    Console.WriteLine($"Mic: {capture.MicrophoneDevice}");
-
-    Console.WriteLine("Transcribiendo con Deepgram Nova-3...");
-    TranscriptionResult transcription = await transcriptionClient.TranscribeAsync(capture.AudioPath);
+    Console.WriteLine($"Ejecutando pipeline de {durationSeconds} segundos...");
+    MeetingPipelineResult result = await pipeline.RunAsync(TimeSpan.FromSeconds(durationSeconds));
+    Console.WriteLine($"Audio: {result.Audio.AudioPath}");
+    Console.WriteLine($"Loopback: {result.Audio.LoopbackDevice}");
+    Console.WriteLine($"Mic: {result.Audio.MicrophoneDevice}");
     Console.WriteLine();
     Console.WriteLine("=== Transcript completo ===");
-    Console.WriteLine(transcription.Transcript);
-    foreach (DiarizedUtterance utterance in transcription.Utterances)
+    Console.WriteLine(result.Transcription.Transcript);
+    foreach (DiarizedUtterance utterance in result.Transcription.Utterances)
         Console.WriteLine($"Speaker {utterance.Speaker}: {utterance.Transcript}");
-    Console.WriteLine($"Duracion: {transcription.AudioDuration.TotalSeconds:F2} s; transcripcion: {transcription.Latency.TotalSeconds:F2} s.");
-
-    Console.WriteLine($"Extrayendo reporte con {llmClient.Provider} ({llmClient.Model})...");
-    MeetingReport report = await reportExtractor.ExtractAsync(transcription.Transcript);
-    PrintReport(report);
+    Console.WriteLine($"Duracion: {result.Transcription.AudioDuration.TotalSeconds:F2} s; transcripcion: {result.Transcription.Latency.TotalSeconds:F2} s.");
+    PrintReport(result.Report);
+    Console.WriteLine($"Reporte guardado: {result.SavedReportPath}");
     return 0;
 }
 catch (MeetingReportParseException exception)
