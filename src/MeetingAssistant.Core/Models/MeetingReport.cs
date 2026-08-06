@@ -83,7 +83,7 @@ public sealed record MeetingReportMetadata(
 /// </summary>
 public static class MeetingReportParser
 {
-    private static readonly JsonSerializerOptions SerializerOptions = CreateOptions();
+    public static readonly JsonSerializerOptions SerializerOptions = CreateOptions();
 
     public static MeetingReport Parse(string rawLlmOutput)
     {

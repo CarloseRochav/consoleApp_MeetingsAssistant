@@ -1,5 +1,6 @@
 using MeetingAssistant.App.ViewModels;
 using MeetingAssistant.Core.Abstractions;
+using MeetingAssistant.Infrastructure.Api;
 using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Cost;
 using MeetingAssistant.Infrastructure.Llm;
@@ -25,7 +26,10 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        LocalRecordingApiServer apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
+        apiServer.Start();
         window = Services.GetRequiredService<MainWindow>();
+        window.Closed += (_, _) => apiServer.Stop();
         window.Activate();
     }
 
@@ -52,6 +56,7 @@ public partial class App : Application
             provider.GetRequiredService<ILlmReportExtractor>(),
             provider.GetRequiredService<IReportStorage>(),
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
+        services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();
 
