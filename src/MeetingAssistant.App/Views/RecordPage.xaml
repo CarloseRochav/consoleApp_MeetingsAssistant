@@ -16,6 +16,13 @@
                     MinWidth="180" />
             <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
             <TextBlock Text="{Binding LastSavedReportPath}" TextWrapping="Wrap" />
+            <TextBlock Text="Transcripción" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBox Text="{Binding LastTranscript, Mode=OneWay}"
+                     AcceptsReturn="True"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     MinHeight="240" />
         </StackPanel>
     </ScrollViewer>
 </Page>

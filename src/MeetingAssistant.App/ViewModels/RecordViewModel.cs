@@ -23,6 +23,9 @@ public partial class RecordViewModel : ObservableObject
     [ObservableProperty]
     private string? lastSavedReportPath;
 
+    [ObservableProperty]
+    private string? lastTranscript;
+
     public string ButtonText => IsRecording ? "Detener grabación" : "Grabar reunión";
 
     public RecordViewModel(IMeetingPipeline pipeline)
@@ -53,6 +56,7 @@ public partial class RecordViewModel : ObservableObject
             IsRecording = true;
             StatusMessage = "Grabando...";
             LastSavedReportPath = null;
+            LastTranscript = null;
         }
         catch (Exception ex)
         {
@@ -68,6 +72,7 @@ public partial class RecordViewModel : ObservableObject
         {
             MeetingPipelineResult result = await _pipeline.StopRecordingAndProcessAsync();
             IsRecording = false;
+            LastTranscript = result.Transcription.Transcript;
             LastSavedReportPath = result.SavedReportPath;
             StatusMessage = $"Reporte guardado en: {result.SavedReportPath}";
         }
