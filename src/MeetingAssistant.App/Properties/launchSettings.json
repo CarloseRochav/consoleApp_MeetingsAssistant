@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MeetingAssistant.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MeetingAssistant.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
