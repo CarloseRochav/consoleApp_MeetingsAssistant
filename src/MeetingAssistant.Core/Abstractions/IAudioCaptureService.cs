@@ -2,10 +2,9 @@ namespace MeetingAssistant.Core.Abstractions;
 
 public interface IAudioCaptureService
 {
-    Task<AudioCaptureResult> CaptureAsync(
-        TimeSpan duration,
-        string outputDirectory,
-        CancellationToken cancellationToken = default);
+    bool IsCapturing { get; }
+    Task StartAsync(string outputDirectory, CancellationToken cancellationToken = default);
+    Task<AudioCaptureResult> StopAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed record AudioCaptureResult(

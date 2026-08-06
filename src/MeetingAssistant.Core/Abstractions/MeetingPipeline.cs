@@ -9,7 +9,9 @@ namespace MeetingAssistant.Core.Abstractions;
 /// </summary>
 public interface IMeetingPipeline
 {
-    Task<MeetingPipelineResult> RunAsync(TimeSpan captureDuration, CancellationToken cancellationToken = default);
+    bool IsRecording { get; }
+    Task StartRecordingAsync(CancellationToken cancellationToken = default);
+    Task<MeetingPipelineResult> StopRecordingAndProcessAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed record MeetingPipelineResult(
@@ -40,11 +42,16 @@ public sealed class MeetingPipeline : IMeetingPipeline
         _audioOutputDirectory = audioOutputDirectory;
     }
 
-    public async Task<MeetingPipelineResult> RunAsync(
-        TimeSpan captureDuration, CancellationToken cancellationToken = default)
+    public bool IsRecording => _audioCaptureService.IsCapturing;
+
+    public Task StartRecordingAsync(CancellationToken cancellationToken = default)
     {
-        AudioCaptureResult audio = await _audioCaptureService.CaptureAsync(
-            captureDuration, _audioOutputDirectory, cancellationToken);
+        return _audioCaptureService.StartAsync(_audioOutputDirectory, cancellationToken);
+    }
+
+    public async Task<MeetingPipelineResult> StopRecordingAndProcessAsync(CancellationToken cancellationToken = default)
+    {
+        AudioCaptureResult audio = await _audioCaptureService.StopAsync(cancellationToken);
 
         TranscriptionResult transcription = await _transcriptionClient.TranscribeAsync(
             audio.AudioPath, cancellationToken);

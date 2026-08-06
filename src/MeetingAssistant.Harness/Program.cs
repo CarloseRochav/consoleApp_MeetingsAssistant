@@ -39,8 +39,10 @@ try
         outputDirectory);
 
     Console.WriteLine("=== Meeting Assistant Harness ===");
-    Console.WriteLine($"Ejecutando pipeline de {durationSeconds} segundos...");
-    MeetingPipelineResult result = await pipeline.RunAsync(TimeSpan.FromSeconds(durationSeconds));
+    await pipeline.StartRecordingAsync();
+    Console.WriteLine($"Grabando {durationSeconds} segundos...");
+    await Task.Delay(TimeSpan.FromSeconds(durationSeconds));
+    MeetingPipelineResult result = await pipeline.StopRecordingAndProcessAsync();
     Console.WriteLine($"Audio: {result.Audio.AudioPath}");
     Console.WriteLine($"Loopback: {result.Audio.LoopbackDevice}");
     Console.WriteLine($"Mic: {result.Audio.MicrophoneDevice}");

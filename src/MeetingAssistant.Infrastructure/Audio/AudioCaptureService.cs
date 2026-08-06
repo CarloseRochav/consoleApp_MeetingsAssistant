@@ -8,14 +8,74 @@ namespace MeetingAssistant.Infrastructure.Audio;
 
 public sealed class AudioCaptureService : IAudioCaptureService
 {
-    public Task<AudioCaptureResult> CaptureAsync(TimeSpan duration, string outputDirectory, CancellationToken cancellationToken = default)
+    private readonly object sync = new();
+    private CancellationTokenSource? captureCancellation;
+    private Task<AudioCaptureResult>? captureTask;
+    private bool isCapturing;
+
+    public bool IsCapturing
     {
-        if (duration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(duration));
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
-        return Task.Run(() => Capture(duration, outputDirectory, cancellationToken), cancellationToken);
+        get { lock (sync) return isCapturing; }
     }
 
-    private static AudioCaptureResult Capture(TimeSpan duration, string outputDirectory, CancellationToken cancellationToken)
+    public Task StartAsync(string outputDirectory, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (sync)
+        {
+            if (isCapturing)
+            {
+                throw new InvalidOperationException("Ya hay una captura de audio en curso.");
+            }
+
+            captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            isCapturing = true;
+            captureTask = Task.Run(() => CaptureUntilStoppedAsync(outputDirectory, captureCancellation.Token));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public async Task<AudioCaptureResult> StopAsync(CancellationToken cancellationToken = default)
+    {
+        Task<AudioCaptureResult> task;
+        CancellationTokenSource cancellation;
+        lock (sync)
+        {
+            if (!isCapturing || captureTask is null || captureCancellation is null)
+            {
+                throw new InvalidOperationException("No hay una captura de audio en curso para detener.");
+            }
+
+            task = captureTask;
+            cancellation = captureCancellation;
+            cancellation.Cancel();
+        }
+
+        try
+        {
+            // Do not let the caller's cancellation interrupt cleanup: the WAV must
+            // be flushed and its capture devices disposed before this method returns.
+            return await task.ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (sync)
+            {
+                if (ReferenceEquals(task, captureTask))
+                {
+                    captureTask = null;
+                    captureCancellation?.Dispose();
+                    captureCancellation = null;
+                    isCapturing = false;
+                }
+            }
+        }
+    }
+
+    private static async Task<AudioCaptureResult> CaptureUntilStoppedAsync(string outputDirectory, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(outputDirectory);
         string outputPath = Path.Combine(outputDirectory, $"meeting-{DateTime.Now:yyyyMMdd-HHmmss}.wav");
@@ -24,7 +84,6 @@ public sealed class AudioCaptureService : IAudioCaptureService
         using var defaultMicDevice = GetDefaultDevice(DataFlow.Capture);
         using var loopbackCapture = new WasapiLoopbackCapture(defaultRenderDevice);
         using var micCapture = new WasapiCapture(defaultMicDevice);
-
         var loopbackSampleProvider = new WaveInProvider(loopbackCapture).ToSampleProvider();
         var micSampleProvider = new WaveInProvider(micCapture).ToSampleProvider();
         var targetFormat = WaveFormat.CreateIeeeFloatWaveFormat(44100, 1);
@@ -34,27 +93,37 @@ public sealed class AudioCaptureService : IAudioCaptureService
 
         var mixedWaveProvider = new SampleToWaveProvider16(mixer);
         using var writer = new WaveFileWriter(outputPath, mixedWaveProvider.WaveFormat);
-
         const int blockDurationMilliseconds = 20;
         int blockBytes = mixedWaveProvider.WaveFormat.AverageBytesPerSecond * blockDurationMilliseconds / 1000;
         var buffer = new byte[blockBytes];
         loopbackCapture.StartRecording();
         micCapture.StartRecording();
 
+        var recordingClock = Stopwatch.StartNew();
+        long nextBlockStartMilliseconds = 0;
         try
         {
-            var recordingClock = Stopwatch.StartNew();
-            long nextBlockStartMilliseconds = 0;
-            while (recordingClock.Elapsed < duration)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 long delayMilliseconds = nextBlockStartMilliseconds - recordingClock.ElapsedMilliseconds;
-                if (delayMilliseconds > 0) Thread.Sleep((int)delayMilliseconds);
+                if (delayMilliseconds > 0)
+                {
+                    try
+                    {
+                        await Task.Delay((int)delayMilliseconds, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                }
 
+                if (cancellationToken.IsCancellationRequested) break;
                 int bytesRead = mixedWaveProvider.Read(buffer, 0, buffer.Length);
                 if (bytesRead > 0) writer.Write(buffer, 0, bytesRead);
                 nextBlockStartMilliseconds += blockDurationMilliseconds;
             }
+
             return new AudioCaptureResult(outputPath, recordingClock.Elapsed, defaultRenderDevice.FriendlyName, defaultMicDevice.FriendlyName);
         }
         finally
