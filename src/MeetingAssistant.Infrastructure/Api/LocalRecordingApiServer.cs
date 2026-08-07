@@ -101,6 +101,14 @@ public sealed class LocalRecordingApiServer : IDisposable
             return;
         }
 
+        IPAddress? remoteAddress = request.RemoteEndPoint?.Address;
+        bool isLoopback = remoteAddress is not null && IPAddress.IsLoopback(remoteAddress);
+        if (!isLoopback)
+        {
+            await WriteJsonAsync(response, 403, new { error = "Solo se aceptan conexiones desde localhost." });
+            return;
+        }
+
         try
         {
             switch (request.HttpMethod, request.Url?.AbsolutePath)
