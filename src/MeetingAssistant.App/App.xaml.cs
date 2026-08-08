@@ -27,9 +27,24 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         LocalRecordingApiServer apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
+        CloudflareTunnelService tunnel = Services.GetRequiredService<CloudflareTunnelService>();
         apiServer.Start();
+        try
+        {
+            tunnel.Start();
+        }
+        catch
+        {
+            apiServer.Stop();
+            throw;
+        }
+
         window = Services.GetRequiredService<MainWindow>();
-        window.Closed += (_, _) => apiServer.Stop();
+        window.Closed += (_, _) =>
+        {
+            tunnel.Stop();
+            apiServer.Stop();
+        };
         window.Activate();
     }
 
@@ -57,6 +72,7 @@ public partial class App : Application
             provider.GetRequiredService<IReportStorage>(),
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
         services.AddSingleton<LocalRecordingApiServer>();
+        services.AddSingleton<CloudflareTunnelService>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();
 
