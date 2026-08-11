@@ -1,13 +1,18 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Deepgram;
+using Deepgram.Clients.Interfaces.v1;
 using Deepgram.Models.Listen.v1.REST;
 using MeetingAssistant.Core.Abstractions;
+using NAudio.Wave;
 
 namespace MeetingAssistant.Infrastructure.Transcription;
 
 public sealed class DeepgramTranscriptionClient : ITranscriptionClient
 {
+    // Deepgram's synchronous pre-recorded endpoint returns 504 for Nova requests
+    // over 10 minutes. Leave one minute of margin for WAV metadata and rounding.
+    private static readonly TimeSpan MaximumSegmentDuration = TimeSpan.FromMinutes(9);
     private readonly string apiKey;
 
     public DeepgramTranscriptionClient(string apiKey)
@@ -21,23 +26,118 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
         ArgumentException.ThrowIfNullOrWhiteSpace(audioPath);
         if (!File.Exists(audioPath)) throw new FileNotFoundException("No existe el archivo de audio indicado.", audioPath);
 
+        FileInfo audioFile = new(audioPath);
+        TimeSpan audioDuration = ReadAudioDuration(audioPath);
+        IReadOnlyList<string> segments = CreateSegments(audioPath, audioDuration);
+
         Library.Initialize();
         try
         {
-            var stopwatch = Stopwatch.StartNew();
             var client = ClientFactory.CreateListenRESTClient(apiKey);
-            var response = await client.TranscribeFile(
-                await File.ReadAllBytesAsync(audioPath, cancellationToken),
-                new PreRecordedSchema { Model = "nova-3", Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true });
-            stopwatch.Stop();
+            var transcripts = new List<string>(segments.Count);
+            var utterances = new List<DiarizedUtterance>();
+            string? language = null;
+            TimeSpan latency = TimeSpan.Zero;
 
-            using var document = JsonDocument.Parse(JsonSerializer.Serialize(response));
-            JsonElement root = document.RootElement;
-            string transcript = ReadString(root, "results", "channels", 0, "alternatives", 0, "transcript") ?? string.Empty;
-            string? language = ReadString(root, "results", "channels", 0, "detected_language");
-            return new TranscriptionResult(transcript, ReadWaveDuration(audioPath), stopwatch.Elapsed, language, ReadUtterances(root));
+            for (int index = 0; index < segments.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    TranscriptionResult segmentResult = await TranscribeSegmentAsync(client, segments[index], cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(segmentResult.Transcript)) transcripts.Add(segmentResult.Transcript);
+                    utterances.AddRange(segmentResult.Utterances);
+                    language ??= segmentResult.DetectedLanguage;
+                    latency += segmentResult.Latency;
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    throw new TranscriptionFailedException(
+                        audioPath, audioFile.Length, audioDuration, index + 1, segments.Count, exception);
+                }
+            }
+
+            return new TranscriptionResult(string.Join(Environment.NewLine + Environment.NewLine, transcripts), audioDuration, latency, language, utterances);
         }
-        finally { Library.Terminate(); }
+        finally
+        {
+            Library.Terminate();
+            DeleteTemporarySegments(segments, audioPath);
+        }
+    }
+
+    private static async Task<TranscriptionResult> TranscribeSegmentAsync(
+        IListenRESTClient client,
+        string segmentPath,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var response = await client.TranscribeFile(
+            await File.ReadAllBytesAsync(segmentPath, cancellationToken),
+            new PreRecordedSchema { Model = "nova-3", Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true });
+        stopwatch.Stop();
+
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(response));
+        JsonElement root = document.RootElement;
+        string transcript = ReadString(root, "results", "channels", 0, "alternatives", 0, "transcript") ?? string.Empty;
+        string? language = ReadString(root, "results", "channels", 0, "detected_language");
+        return new TranscriptionResult(transcript, ReadAudioDuration(segmentPath), stopwatch.Elapsed, language, ReadUtterances(root));
+    }
+
+    private static IReadOnlyList<string> CreateSegments(string audioPath, TimeSpan audioDuration)
+    {
+        if (audioDuration <= MaximumSegmentDuration) return [audioPath];
+
+        string directory = Path.Combine(Path.GetTempPath(), "MeetingAssistant", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var segments = new List<string>();
+
+        try
+        {
+            using WaveStream reader = CreateAudioReader(audioPath);
+            int segmentBytes = checked((int)(reader.WaveFormat.AverageBytesPerSecond * MaximumSegmentDuration.TotalSeconds));
+            segmentBytes -= segmentBytes % reader.WaveFormat.BlockAlign;
+            var buffer = new byte[81920];
+
+            while (reader.Position < reader.Length)
+            {
+                string segmentPath = Path.Combine(directory, $"segment-{segments.Count + 1:D3}.wav");
+                using var writer = new WaveFileWriter(segmentPath, reader.WaveFormat);
+                int remainingBytes = segmentBytes;
+                while (remainingBytes > 0)
+                {
+                    int bytesRead = reader.Read(buffer, 0, Math.Min(buffer.Length, remainingBytes));
+                    if (bytesRead == 0) break;
+                    writer.Write(buffer, 0, bytesRead);
+                    remainingBytes -= bytesRead;
+                }
+                segments.Add(segmentPath);
+            }
+
+            return segments;
+        }
+        catch
+        {
+            DeleteTemporarySegments(segments, audioPath);
+            throw;
+        }
+    }
+
+    private static void DeleteTemporarySegments(IReadOnlyList<string> segments, string originalAudioPath)
+    {
+        if (segments.Count == 1 && string.Equals(segments[0], originalAudioPath, StringComparison.OrdinalIgnoreCase)) return;
+
+        foreach (string segment in segments)
+        {
+            try { File.Delete(segment); }
+            catch (IOException) { }
+        }
+
+        if (segments.Count > 0)
+        {
+            try { Directory.Delete(Path.GetDirectoryName(segments[0])!, recursive: false); }
+            catch (IOException) { }
+        }
     }
 
     private static IReadOnlyList<DiarizedUtterance> ReadUtterances(JsonElement root)
@@ -82,20 +182,14 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
         return false;
     }
 
-    private static TimeSpan ReadWaveDuration(string path)
+    private static TimeSpan ReadAudioDuration(string path)
     {
-        using var reader = new BinaryReader(File.OpenRead(path));
-        if (new string(reader.ReadChars(4)) != "RIFF") throw new InvalidDataException("El archivo no es WAV RIFF.");
-        reader.ReadInt32();
-        if (new string(reader.ReadChars(4)) != "WAVE") throw new InvalidDataException("El archivo no es WAV.");
-        int byteRate = 0, dataLength = 0;
-        while (reader.BaseStream.Position < reader.BaseStream.Length)
-        {
-            string chunkId = new(reader.ReadChars(4)); int chunkLength = reader.ReadInt32();
-            if (chunkId == "fmt ") { reader.ReadInt16(); reader.ReadInt16(); reader.ReadInt32(); byteRate = reader.ReadInt32(); reader.BaseStream.Position += chunkLength - 12; }
-            else if (chunkId == "data") { dataLength = chunkLength; break; }
-            else reader.BaseStream.Position += chunkLength;
-        }
-        return byteRate == 0 ? TimeSpan.Zero : TimeSpan.FromSeconds((double)dataLength / byteRate);
+        using WaveStream reader = CreateAudioReader(path);
+        return reader.TotalTime;
     }
+
+    private static WaveStream CreateAudioReader(string path) =>
+        string.Equals(Path.GetExtension(path), ".wav", StringComparison.OrdinalIgnoreCase)
+            ? new WaveFileReader(path)
+            : new MediaFoundationReader(path);
 }

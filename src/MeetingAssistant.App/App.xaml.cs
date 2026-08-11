@@ -1,4 +1,5 @@
 using MeetingAssistant.App.ViewModels;
+using MeetingAssistant.App.Services;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Infrastructure.Api;
 using MeetingAssistant.Infrastructure.Audio;
@@ -24,6 +25,8 @@ public partial class App : Application
 
     public static IServiceProvider Services { get; private set; } = null!;
 
+    public static Window MainWindow { get; private set; } = null!;
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         LocalRecordingApiServer apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
@@ -40,6 +43,7 @@ public partial class App : Application
         }
 
         window = Services.GetRequiredService<MainWindow>();
+        MainWindow = window;
         window.Closed += (_, _) =>
         {
             tunnel.Stop();
@@ -71,6 +75,7 @@ public partial class App : Application
             provider.GetRequiredService<ILlmReportExtractor>(),
             provider.GetRequiredService<IReportStorage>(),
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
+        services.AddSingleton<RecordingCoordinator>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddSingleton<CloudflareTunnelService>();
         services.AddTransient<RecordViewModel>();

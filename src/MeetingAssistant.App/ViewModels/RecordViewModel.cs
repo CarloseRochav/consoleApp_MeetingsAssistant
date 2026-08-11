@@ -1,12 +1,13 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MeetingAssistant.App.Services;
 using MeetingAssistant.Core.Abstractions;
 
 namespace MeetingAssistant.App.ViewModels;
 
 public partial class RecordViewModel : ObservableObject
 {
-    private readonly IMeetingPipeline _pipeline;
+    private readonly RecordingCoordinator _recordingCoordinator;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ButtonText))]
@@ -26,11 +27,16 @@ public partial class RecordViewModel : ObservableObject
     [ObservableProperty]
     private string? lastTranscript;
 
+    [ObservableProperty]
+    private string? errorDetails;
+
     public string ButtonText => IsRecording ? "Detener grabación" : "Grabar reunión";
 
-    public RecordViewModel(IMeetingPipeline pipeline)
+    public RecordViewModel(RecordingCoordinator recordingCoordinator)
     {
-        _pipeline = pipeline;
+        _recordingCoordinator = recordingCoordinator;
+        IsRecording = _recordingCoordinator.IsRecording;
+        IsProcessing = _recordingCoordinator.IsProcessing;
     }
 
     private bool CanToggleRecording() => !IsProcessing;
@@ -52,15 +58,17 @@ public partial class RecordViewModel : ObservableObject
     {
         try
         {
-            await _pipeline.StartRecordingAsync();
+            await _recordingCoordinator.StartRecordingAsync();
             IsRecording = true;
             StatusMessage = "Grabando...";
             LastSavedReportPath = null;
             LastTranscript = null;
+            ErrorDetails = null;
         }
         catch (Exception ex)
         {
             StatusMessage = $"Error al iniciar la grabación: {ex.Message}";
+            ErrorDetails = ex.ToString();
         }
     }
 
@@ -70,16 +78,43 @@ public partial class RecordViewModel : ObservableObject
         StatusMessage = "Procesando (transcribiendo y extrayendo el reporte)...";
         try
         {
-            MeetingPipelineResult result = await _pipeline.StopRecordingAndProcessAsync();
+            MeetingPipelineResult result = await _recordingCoordinator.StopRecordingAndProcessAsync();
             IsRecording = false;
             LastTranscript = result.Transcription.Transcript;
             LastSavedReportPath = result.SavedReportPath;
+            ErrorDetails = null;
             StatusMessage = $"Reporte guardado en: {result.SavedReportPath}";
         }
         catch (Exception ex)
         {
             IsRecording = false;
             StatusMessage = $"Error al procesar la reunión: {ex.Message}";
+            ErrorDetails = ex.ToString();
+        }
+        finally
+        {
+            IsProcessing = false;
+        }
+    }
+
+    public async Task ProcessExistingAudioAsync(string audioPath)
+    {
+        IsProcessing = true;
+        StatusMessage = "Procesando archivo existente (transcribiendo y extrayendo el reporte)...";
+        LastSavedReportPath = null;
+        LastTranscript = null;
+        ErrorDetails = null;
+        try
+        {
+            MeetingPipelineResult result = await _recordingCoordinator.ProcessExistingAudioAsync(audioPath);
+            LastTranscript = result.Transcription.Transcript;
+            LastSavedReportPath = result.SavedReportPath;
+            StatusMessage = $"Reporte guardado en: {result.SavedReportPath}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error al procesar el archivo: {ex.Message}";
+            ErrorDetails = ex.ToString();
         }
         finally
         {

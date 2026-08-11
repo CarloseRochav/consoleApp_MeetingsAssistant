@@ -12,6 +12,7 @@ public interface IMeetingPipeline
     bool IsRecording { get; }
     Task StartRecordingAsync(CancellationToken cancellationToken = default);
     Task<MeetingPipelineResult> StopRecordingAndProcessAsync(CancellationToken cancellationToken = default);
+    Task<MeetingPipelineResult> ProcessAudioFileAsync(string audioPath, CancellationToken cancellationToken = default);
 }
 
 public sealed record MeetingPipelineResult(
@@ -52,6 +53,21 @@ public sealed class MeetingPipeline : IMeetingPipeline
     public async Task<MeetingPipelineResult> StopRecordingAndProcessAsync(CancellationToken cancellationToken = default)
     {
         AudioCaptureResult audio = await _audioCaptureService.StopAsync(cancellationToken);
+        return await ProcessAudioAsync(audio, cancellationToken);
+    }
+
+    public async Task<MeetingPipelineResult> ProcessAudioFileAsync(string audioPath, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audioPath);
+        if (!File.Exists(audioPath)) throw new FileNotFoundException("No existe el archivo de audio indicado.", audioPath);
+        if (IsRecording) throw new InvalidOperationException("No se puede procesar un archivo mientras hay una grabación en curso.");
+
+        var audio = new AudioCaptureResult(audioPath, TimeSpan.Zero, "Archivo importado", "Archivo importado");
+        return await ProcessAudioAsync(audio, cancellationToken);
+    }
+
+    private async Task<MeetingPipelineResult> ProcessAudioAsync(AudioCaptureResult audio, CancellationToken cancellationToken)
+    {
 
         TranscriptionResult transcription = await _transcriptionClient.TranscribeAsync(
             audio.AudioPath, cancellationToken);
@@ -68,6 +84,6 @@ public sealed class MeetingPipeline : IMeetingPipeline
         MeetingReport report = await _reportExtractor.ExtractAsync(transcription.Transcript, cancellationToken);
         string savedPath = await _reportStorage.SaveAsync(report, cancellationToken);
 
-        return new MeetingPipelineResult(report, savedPath, audio, transcription);
+        return new MeetingPipelineResult(report, savedPath, audio with { Duration = transcription.AudioDuration }, transcription);
     }
 }

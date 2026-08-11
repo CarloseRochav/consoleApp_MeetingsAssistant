@@ -147,11 +147,11 @@ public sealed class LocalRecordingApiServer : IDisposable
         catch (InvalidOperationException ex)
         {
             // Guard clauses de IMeetingPipeline (doble start / stop sin start) llegan aquí.
-            await WriteJsonAsync(response, 409, new { error = ex.Message });
+            await WriteJsonAsync(response, 409, new { error = ex.Message, details = ex.ToString() });
         }
         catch (Exception ex)
         {
-            await WriteJsonAsync(response, 500, new { error = ex.Message });
+            await WriteJsonAsync(response, 500, new { error = ex.Message, details = ex.ToString() });
         }
     }
 
