@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Services;
 using MeetingAssistant.App.ViewModels;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Infrastructure.Api;
@@ -56,6 +57,7 @@ public partial class App : Application
             provider.GetRequiredService<ILlmReportExtractor>(),
             provider.GetRequiredService<IReportStorage>(),
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
+        services.AddSingleton<RecordingCoordinator>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();
