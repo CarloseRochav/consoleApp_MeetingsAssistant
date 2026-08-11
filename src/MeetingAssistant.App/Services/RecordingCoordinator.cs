@@ -4,14 +4,15 @@ namespace MeetingAssistant.App.Services;
 
 /// <summary>
 /// Centraliza las operaciones de grabación iniciadas desde la interfaz de la
-/// aplicación. El pipeline sigue siendo la autoridad para sus guard clauses,
-/// de modo que los demás disparadores que lo usan directamente comparten el
-/// mismo estado de captura.
+/// aplicación (RecordPage, tray, hotkey). Es intencionalmente App-local: expone
+/// eventos de ciclo de vida propios de la UI, mientras que el pipeline de Core
+/// permanece agnóstico a proveedor y a interfaz.
 /// </summary>
 public sealed class RecordingCoordinator
 {
     private readonly IMeetingPipeline _pipeline;
-    private int _processingOperationCount;
+    private readonly SemaphoreSlim _operationLock = new(1, 1);
+    private bool _isProcessing;
 
     public RecordingCoordinator(IMeetingPipeline pipeline)
     {
@@ -20,36 +21,99 @@ public sealed class RecordingCoordinator
 
     public bool IsRecording => _pipeline.IsRecording;
 
-    public bool IsProcessing => Volatile.Read(ref _processingOperationCount) > 0;
+    public bool IsProcessing => _isProcessing;
+
+    public event EventHandler? StateChanged;
 
     public event EventHandler<RecordingCompletedEventArgs>? RecordingCompleted;
 
     public event EventHandler<RecordingFailedEventArgs>? RecordingFailed;
 
-    public Task StartRecordingAsync(CancellationToken cancellationToken = default) =>
-        _pipeline.StartRecordingAsync(cancellationToken);
-
-    public async Task<MeetingPipelineResult> StopRecordingAndProcessAsync(
-        CancellationToken cancellationToken = default)
+    public async Task StartRecordingAsync(CancellationToken cancellationToken = default)
     {
-        Interlocked.Increment(ref _processingOperationCount);
-
-        MeetingPipelineResult result;
+        await _operationLock.WaitAsync(cancellationToken);
         try
         {
-            result = await _pipeline.StopRecordingAndProcessAsync(cancellationToken);
+            if (IsProcessing || _pipeline.IsRecording)
+            {
+                throw new InvalidOperationException("Ya hay una grabación en curso.");
+            }
+
+            await _pipeline.StartRecordingAsync(cancellationToken);
+            OnStateChanged();
         }
         catch (Exception exception)
         {
-            Interlocked.Decrement(ref _processingOperationCount);
             RaiseRecordingFailed(exception);
             throw;
         }
-
-        Interlocked.Decrement(ref _processingOperationCount);
-        RaiseRecordingCompleted(result);
-        return result;
+        finally
+        {
+            _operationLock.Release();
+        }
     }
+
+    public async Task<MeetingPipelineResult> StopRecordingAndProcessAsync(CancellationToken cancellationToken = default)
+    {
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!IsRecording)
+            {
+                throw new InvalidOperationException("No hay una grabación en curso.");
+            }
+
+            _isProcessing = true;
+            OnStateChanged();
+
+            MeetingPipelineResult result = await _pipeline.StopRecordingAndProcessAsync(cancellationToken);
+            RaiseRecordingCompleted(result);
+            return result;
+        }
+        catch (Exception exception)
+        {
+            RaiseRecordingFailed(exception);
+            throw;
+        }
+        finally
+        {
+            _isProcessing = false;
+            OnStateChanged();
+            _operationLock.Release();
+        }
+    }
+
+    public async Task<MeetingPipelineResult> ProcessExistingAudioAsync(string audioPath, CancellationToken cancellationToken = default)
+    {
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (IsRecording || IsProcessing)
+            {
+                throw new InvalidOperationException("No se puede procesar un archivo mientras hay una grabación o proceso en curso.");
+            }
+
+            _isProcessing = true;
+            OnStateChanged();
+
+            MeetingPipelineResult result = await _pipeline.ProcessAudioFileAsync(audioPath, cancellationToken);
+            RaiseRecordingCompleted(result);
+            return result;
+        }
+        catch (Exception exception)
+        {
+            RaiseRecordingFailed(exception);
+            throw;
+        }
+        finally
+        {
+            _isProcessing = false;
+            OnStateChanged();
+            _operationLock.Release();
+        }
+    }
+
+    private void OnStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
 
     private void RaiseRecordingCompleted(MeetingPipelineResult result)
     {

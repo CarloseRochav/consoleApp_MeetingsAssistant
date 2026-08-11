@@ -8,10 +8,21 @@ using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 
 const string appSettingsFileName = "appsettings.json";
-int durationSeconds = args.Length > 0 && int.TryParse(args[0], out int parsedDuration) ? parsedDuration : 15;
-if (durationSeconds <= 0)
+bool processExistingAudio = args.Length == 2 && string.Equals(args[0], "--process-file", StringComparison.OrdinalIgnoreCase);
+string? existingAudioPath = args.Length == 2 &&
+    (string.Equals(args[0], "--transcribe-file", StringComparison.OrdinalIgnoreCase) || processExistingAudio)
+    ? args[1]
+    : null;
+int durationSeconds = existingAudioPath is null && args.Length > 0 && int.TryParse(args[0], out int parsedDuration) ? parsedDuration : 15;
+if (existingAudioPath is null && durationSeconds <= 0)
 {
     Console.Error.WriteLine("La duracion de captura debe ser mayor que cero.");
+    return 1;
+}
+
+if (existingAudioPath is not null && !File.Exists(existingAudioPath))
+{
+    Console.Error.WriteLine($"No existe el audio indicado: {existingAudioPath}");
     return 1;
 }
 
@@ -24,6 +35,15 @@ try
         .Build();
 
     ITranscriptionClient transcriptionClient = new DeepgramTranscriptionClient(ReadRequiredSetting(configuration, "Deepgram", "ApiKey", "DEEPGRAM_API_KEY"));
+    if (existingAudioPath is not null && !processExistingAudio)
+    {
+        Console.WriteLine($"=== Transcribiendo archivo existente ==={Environment.NewLine}{existingAudioPath}");
+        TranscriptionResult transcription = await transcriptionClient.TranscribeAsync(existingAudioPath);
+        Console.WriteLine($"Transcripción recibida: {transcription.Transcript.Length:N0} caracteres; {transcription.Utterances.Count:N0} intervenciones.");
+        Console.WriteLine($"Duracion: {transcription.AudioDuration.TotalSeconds:F2} s; transcripcion: {transcription.Latency.TotalSeconds:F2} s.");
+        return 0;
+    }
+
     ILlmClient llmClient = CreateLlmClient(configuration);
     ILlmReportExtractor reportExtractor = new LlmReportExtractor(
         llmClient,
@@ -37,6 +57,16 @@ try
         reportExtractor,
         reportStorage,
         outputDirectory);
+
+    if (existingAudioPath is not null)
+    {
+        Console.WriteLine($"=== Procesando archivo existente ==={Environment.NewLine}{existingAudioPath}");
+        MeetingPipelineResult importedResult = await pipeline.ProcessAudioFileAsync(existingAudioPath);
+        Console.WriteLine($"Audio: {importedResult.Audio.AudioPath}");
+        Console.WriteLine($"Duración: {importedResult.Transcription.AudioDuration.TotalSeconds:F2} s; transcripción: {importedResult.Transcription.Latency.TotalSeconds:F2} s.");
+        Console.WriteLine($"Reporte guardado: {importedResult.SavedReportPath}");
+        return 0;
+    }
 
     Console.WriteLine("=== Meeting Assistant Harness ===");
     await pipeline.StartRecordingAsync();

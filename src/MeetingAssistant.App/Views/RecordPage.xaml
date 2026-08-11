@@ -14,7 +14,14 @@
                     Command="{Binding ToggleRecordingCommand}"
                     HorizontalAlignment="Left"
                     MinWidth="180" />
+            <Button Content="Procesar archivo existente"
+                    Click="ProcessExistingAudio_Click"
+                    HorizontalAlignment="Left"
+                    MinWidth="180" />
             <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorDetails}"
+                       TextWrapping="Wrap"
+                       Foreground="DarkRed" />
             <TextBlock Text="{Binding LastSavedReportPath}" TextWrapping="Wrap" />
             <TextBlock Text="Transcripción" Style="{StaticResource SubtitleTextBlockStyle}" />
             <TextBox Text="{Binding LastTranscript, Mode=OneWay}"
