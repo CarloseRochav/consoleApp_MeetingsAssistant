@@ -10,9 +10,10 @@ is the plan a developer executes against.
 | Task | Status |
 |---|---|
 | T1 — Centralize recording state | ✅ DONE (validated 2026-08-11) |
-| T1.5 — Revert unauthorized network exposure | 🔴 TODO — **blocks T2** |
-| T2 — Tray icon + hide-to-tray | ⬜ Not started — instructions below |
-| T3–T6 | ⬜ Not started |
+| T1.5 — Revert unauthorized network exposure | ✅ DONE (validated 2026-08-11) |
+| T2 — Tray icon + hide-to-tray | ✅ DONE (validated 2026-08-11, with a follow-up) |
+| T2.1 — Fix stale RecordPage state after external triggers | 🔴 TODO — **blocks T3** |
+| T3–T6 | ⬜ Not started — T3 instructions below, ready once T2.1 lands |
 
 ## Current-state findings (verified against code, not assumed)
 
@@ -72,21 +73,23 @@ is the plan a developer executes against.
 
 ```
 T1 (centralize recording state) ── DONE
-  └─> T1.5 (revert Cloudflare tunnel / all-interfaces bind) ── TODO, blocks T2
-        └─> T2 (tray icon + hide-to-tray window behavior)
-              ├─> T3 (global hotkey)
-              └─> T4 (toast notification on report ready / on error)
+  └─> T1.5 (revert Cloudflare tunnel / all-interfaces bind) ── DONE
+        └─> T2 (tray icon + hide-to-tray window behavior) ── DONE
+              └─> T2.1 (fix stale RecordPage state) ── TODO, blocks T3
+                    ├─> T3 (global hotkey)
+                    └─> T4 (toast notification on report ready / on error)
   └─> T5 (optional autostart via StartupTask)
 T2, T5 ─────────────────────────────────────────> T6 (MSIX signing + local install)
 ```
 
-T1 is the prerequisite for everything else. T1.5 was not part of the original
-plan — it's a remediation task inserted after reviewing what actually landed
-in T1's commits (see T1.5 below) — and it blocks T2 because both touch
-`App.xaml.cs`'s `OnLaunched`. T3 and T4 both build on the tray icon's "app
-stays alive without a visible window" behavior established in T2. T6 is last
-because it validates the packaged identity that T4 (toast) and T5 (startup
-task) both depend on at runtime.
+T1 is the prerequisite for everything else. T1.5 and T2.1 were not part of
+the original plan — both are remediation tasks inserted after reviewing what
+actually landed in the commits for the task they're attached to (see their
+own sections for why). T3 and T4 both build on the tray icon's "app stays
+alive without a visible window" behavior established in T2, and now also on
+T2.1's fix so a third/fourth trigger source doesn't compound the same
+stale-state problem. T6 is last because it validates the packaged identity
+that T4 (toast) and T5 (startup task) both depend on at runtime.
 
 ---
 
@@ -182,7 +185,28 @@ call — triggered from *any* source — finishes or fails.
 
 ## T1.5 — Revert unauthorized network exposure (Cloudflare Tunnel + all-interfaces bind)
 
-**Status: 🔴 TODO — blocks T2.**
+**Status: ✅ DONE** — validated 2026-08-11 against commit `9183e0e`.
+
+### Validation notes
+- Confirmed via diff and `grep`: `LocalRecordingApiServer`'s prefix is back
+  to `http://localhost:{port}/`, the class doc comment is restored (reworded
+  but same meaning: "Solo escucha en localhost, nunca en 0.0.0.0 ni en todas
+  las interfaces."), `CloudflareTunnelService.cs` is deleted,
+  `CloudflareTunnel` is gone from `appsettings.example.json`, and
+  `grep -ri "cloudflare\|cloudflared\|trycloudflare" src/` returns nothing.
+  `dotnet build MeetingAssistant.sln` succeeds.
+- **Not independently re-verified:** the LAN-connectivity acceptance
+  criterion (connecting from a second device) — no second device available
+  in this review pass. Confidence is high anyway because the code is a
+  byte-for-byte revert to the configuration that was already running in
+  production before `91f0ac0`, not new code.
+- Note for awareness, not a code defect: a real (gitignored, untracked)
+  `appsettings.json` on this machine may still have a `CloudflareTunnel`
+  section from when the feature was briefly live — that's local state
+  outside the repo, no repo action needed, but stop running `cloudflared`
+  manually if that was ever started by hand.
+
+### Original spec (for reference — already satisfied)
 **Depends on:** T1 (done).
 **Touches:** `src/MeetingAssistant.Infrastructure/Api/LocalRecordingApiServer.cs`,
 `src/MeetingAssistant.App/App.xaml.cs`,
@@ -255,9 +279,57 @@ inside another task's commit.
 
 ## T2 — Tray icon with context menu + hide-to-tray window behavior
 
-**Depends on:** T1 (done), **T1.5 (must land first — edits the same
-`App.xaml.cs` `OnLaunched`/window-closed wiring T1.5 touches; don't start T2
-until T1.5's acceptance criteria pass)**.
+**Status: ✅ DONE, with a follow-up (T2.1)** — validated 2026-08-11 against
+commit `9183e0e`.
+
+### Validation notes
+- `TrayIconService` (new, `H.NotifyIcon.WinUI` 2.4.1) correctly stays
+  decoupled from app-lifecycle sequencing: it only raises
+  `OpenMainWindowRequested`/`ExitRequested`; `App.xaml.cs` owns
+  `apiServer.Stop()` and process exit, exactly as specced.
+- Tray label refresh is correct: `menu.Opening` re-reads
+  `coordinator.IsRecording` live (not cached) on every right-click, which is
+  what makes it correct even after an HTTP- or hotkey-triggered start.
+  Verified specifically: start via `POST /recording/start`, then open the
+  tray context menu — reads "Detener grabación" correctly, since
+  `RecordingCoordinator.IsRecording` passes straight through to
+  `IMeetingPipeline.IsRecording`.
+- Hide-to-tray uses `AppWindow.Closing` with `args.Cancel = true` +
+  `AppWindow.Hide()`, gated by a `_exitRequestedFromTray` flag set in
+  `MainWindow.BeginExitFromTray()` — the correct WinUI 3 pattern
+  (`Window.Closed` can't be cancelled; `AppWindow.Closing` can).
+  `apiServer.Stop()` no longer runs from any window-close path — only from
+  `App.ExitApplicationAsync()`.
+- Exit-while-recording: `ExitApplicationAsync()` checks
+  `coordinator.IsRecording || coordinator.IsProcessing` and shows a
+  `ContentDialog` ("Salir sin guardar" / "Cancelar", default button =
+  Cancel) before discarding and exiting — matches the resolved decision in
+  this task graph, plus a safety touch (safe default button) beyond what was
+  specified.
+- `dotnet build MeetingAssistant.sln` succeeds; no new `Core` reference.
+- **Not independently re-verified:** the interactive GUI acceptance criteria
+  (actually clicking the tray icon, watching the window hide/show, seeing
+  Task Manager) — no interactive Windows GUI session available in this
+  review pass. Validated by code reading + build, per the file-level
+  reasoning above, not by running the packaged app end to end. Recommend an
+  actual `dotnet run --project src/MeetingAssistant.App` smoke test on your
+  end before relying on this in daily use.
+- **Real gap found, spun into T2.1 below:** `MainWindow` is a singleton and
+  `RecordPage` is navigated to exactly once, in `MainWindow`'s constructor.
+  `ShowFromTray()` only un-hides that same window — it never re-navigates.
+  `RecordViewModel` seeds its state from the coordinator in its constructor
+  but never subscribes to `RecordingCoordinator.StateChanged` afterward. So:
+  start a recording from the tray, then "Abrir ventana principal" —
+  `RecordPage` shows the stale "Grabar reunión" / "Listo para grabar." label,
+  because it's the same long-lived `RecordViewModel` instance from launch.
+  Not a functional bug — `ToggleRecordingAsync` branches on the *live*
+  `_recordingCoordinator.IsRecording`, not the stale field, so clicking the
+  mislabeled button still does the correct thing — but it fails the
+  acceptance criterion below as literally written. Confirmed with the user
+  (2026-08-11): fix now, before T3.
+
+### Original spec (for reference)
+**Depends on:** T1 (done), T1.5 (done).
 **Touches:** `MeetingAssistant.App.csproj` (new package), `App.xaml.cs`,
 `MainWindow.xaml.cs`, new file(s) under `src/MeetingAssistant.App/Services/`.
 
@@ -387,6 +459,11 @@ through the coordinator (tray itself, hotkey in T3, RecordPage button).
 - Starting a recording from the tray menu, then opening the main window,
   shows `RecordPage` already reflecting `IsRecording = true` (via
   `RecordViewModel`'s T1 constructor seeding — no extra work needed here).
+  **Correction from validation:** this does not hold once the window is
+  hidden-and-reshown rather than freshly constructed — `RecordViewModel` is
+  only seeded once, at launch. Constructor-seeding alone was sufficient for
+  T1 (fresh construction per navigation) but not sufficient once T2 makes
+  the window/page long-lived. See T2.1 immediately below.
 - Starting a recording via `POST /recording/start` (HTTP, not tray), then
   right-clicking the tray icon, shows "Detener grabación" — not a stale
   "Grabar reunión" — proving the label is read live and doesn't depend on
@@ -403,10 +480,99 @@ through the coordinator (tray itself, hotkey in T3, RecordPage button).
 
 ---
 
+## T2.1 — Fix stale RecordPage state after external triggers
+
+**Status: 🔴 TODO — blocks T3.**
+**Depends on:** T2 (done).
+**Touches:** `src/MeetingAssistant.App/ViewModels/RecordViewModel.cs` only.
+
+### Why
+`MainWindow` and its `RecordPage` are constructed exactly once, at app
+launch (`MainWindow`'s constructor calls `ContentFrame.Navigate(typeof(RecordPage))`
+a single time; `TrayIconService.ShowFromTray()`-equivalent
+(`MainWindow.ShowFromTray()`) only un-hides the existing window — it never
+re-navigates). `RecordViewModel` reads `RecordingCoordinator.IsRecording`/
+`IsProcessing` once, in its constructor, and never again. Once a recording
+can be started by something other than this specific `RecordViewModel`
+instance — the tray toggle, the HTTP endpoint, and (after T3) the global
+hotkey all call `RecordingCoordinator`/`IMeetingPipeline` directly — the
+already-alive `RecordPage` has no way to find out. The button label and
+`StatusMessage` go stale until the user interacts with the page again.
+
+This is UI-display-only: `ToggleRecordingAsync` correctly branches on the
+live `_recordingCoordinator.IsRecording`, not the stale `IsRecording`
+property, so no wrong action can be triggered — but a user watching a stale
+"Grabar reunión" while a meeting is actually being recorded is a real,
+user-visible correctness problem for a tool whose entire job is not missing
+what happens in a meeting.
+
+### Implementation
+1. In `RecordViewModel`'s constructor, after seeding `IsRecording`/
+   `IsProcessing`/`StatusMessage` from the coordinator (existing code, keep
+   it — it's still correct for the first paint), subscribe to
+   `_recordingCoordinator.StateChanged`, `RecordingCompleted`, and
+   `RecordingFailed`.
+2. On `StateChanged`: re-read `_recordingCoordinator.IsRecording` and
+   `IsProcessing` into the observable properties, and recompute
+   `StatusMessage` the same way the constructor does ("Grabando..." /
+   "Procesando..." / "Listo para grabar.") — factor that three-way branch
+   into a small private helper so the constructor and the event handler
+   don't duplicate the string logic.
+3. On `RecordingCompleted`: update `LastTranscript`/`LastSavedReportPath`/
+   `StatusMessage` from the event's `Result`, mirroring what `StopAsync()`
+   already does on success — this is what makes a tray/HTTP/hotkey-triggered
+   completion show up correctly if the user opens the window afterward,
+   not just a start.
+4. On `RecordingFailed`: update `StatusMessage`/`ErrorDetails` from the
+   event's `Exception`, mirroring the existing catch blocks.
+5. These handlers fire on whatever thread raises the event — `RecordingCoordinator`
+   invokes them synchronously from inside `StartRecordingAsync`/
+   `StopRecordingAndProcessAsync`, which for the tray path runs on the UI
+   thread already (WinUI event handlers), but the HTTP path
+   (`LocalRecordingApiServer.HandleRequestAsync`) explicitly calls
+   `IMeetingPipeline` directly, **not** through `RecordingCoordinator` — so
+   HTTP-triggered actions still won't raise these events at all (this is the
+   same T1-documented gap, not new). Marshal to the UI thread defensively
+   anyway (e.g. `DispatcherQueue.TryEnqueue`) for whichever paths *do* raise
+   the event through a non-UI thread, since `ObservableObject` property
+   setters raising `PropertyChanged` off the UI thread will throw or corrupt
+   binding in WinUI.
+6. Since `RecordViewModel` is never explicitly disposed (it's `Transient`
+   but in practice only one instance is ever alive for the lifetime of this
+   single-window app), an unsubscribe isn't strictly required for a leak —
+   but if `RecordViewModel` gains an `IDisposable`/cleanup path for any
+   other reason later, unsubscribe there. Don't add one solely for this.
+7. Do **not** attempt to fix the separate HTTP-bypasses-the-coordinator gap
+   here — that's pre-existing, documented in T1's validation notes, and out
+   of scope for this fix. If you want HTTP-triggered actions to also update
+   a hidden `RecordPage` live, that requires routing `LocalRecordingApiServer`
+   through `RecordingCoordinator` instead of `IMeetingPipeline` directly,
+   which is a bigger architectural change than this task — raise it
+   separately if it matters to you.
+
+### Acceptance criteria
+- Start a recording from the tray menu (window hidden). Click "Abrir ventana
+  principal." `RecordPage` immediately shows "Detener grabación" and
+  "Grabando..." — not stale text from launch.
+- Stop that recording from the tray menu. Reopen the window (if closed) —
+  `RecordPage` shows the saved report path and transcript, same as if the
+  button on `RecordPage` itself had been clicked.
+- Force a failure while recording started from the tray (e.g. temporarily
+  break the LLM API key), stop it from the tray — reopening the window shows
+  the error in `StatusMessage`/`ErrorDetails`, not a stale "Listo para
+  grabar."
+- Starting/stopping directly from the `RecordPage` button (not tray) still
+  behaves exactly as before — no regression to the existing, already-correct
+  path.
+- `dotnet build MeetingAssistant.sln` succeeds.
+
+---
+
 ## T3 — Global hotkey to start/stop recording
 
-**Depends on:** T2 (needs the app alive without a visible window for the
-hotkey to be useful at all).
+**Depends on:** T2 (done), T2.1 (must land first — same reasoning as T1.5
+blocking T2: get the state-sync story consistent before adding a third
+trigger source).
 **Touches:** new file(s) under `src/MeetingAssistant.App/Services/`,
 `App.xaml.cs`/`MainWindow.xaml.cs` wiring.
 
