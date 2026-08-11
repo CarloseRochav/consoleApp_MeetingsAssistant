@@ -18,11 +18,7 @@ namespace MeetingAssistant.Infrastructure.Api;
 /// endpoint enciende el micrófono del usuario, no es un endpoint informativo
 /// cualquiera.
 ///
-/// El prefijo del listener es "+" (todas las interfaces), necesario para
-/// aceptar el Host header que reenvía un túnel (p.ej. cloudflared), pero eso
-/// NO expone el server a la red: HandleRequestAsync solo procesa requests
-/// cuyo RemoteEndPoint es loopback, así que un origen que no sea el propio
-/// cloudflared local (o un cliente en la misma máquina) recibe 403.
+/// Solo escucha en localhost, nunca en 0.0.0.0 ni en todas las interfaces.
 /// </summary>
 public sealed class LocalRecordingApiServer : IDisposable
 {
@@ -43,13 +39,8 @@ public sealed class LocalRecordingApiServer : IDisposable
 
         int port = configuration.GetValue<int?>("Api:Port") ?? 5757;
 
-        // Prefijo "+" (no "localhost"): HttpListener rechaza con 400 cualquier
-        // request cuyo Host header no calce con el prefijo registrado, y
-        // cloudflared reenvía el hostname público original, no "localhost".
-        // La seguridad la sigue dando el chequeo de loopback más abajo, no
-        // el prefijo — ver comentario de clase.
         _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://+:{port}/");
+        _listener.Prefixes.Add($"http://localhost:{port}/");
     }
 
     public void Start()

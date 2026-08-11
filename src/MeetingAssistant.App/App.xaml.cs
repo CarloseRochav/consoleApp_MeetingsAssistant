@@ -1,6 +1,5 @@
 using MeetingAssistant.App.Services;
 using MeetingAssistant.App.ViewModels;
-using MeetingAssistant.App.Services;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Infrastructure.Api;
 using MeetingAssistant.Infrastructure.Audio;
@@ -16,7 +15,10 @@ namespace MeetingAssistant.App;
 
 public partial class App : Application
 {
-    private Window? window;
+    private MainWindow? _window;
+    private LocalRecordingApiServer? _apiServer;
+    private TrayIconService? _trayIconService;
+    private bool _isExiting;
 
     public App()
     {
@@ -30,27 +32,17 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        LocalRecordingApiServer apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
-        CloudflareTunnelService tunnel = Services.GetRequiredService<CloudflareTunnelService>();
-        apiServer.Start();
-        try
-        {
-            tunnel.Start();
-        }
-        catch
-        {
-            apiServer.Stop();
-            throw;
-        }
+        _apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
+        _apiServer.Start();
 
-        window = Services.GetRequiredService<MainWindow>();
-        MainWindow = window;
-        window.Closed += (_, _) =>
-        {
-            tunnel.Stop();
-            apiServer.Stop();
-        };
-        window.Activate();
+        _window = Services.GetRequiredService<MainWindow>();
+        MainWindow = _window;
+        _window.Activate();
+
+        _trayIconService = Services.GetRequiredService<TrayIconService>();
+        _trayIconService.AttachTo(_window);
+        _trayIconService.OpenMainWindowRequested += (_, _) => _window.ShowFromTray();
+        _trayIconService.ExitRequested += async (_, _) => await ExitApplicationAsync();
     }
 
     private static IServiceProvider ConfigureServices()
@@ -77,12 +69,39 @@ public partial class App : Application
             provider.GetRequiredService<IReportStorage>(),
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
         services.AddSingleton<RecordingCoordinator>();
+        services.AddSingleton<TrayIconService>();
         services.AddSingleton<LocalRecordingApiServer>();
-        services.AddSingleton<CloudflareTunnelService>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();
 
         return services.BuildServiceProvider();
+    }
+
+    private async Task ExitApplicationAsync()
+    {
+        if (_isExiting || _window is null || _apiServer is null) return;
+
+        RecordingCoordinator coordinator = Services.GetRequiredService<RecordingCoordinator>();
+        if (coordinator.IsRecording || coordinator.IsProcessing)
+        {
+            var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+            {
+                XamlRoot = ((FrameworkElement)_window.Content).XamlRoot,
+                Title = "Hay una grabación en curso",
+                Content = "¿Salir de todas formas? Se perderá la grabación.",
+                PrimaryButtonText = "Salir sin guardar",
+                CloseButtonText = "Cancelar",
+                DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close
+            };
+
+            if (await dialog.ShowAsync() != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
+        }
+
+        _isExiting = true;
+        _apiServer.Stop();
+        _trayIconService?.Dispose();
+        _window.BeginExitFromTray();
+        Exit();
     }
 
     private static ILlmClient CreateLlmClient(IConfiguration configuration)
