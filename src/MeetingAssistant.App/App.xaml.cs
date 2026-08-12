@@ -39,10 +39,38 @@ public partial class App : Application
         MainWindow = _window;
         _window.Activate();
 
-        _trayIconService = Services.GetRequiredService<TrayIconService>();
-        _trayIconService.AttachTo(_window);
-        _trayIconService.OpenMainWindowRequested += (_, _) => _window.ShowFromTray();
-        _trayIconService.ExitRequested += async (_, _) => await ExitApplicationAsync();
+        try
+        {
+            _trayIconService = Services.GetRequiredService<TrayIconService>();
+            _trayIconService.AttachTo(_window);
+            _trayIconService.OpenMainWindowRequested += (_, _) => _window.ShowFromTray();
+            _trayIconService.ExitRequested += async (_, _) => await ExitApplicationAsync();
+        }
+        catch (Exception exception)
+        {
+            // El icono de bandeja es una conveniencia, no una dependencia
+            // crítica: si falla al crearse (driver de shell, versión de
+            // Windows, recurso de icono, etc.), la app debe seguir siendo
+            // usable desde la ventana principal en vez de crashear por
+            // completo. Se registra en texto plano porque este código corre
+            // antes de que exista cualquier UI para mostrar el error.
+            LogStartupFailure("TrayIconService.AttachTo", exception);
+        }
+    }
+
+    private static void LogStartupFailure(string context, Exception exception)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "startup-errors.log");
+            string entry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{context}] {exception}\n\n";
+            File.AppendAllText(path, entry);
+        }
+        catch
+        {
+            // Si ni siquiera se puede escribir el log de diagnóstico, no hay
+            // nada más que hacer aquí sin arriesgar un segundo crash.
+        }
     }
 
     private static IServiceProvider ConfigureServices()

@@ -11,7 +11,7 @@ is the plan a developer executes against.
 |---|---|
 | T1 — Centralize recording state | ✅ DONE (validated 2026-08-11) |
 | T1.5 — Revert unauthorized network exposure | ✅ DONE (validated 2026-08-11) |
-| T2 — Tray icon + hide-to-tray | ✅ DONE (validated 2026-08-11, with a follow-up) |
+| T2 — Tray icon + hide-to-tray | 🟡 Code fixed 2026-08-12 after a launch crash — **needs user re-confirmation** |
 | T2.1 — Fix stale RecordPage state after external triggers | 🔴 TODO — **blocks T3** |
 | T3–T6 | ⬜ Not started — T3 instructions below, ready once T2.1 lands |
 
@@ -307,13 +307,48 @@ commit `9183e0e`.
   this task graph, plus a safety touch (safe default button) beyond what was
   specified.
 - `dotnet build MeetingAssistant.sln` succeeds; no new `Core` reference.
-- **Not independently re-verified:** the interactive GUI acceptance criteria
-  (actually clicking the tray icon, watching the window hide/show, seeing
-  Task Manager) — no interactive Windows GUI session available in this
-  review pass. Validated by code reading + build, per the file-level
-  reasoning above, not by running the packaged app end to end. Recommend an
-  actual `dotnet run --project src/MeetingAssistant.App` smoke test on your
-  end before relying on this in daily use.
+- **Update 2026-08-12 — the recommended smoke test caught a real crash:**
+  the user ran the packaged app and it crashed on every single launch.
+  Windows Event Viewer (`Get-WinEvent`, `Application` log, source
+  "Application Error") showed the exact same fault on all 3 attempts:
+  `Exception code: 0xc000027b` (`STATUS_STOWED_EXCEPTION`) in
+  `Microsoft.UI.Xaml.dll`, identical fault offset every time. This code
+  means an unhandled managed exception escaped a WinRT-invoked callback on
+  the UI thread — confirmed as a known WinUI 3 pattern via web search
+  (microsoft/microsoft-ui-xaml#9793 and related issues describe the same
+  `0xC000027B` signature for exactly this "exception escapes an event
+  handler" case). Deterministic, every-launch reproduction pointed at
+  unconditional startup code, and the only new unconditional startup code
+  from T2 is `TrayIconService.AttachTo()`.
+  - **Root cause (best-evidence diagnosis, not a debugger-confirmed stack
+    trace — see caveat below):** `TrayIconService.AttachTo()` set
+    `TaskbarIcon.IconSource = new BitmapImage(new Uri("ms-appx:///Assets/AppIcon.ico"))`.
+    H.NotifyIcon converts `IconSource` to a native `HICON` synchronously
+    inside `ForceCreate()`; a multi-frame `.ico` loaded through
+    `BitmapImage` is not a reliably decodable source for that conversion.
+  - **Fix applied directly** (this was a live crash blocking the user, not
+    task-graph planning work): swapped the icon source to
+    `Assets/Square44x44Logo.targetsize-24_altform-unplated.png` — the 24px
+    unplated PNG Windows already generates for exactly this taskbar/tray
+    use case, already present in the project's `Assets/` and already
+    referenced as `Content` in the `.csproj`. Also wrapped
+    `_trayIconService.AttachTo(_window)` in `App.xaml.cs` in a try/catch
+    that logs the full exception to `startup-errors.log` (next to the exe)
+    and lets the app continue without a tray icon rather than hard-crashing
+    — the tray icon is a convenience, not a critical dependency, and this
+    also means if the PNG fix is wrong, the *next* crash produces a real
+    logged stack trace instead of an opaque native fault code.
+    `dotnet build MeetingAssistant.sln` still succeeds (0 errors).
+  - **Caveat — genuinely unverified:** this diagnosis was built from Event
+    Viewer's native fault record, not a managed stack trace (no debugger
+    was attached with "Common Language Runtime Exceptions" enabled at
+    crash time — recommend enabling that in VS's Debug > Windows >
+    Exception Settings going forward so any *next* crash gives the exact
+    exception/line immediately instead of requiring this kind of
+    reconstruction). The fix could not be re-run and confirmed from this
+    session (no interactive GUI access). **User must confirm the app now
+    launches without crashing before T2 is trusted as done**, and check
+    `startup-errors.log` if it still doesn't.
 - **Real gap found, spun into T2.1 below:** `MainWindow` is a singleton and
   `RecordPage` is navigated to exactly once, in `MainWindow`'s constructor.
   `ShowFromTray()` only un-hides that same window — it never re-navigates.

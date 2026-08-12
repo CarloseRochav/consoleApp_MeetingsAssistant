@@ -43,10 +43,19 @@ public sealed class TrayIconService : IDisposable
         exitItem.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
         menu.Items.Add(exitItem);
 
+        // IMPORTANT: use a plain raster asset here, not Assets/AppIcon.ico.
+        // H.NotifyIcon converts IconSource to a native HICON synchronously
+        // during ForceCreate(); a multi-frame .ico loaded through
+        // BitmapImage is not a reliably decodable source for that
+        // conversion and was reproducing a hard, unhandled-exception crash
+        // (STATUS_STOWED_EXCEPTION / 0xC000027B in Microsoft.UI.Xaml.dll,
+        // confirmed via Windows Event Viewer) on every launch. The 24px
+        // unplated PNG is the asset Windows itself generates for exactly
+        // this taskbar/tray use case.
         _trayIcon = new TaskbarIcon
         {
             ToolTipText = "Meeting Assistant",
-            IconSource = new BitmapImage(new Uri("ms-appx:///Assets/AppIcon.ico")),
+            IconSource = new BitmapImage(new Uri("ms-appx:///Assets/Square44x44Logo.targetsize-24_altform-unplated.png")),
             ContextFlyout = menu
         };
         _trayIcon.ForceCreate();
