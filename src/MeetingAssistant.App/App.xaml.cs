@@ -24,6 +24,16 @@ public partial class App : Application
     {
         Services = ConfigureServices();
         InitializeComponent();
+        UnhandledException += OnUnhandledException;
+    }
+
+    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        // Red de seguridad de diagnóstico: captura cualquier excepción no
+        // manejada en el hilo de UI (incluidas las que ocurren en callbacks
+        // asíncronos, fuera del alcance de los try/catch en OnLaunched) para
+        // que quede registrada en vez de perderse en un fallo nativo opaco.
+        LogStartupFailure("Application.UnhandledException", e.Exception);
     }
 
     public static IServiceProvider Services { get; private set; } = null!;

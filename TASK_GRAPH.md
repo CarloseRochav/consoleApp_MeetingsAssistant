@@ -14,6 +14,7 @@ is the plan a developer executes against.
 | T2 — Tray icon + hide-to-tray | 🟡 Code fixed 2026-08-12 after a launch crash — **needs user re-confirmation** |
 | T2.1 — Fix stale RecordPage state after external triggers | 🔴 TODO — **blocks T3** |
 | T3–T6 | ⬜ Not started — T3 instructions below, ready once T2.1 lands |
+| T7 — Joplin as alternative report storage backend | ⬜ Not started — independent, does not block/depend on T3–T6 |
 
 ## Current-state findings (verified against code, not assumed)
 
@@ -80,6 +81,9 @@ T1 (centralize recording state) ── DONE
                     └─> T4 (toast notification on report ready / on error)
   └─> T5 (optional autostart via StartupTask)
 T2, T5 ─────────────────────────────────────────> T6 (MSIX signing + local install)
+
+T7 (Joplin storage backend) ── independent, depends on nothing above,
+                                blocks nothing above (parallel branch)
 ```
 
 T1 is the prerequisite for everything else. T1.5 and T2.1 were not part of
@@ -774,6 +778,122 @@ generated in-repo is not currently excluded — verify and add if needed).
 - Uninstalling via Windows Settings > Apps cleanly removes the app (no
   orphaned startup task registration, no orphaned tray icon process).
 - The signing certificate file is not present in `git status` / not tracked.
+
+---
+
+## T7 — Joplin as alternative report storage backend
+
+**Status: ⬜ Not started.**
+**Depends on:** nothing above — `IReportStorage` already exists and is
+provider-agnostic (see `Core/Abstractions/IReportStorage.cs`'s own doc
+comment: "la implementación concreta ... vive en Infrastructure — Obsidian
+vault, SQLite, lo que sea"). Not part of the original roadmap's Fase 3 list;
+added at the user's request (2026-08-12) as an alternative to the
+Obsidian-vault storage.
+**Touches:** new file
+`src/MeetingAssistant.Infrastructure/Storage/JoplinReportStorage.cs`, a small
+refactor of `MarkdownReportStorage.cs` to share its markdown-rendering logic,
+`App.xaml.cs` (`ConfigureServices`, mirroring the existing
+`CreateLlmClient` provider-switch pattern), `appsettings.example.json`.
+
+### Why this design (not a file-drop into a synced folder)
+Obsidian works today because `MarkdownReportStorage` just writes a `.md` file
+into a folder Obsidian is already watching — no API involved. Joplin doesn't
+read arbitrary folders the same way: its real storage is an internal
+database, and its "File System" sync target expects files in its own
+sync-item format, not a plain markdown file dropped in by another process.
+The reliable integration point is Joplin's local **Web Clipper REST API**
+(`http://localhost:41184` by default), which the desktop app exposes
+whenever "Enable Web Clipper Service" is on (Options → Web Clipper). This is
+the same shape as this app's own `LocalRecordingApiServer`: loopback-only
+HTTP with a static token, so it fits the codebase's existing pattern for
+talking to a local companion process.
+
+### Implementation
+1. In `MarkdownReportStorage.cs`, extract the existing `Render(MeetingReport,
+   DateTimeOffset)` / `AppendBulletSection` / `FormatPriority` logic into a
+   shared internal static helper (e.g. a new
+   `Infrastructure/Storage/MeetingReportMarkdownRenderer.cs`) so both storage
+   backends produce byte-identical markdown bodies. `MarkdownReportStorage`
+   keeps calling it exactly as before — this is a pure extraction, not a
+   behavior change, so re-run T1's existing acceptance criteria mentally
+   (same file output) rather than re-inventing them.
+2. Add a `Storage:Provider` config value (`"Obsidian"` default if absent —
+   preserves current behavior with zero config changes for existing users;
+   `"Joplin"` opts in), read the same way `Llm:Provider` already is in
+   `App.xaml.cs::CreateLlmClient`.
+3. Add a `Storage:Joplin` config section: `Port` (default `41184` if absent),
+   `AuthToken` (required — the token from Joplin's Web Clipper options page,
+   **not** this app's own `Api:AuthToken`, a different secret), and
+   `NotebookTitle` (required — the Joplin notebook name to save reports
+   into).
+4. Create `JoplinReportStorage : IReportStorage`:
+   - Constructor takes `IConfiguration`, reads the three settings above via
+     the existing `ReadRequiredSetting`/`ReadSetting` helper pattern (or a
+     `JoplinReportStorage`-local equivalent — don't make those helpers public
+     across files just for this; duplicate the ~3 lines if needed).
+   - Owns a single `HttpClient` (base address
+     `http://localhost:{port}/`) — no new NuGet package, `HttpClient` is BCL.
+   - `SaveAsync`: resolve the target notebook id by `GET
+     /folders?token={token}` and matching `title` (case-insensitive) against
+     `NotebookTitle`. If not found, `POST /folders?token={token}` with
+     `{"title": NotebookTitle}` to create it — do this lazily on first save,
+     not at construction, so a Joplin-not-running app still launches fine and
+     only fails when an actual save is attempted (mirrors the roadmap's
+     "just works or fails at the point of use" pattern already used by
+     `LlmClient`/`TranscriptionClient` construction, which also defers
+     failures to first use, not DI construction time).
+   - Render the body via the shared helper from step 1. `POST
+     /notes?token={token}` with JSON `{"title": <same H1 title text used in
+     the markdown>, "body": <rendered markdown>, "parent_id":
+     <resolved-notebook-id>}`.
+   - Return value: `IReportStorage.SaveAsync` returns "la ruta absoluta donde
+     se guardó el reporte" — Joplin notes don't have a filesystem path.
+     Return a `joplin://` deep link if Joplin's note ID scheme supports one
+     cleanly, otherwise return a descriptive pseudo-path like
+     `Joplin:{NotebookTitle}/{noteId}` — whichever you pick, make sure
+     `RecordViewModel.StatusMessage`'s existing `"Reporte guardado en:
+     {result.SavedReportPath}"` string still reads sensibly with it; don't
+     leave a raw GUID with no context.
+   - Any `HttpRequestException` (Joplin not running / Web Clipper disabled)
+     or non-2xx response propagates unchanged — do not catch-and-swallow
+     here. The existing pipeline error path (`RecordingCoordinator` →
+     `RecordingFailed` → `RecordViewModel.ErrorDetails` from T2.1, or the
+     synchronous catch in `MeetingPipeline` if T2.1 hasn't landed yet)
+     already surfaces storage failures correctly; this task must not
+     duplicate or replace that.
+5. In `App.xaml.cs::ConfigureServices`, replace the single
+   `services.AddSingleton<IReportStorage, MarkdownReportStorage>();`
+   registration with a provider switch, same shape as `CreateLlmClient`:
+   `"joplin" => new JoplinReportStorage(configuration), _ => new
+   MarkdownReportStorage(configuration)`.
+6. Add placeholder values to `appsettings.example.json`: `Storage:Provider`
+   commented/example as `"Obsidian"`, and a `Storage:Joplin` block with
+   placeholder `Port`/`AuthToken`/`NotebookTitle` — same placeholder
+   convention already used for `Gemini:ApiKey` etc. (a value starting with
+   `<` so `ReadSetting`'s existing placeholder-detection keeps working).
+
+### Acceptance criteria
+- With `Storage:Provider` absent (or `"Obsidian"`) — zero behavior change.
+  Existing Obsidian-vault save path still works exactly as before; this is
+  the regression test that matters most, since this task refactors the
+  Obsidian implementation's internals (step 1).
+- With `Storage:Provider = "Joplin"`, valid `AuthToken`, and Joplin desktop
+  running with Web Clipper enabled: completing a recording creates a new
+  note in the configured notebook (create the notebook first via Joplin's UI
+  or let the app auto-create it — verify both paths) containing the same
+  summary/insights/requirements/task-list/open-questions structure as the
+  Obsidian markdown output.
+- With `Storage:Provider = "Joplin"` but Joplin desktop **not** running:
+  completing a recording surfaces a clear failure (via
+  `RecordingFailed`/`ErrorDetails` if T2.1 has landed, otherwise via
+  whatever `MeetingPipeline`'s existing synchronous catch does today) — not
+  a silent no-op, not an unhandled exception that crashes the app.
+- `dotnet build MeetingAssistant.sln` succeeds; `MeetingAssistant.Core`
+  still has zero new package references (all of this lives in
+  `Infrastructure`/`App`).
+- `appsettings.example.json` contains only placeholder values for the new
+  `Storage:Joplin` section.
 
 ---
 
