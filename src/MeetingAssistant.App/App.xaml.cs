@@ -1,5 +1,6 @@
 using MeetingAssistant.App.Services;
 using MeetingAssistant.App.ViewModels;
+using MeetingAssistant.App.Views;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Infrastructure.Api;
 using MeetingAssistant.Infrastructure.Audio;
@@ -18,11 +19,31 @@ public partial class App : Application
     private MainWindow? _window;
     private LocalRecordingApiServer? _apiServer;
     private TrayIconService? _trayIconService;
+    private StartupErrorWindow? _errorWindow;
+    private Exception? _configurationFailure;
     private bool _isExiting;
 
     public App()
     {
-        Services = ConfigureServices();
+        // Los manejadores van primero: cualquier cosa que falle después de
+        // esta línea queda registrada en vez de terminar como una "stowed
+        // exception" (0xc000027b) que el sistema entrega al depurador JIT.
+        RegisterGlobalExceptionHandlers();
+
+        // ConfigureServices no puede lanzar desde el constructor: aquí todavía
+        // no existe UI donde mostrar el error y la excepción escaparía al
+        // framework XAML. Se guarda y se reporta en OnLaunched.
+        try
+        {
+            Services = ConfigureServices();
+        }
+        catch (Exception exception)
+        {
+            _configurationFailure = exception;
+            LogStartupFailure("App.ConfigureServices", exception);
+            Services = new ServiceCollection().BuildServiceProvider();
+        }
+
         InitializeComponent();
     }
 
@@ -31,6 +52,29 @@ public partial class App : Application
     public static Window MainWindow { get; private set; } = null!;
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        if (_configurationFailure is not null)
+        {
+            ShowStartupError("App.ConfigureServices", _configurationFailure);
+            return;
+        }
+
+        try
+        {
+            LaunchCore();
+        }
+        catch (Exception exception)
+        {
+            // Sin este catch la excepción sube al framework XAML, se convierte
+            // en 0xc000027b y Windows la entrega al depurador JIT: el usuario
+            // ve un diálogo de depurador y una segunda instancia de Visual
+            // Studio en lugar de un mensaje de error accionable.
+            LogStartupFailure("App.OnLaunched", exception);
+            ShowStartupError("App.OnLaunched", exception);
+        }
+    }
+
+    private void LaunchCore()
     {
         _apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
         _apiServer.Start();
@@ -58,13 +102,83 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// Ruta del log de diagnóstico. Deliberadamente NO usa
+    /// <see cref="AppContext.BaseDirectory"/>: cuando la app corre empaquetada
+    /// el directorio base queda bajo WindowsApps, donde la escritura falla o se
+    /// redirige de forma opaca, y el log se perdía justo en el escenario que
+    /// más importa depurar.
+    /// </summary>
+    public static string StartupErrorLogPath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MeetingAssistant",
+        "startup-errors.log");
+
+    private void RegisterGlobalExceptionHandlers()
+    {
+        // Excepciones no manejadas en el hilo de UI de XAML.
+        UnhandledException += (_, e) =>
+        {
+            LogStartupFailure("Application.UnhandledException", e.Exception);
+            e.Handled = true;
+
+            // La ventana de error solo tiene sentido si la app aún no llegó a
+            // arrancar. Una vez la ventana principal está viva, un fallo suelto
+            // (p. ej. el icono de bandeja, que falla de forma asíncrona y por
+            // eso escapa al try/catch de OnLaunched) deja la app perfectamente
+            // usable: queda en el log y no se interrumpe al usuario.
+            if (_window is null)
+            {
+                ShowStartupError("Application.UnhandledException", e.Exception);
+            }
+        };
+
+        // Hilos que no son el de UI: aquí ya no se puede evitar la terminación
+        // del proceso, pero sí dejar rastro de la causa antes de morir.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception exception)
+            {
+                LogStartupFailure("AppDomain.UnhandledException", exception);
+            }
+        };
+
+        // Excepciones de Task que nadie llegó a observar (por ejemplo, un
+        // async void o un Task descartado durante el arranque).
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogStartupFailure("TaskScheduler.UnobservedTaskException", e.Exception);
+            e.SetObserved();
+        };
+    }
+
+    private void ShowStartupError(string context, Exception exception)
+    {
+        try
+        {
+            // Solo la primera falla abre ventana: si el fallo se repite en
+            // cascada, apilar ventanas de error no aporta información nueva.
+            if (_errorWindow is not null) return;
+
+            _errorWindow = new StartupErrorWindow(context, exception);
+            _errorWindow.Closed += (_, _) => _errorWindow = null;
+            _errorWindow.Activate();
+        }
+        catch (Exception windowException)
+        {
+            // Si ni siquiera se puede abrir la ventana de error, el log ya
+            // escrito por el llamador es el único registro que queda.
+            LogStartupFailure("App.ShowStartupError", windowException);
+        }
+    }
+
     private static void LogStartupFailure(string context, Exception exception)
     {
         try
         {
-            string path = Path.Combine(AppContext.BaseDirectory, "startup-errors.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(StartupErrorLogPath)!);
             string entry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{context}] {exception}\n\n";
-            File.AppendAllText(path, entry);
+            File.AppendAllText(StartupErrorLogPath, entry);
         }
         catch
         {
@@ -80,6 +194,11 @@ public partial class App : Application
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
             .AddEnvironmentVariables()
             .Build();
+
+        // Antes de registrar nada: si falta configuración, es preferible una
+        // lista completa aquí que ir descubriéndola clave a clave según cada
+        // servicio se construya bajo demanda.
+        StartupConfigurationValidator.Validate(configuration);
 
         var services = new ServiceCollection();
         services.AddSingleton(configuration);
