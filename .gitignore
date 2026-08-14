@@ -8,6 +8,10 @@ spike-output/
 *.wav
 transcript-*.txt
 
+# Vault de pruebas: destino local de los reportes cuando no se quiere
+# escribir en el vault real de Obsidian. Contiene contenido de reuniones.
+local-vault/
+
 # Local secrets
 .env
 .env.*

@@ -1,7 +1,8 @@
 # Task Graph — Fase 3: Integración al flujo de trabajo diario
 
 **Source:** `roadmap-meeting-ai-assistant.md`, "Fase 3 — Integración al flujo de trabajo diario".
-**Author:** Lead Software Architect analysis, 2026-08-07. Updated 2026-08-11.
+**Author:** Lead Software Architect analysis, 2026-08-07. Updated 2026-08-11,
+2026-08-13 (T7 — startup diagnostics; corrects the T2 tray-icon diagnosis).
 **Scope:** implementation steps to close Fase 3. No source code included below — this
 is the plan a developer executes against.
 
@@ -11,10 +12,10 @@ is the plan a developer executes against.
 |---|---|
 | T1 — Centralize recording state | ✅ DONE (validated 2026-08-11) |
 | T1.5 — Revert unauthorized network exposure | ✅ DONE (validated 2026-08-11) |
-| T2 — Tray icon + hide-to-tray | 🟡 Code fixed 2026-08-12 after a launch crash — **needs user re-confirmation** |
+| T2 — Tray icon + hide-to-tray | 🔴 **Tray icon still broken** — the 2026-08-12 PNG fix did not work; now confirmed with a real managed stack trace (2026-08-13, see T7). Hide-to-tray works, which makes this a usability trap |
 | T2.1 — Fix stale RecordPage state after external triggers | 🔴 TODO — **blocks T3** |
 | T3–T6 | ⬜ Not started — T3 instructions below, ready once T2.1 lands |
-| T7 — Joplin as alternative report storage backend | ⬜ Not started — independent, does not block/depend on T3–T6 |
+| T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
 
 ## Current-state findings (verified against code, not assumed)
 
@@ -781,119 +782,156 @@ generated in-repo is not currently excluded — verify and add if needed).
 
 ---
 
-## T7 — Joplin as alternative report storage backend
+## T7 — Startup diagnostics, configuration validation, and the 2026-08-13 launch crash
 
-**Status: ⬜ Not started.**
-**Depends on:** nothing above — `IReportStorage` already exists and is
-provider-agnostic (see `Core/Abstractions/IReportStorage.cs`'s own doc
-comment: "la implementación concreta ... vive en Infrastructure — Obsidian
-vault, SQLite, lo que sea"). Not part of the original roadmap's Fase 3 list;
-added at the user's request (2026-08-12) as an alternative to the
-Obsidian-vault storage.
-**Touches:** new file
-`src/MeetingAssistant.Infrastructure/Storage/JoplinReportStorage.cs`, a small
-refactor of `MarkdownReportStorage.cs` to share its markdown-rendering logic,
-`App.xaml.cs` (`ConfigureServices`, mirroring the existing
-`CreateLlmClient` provider-switch pattern), `appsettings.example.json`.
+**Status: ✅ DONE** — built, run and verified 2026-08-13. Unplanned work: this
+started as a live crash blocking the user, not as task-graph planning.
 
-### Why this design (not a file-drop into a synced folder)
-Obsidian works today because `MarkdownReportStorage` just writes a `.md` file
-into a folder Obsidian is already watching — no API involved. Joplin doesn't
-read arbitrary folders the same way: its real storage is an internal
-database, and its "File System" sync target expects files in its own
-sync-item format, not a plain markdown file dropped in by another process.
-The reliable integration point is Joplin's local **Web Clipper REST API**
-(`http://localhost:41184` by default), which the desktop app exposes
-whenever "Enable Web Clipper Service" is on (Options → Web Clipper). This is
-the same shape as this app's own `LocalRecordingApiServer`: loopback-only
-HTTP with a static token, so it fits the codebase's existing pattern for
-talking to a local companion process.
+### How it presented
 
-### Implementation
-1. In `MarkdownReportStorage.cs`, extract the existing `Render(MeetingReport,
-   DateTimeOffset)` / `AppendBulletSection` / `FormatPriority` logic into a
-   shared internal static helper (e.g. a new
-   `Infrastructure/Storage/MeetingReportMarkdownRenderer.cs`) so both storage
-   backends produce byte-identical markdown bodies. `MarkdownReportStorage`
-   keeps calling it exactly as before — this is a pure extraction, not a
-   behavior change, so re-run T1's existing acceptance criteria mentally
-   (same file output) rather than re-inventing them.
-2. Add a `Storage:Provider` config value (`"Obsidian"` default if absent —
-   preserves current behavior with zero config changes for existing users;
-   `"Joplin"` opts in), read the same way `Llm:Provider` already is in
-   `App.xaml.cs::CreateLlmClient`.
-3. Add a `Storage:Joplin` config section: `Port` (default `41184` if absent),
-   `AuthToken` (required — the token from Joplin's Web Clipper options page,
-   **not** this app's own `Api:AuthToken`, a different secret), and
-   `NotebookTitle` (required — the Joplin notebook name to save reports
-   into).
-4. Create `JoplinReportStorage : IReportStorage`:
-   - Constructor takes `IConfiguration`, reads the three settings above via
-     the existing `ReadRequiredSetting`/`ReadSetting` helper pattern (or a
-     `JoplinReportStorage`-local equivalent — don't make those helpers public
-     across files just for this; duplicate the ~3 lines if needed).
-   - Owns a single `HttpClient` (base address
-     `http://localhost:{port}/`) — no new NuGet package, `HttpClient` is BCL.
-   - `SaveAsync`: resolve the target notebook id by `GET
-     /folders?token={token}` and matching `title` (case-insensitive) against
-     `NotebookTitle`. If not found, `POST /folders?token={token}` with
-     `{"title": NotebookTitle}` to create it — do this lazily on first save,
-     not at construction, so a Joplin-not-running app still launches fine and
-     only fails when an actual save is attempted (mirrors the roadmap's
-     "just works or fails at the point of use" pattern already used by
-     `LlmClient`/`TranscriptionClient` construction, which also defers
-     failures to first use, not DI construction time).
-   - Render the body via the shared helper from step 1. `POST
-     /notes?token={token}` with JSON `{"title": <same H1 title text used in
-     the markdown>, "body": <rendered markdown>, "parent_id":
-     <resolved-notebook-id>}`.
-   - Return value: `IReportStorage.SaveAsync` returns "la ruta absoluta donde
-     se guardó el reporte" — Joplin notes don't have a filesystem path.
-     Return a `joplin://` deep link if Joplin's note ID scheme supports one
-     cleanly, otherwise return a descriptive pseudo-path like
-     `Joplin:{NotebookTitle}/{noteId}` — whichever you pick, make sure
-     `RecordViewModel.StatusMessage`'s existing `"Reporte guardado en:
-     {result.SavedReportPath}"` string still reads sensibly with it; don't
-     leave a raw GUID with no context.
-   - Any `HttpRequestException` (Joplin not running / Web Clipper disabled)
-     or non-2xx response propagates unchanged — do not catch-and-swallow
-     here. The existing pipeline error path (`RecordingCoordinator` →
-     `RecordingFailed` → `RecordViewModel.ErrorDetails` from T2.1, or the
-     synchronous catch in `MeetingPipeline` if T2.1 hasn't landed yet)
-     already surfaces storage failures correctly; this task must not
-     duplicate or replace that.
-5. In `App.xaml.cs::ConfigureServices`, replace the single
-   `services.AddSingleton<IReportStorage, MarkdownReportStorage>();`
-   registration with a provider switch, same shape as `CreateLlmClient`:
-   `"joplin" => new JoplinReportStorage(configuration), _ => new
-   MarkdownReportStorage(configuration)`.
-6. Add placeholder values to `appsettings.example.json`: `Storage:Provider`
-   commented/example as `"Obsidian"`, and a `Storage:Joplin` block with
-   placeholder `Port`/`AuthToken`/`NotebookTitle` — same placeholder
-   convention already used for `Gemini:ApiKey` etc. (a value starting with
-   `<` so `ReadSetting`'s existing placeholder-detection keeps working).
+The user reported that running the app showed "a message about an invalid
+debugger installed" and then **opened a second Visual Studio instance**. That
+framing is misleading and cost time on the previous attempt too — worth
+recording so nobody re-diagnoses it as a broken IDE:
 
-### Acceptance criteria
-- With `Storage:Provider` absent (or `"Obsidian"`) — zero behavior change.
-  Existing Obsidian-vault save path still works exactly as before; this is
-  the regression test that matters most, since this task refactors the
-  Obsidian implementation's internals (step 1).
-- With `Storage:Provider = "Joplin"`, valid `AuthToken`, and Joplin desktop
-  running with Web Clipper enabled: completing a recording creates a new
-  note in the configured notebook (create the notebook first via Joplin's UI
-  or let the app auto-create it — verify both paths) containing the same
-  summary/insights/requirements/task-list/open-questions structure as the
-  Obsidian markdown output.
-- With `Storage:Provider = "Joplin"` but Joplin desktop **not** running:
-  completing a recording surfaces a clear failure (via
-  `RecordingFailed`/`ErrorDetails` if T2.1 has landed, otherwise via
-  whatever `MeetingPipeline`'s existing synchronous catch does today) — not
-  a silent no-op, not an unhandled exception that crashes the app.
-- `dotnet build MeetingAssistant.sln` succeeds; `MeetingAssistant.Core`
-  still has zero new package references (all of this lives in
-  `Infrastructure`/`App`).
-- `appsettings.example.json` contains only placeholder values for the new
-  `Storage:Joplin` section.
+```
+app throws unhandled  →  escapes to XAML framework  →  0xc000027b
+                      →  Windows Error Reporting
+                      →  AeDebug = vsjitdebugger.exe, Auto unset
+                      →  JIT debugger dialog  →  "new instance of Visual Studio"
+```
+
+The second VS window is Windows' Just-In-Time debugger doing exactly what it is
+configured to do. **The Visual Studio installation was never the problem.** Do
+not "repair" VS, and do not disable JIT debugging — that only hides the next
+crash.
+
+### Root cause (confirmed, not inferred)
+
+`appsettings.json` had drifted from `appsettings.example.json`: the example
+documents an `Api` section (`Port`, `AuthToken`), the real local file had no
+`Api` section at all. `LocalRecordingApiServer`'s **constructor** throws when
+`Api:AuthToken` is missing — correctly, since that endpoint opens the
+microphone. DI resolved it inside `App.OnLaunched`, nothing caught it, and it
+became the `0xc000027b` above.
+
+Note this is a *different* cause from the 2026-08-12 crash recorded under T2,
+which was diagnosed as the tray icon. Both produced an identical native fault
+signature, which is exactly why that signature is not sufficient evidence on
+its own.
+
+### Diagnostic evidence gathered (for reuse next time)
+
+| Check | Command | Result at the time |
+|---|---|---|
+| Fault record | `Get-WinEvent` Application log, `Application Error` | `0xc000027b` in `Microsoft.UI.Xaml.dll` |
+| Package registration | `Get-AppxPackage` | registered dev-mode, `Status: Ok` |
+| Developer Mode | `HKLM:\...\AppModelUnlock` | enabled |
+| Debug registration | `HKCU:\...\ActivatableClasses\Package\<PFN>\DebugInformation` | absent — ruled out a stale debugger hook |
+| JIT config | `HKLM:\...\AeDebug` | `vsjitdebugger.exe`, `Auto` unset → prompts |
+
+### What was implemented
+
+1. **`Views/StartupErrorWindow.cs` (new)** — last-resort error window, built
+   entirely in code with no XAML and no `InitializeComponent`. Deliberate: it
+   must be able to report failures that happened *while* loading XAML or
+   building the DI container, so it cannot depend on either.
+2. **`App.xaml.cs`** — `RegisterGlobalExceptionHandlers()` runs first in the
+   constructor (XAML `UnhandledException`, `AppDomain.CurrentDomain.UnhandledException`,
+   `TaskScheduler.UnobservedTaskException`); `ConfigureServices()` can no longer
+   throw out of the constructor (failure is stashed and reported from
+   `OnLaunched`); `OnLaunched`'s body moved into `LaunchCore()` inside a
+   try/catch. The error window is only shown while `_window is null` — once the
+   main window is alive, a stray async failure is logged but does not interrupt
+   the user.
+3. **`Services/StartupConfigurationValidator.cs` (new)** — runs before anything
+   is registered and reports **every** missing key at once instead of failing on
+   the first. Provider-aware (`Llm:Provider` decides whether Gemini or
+   AzureFoundry credentials are required); `AzureFoundry:ApiKey` is deliberately
+   optional because Azure.Identity is a valid alternative. Uses the same
+   placeholder rule as `App.ReadSetting` (a value starting with `<` counts as
+   missing) so validating and reading cannot disagree.
+
+### Log location — corrected, this is easy to get wrong
+
+`startup-errors.log` was moved off `AppContext.BaseDirectory` (unwritable under
+`WindowsApps` when packaged — which is why no log ever appeared despite repeated
+crashes) to `LocalApplicationData`. **But for a packaged run Windows redirects
+that into the package container:**
+
+```
+%LOCALAPPDATA%\Packages\962A0BC5-...__1z32rh13vfry6\LocalCache\Local\MeetingAssistant\startup-errors.log
+```
+
+Not `%LOCALAPPDATA%\MeetingAssistant\`. Looking in the unredirected path makes a
+working log look like a broken one.
+
+### Verification actually performed (not read-only)
+
+- `dotnet build MeetingAssistant.sln` — 0 errors, 0 warnings.
+- App launches, stays up, port 5757 listening, `POST /recording/stop` without a
+  token returns **401**.
+- Validator exercised for real by removing `Api:AuthToken` **and**
+  `AzureFoundry:Deployment`, then running the packaged app — both were reported
+  together in one message. Config restored and re-verified afterward.
+
+### Correction to the T2 tray-icon diagnosis above
+
+The 2026-08-12 fix (swap `Assets/AppIcon.ico` → `Assets/Square44x44Logo.targetsize-24_altform-unplated.png`,
+`TrayIconService.cs:58`) **did not work, and made the failure harder to see.**
+First real managed stack trace, captured 2026-08-13:
+
+```
+System.ArgumentException: Argument 'picture' must be a picture that can be used as a Icon.
+   at System.Drawing.Icon.Initialize(...)
+   at H.NotifyIcon.StreamExtensions.ToSmallIcon(Stream stream)
+   at H.NotifyIcon.ImageExtensions.ToIconAsync(ImageSource, CancellationToken)
+   at H.NotifyIcon.TaskbarIcon.<OnIconSourceChanged>d__163.MoveNext()
+```
+
+`ToSmallIcon` feeds the stream to `System.Drawing.Icon(Stream)`, which requires
+an **ICO** stream. A PNG is *less* usable there than the original `.ico`, not
+more. It now fails **asynchronously** (a `Task` continuation posted to the
+dispatcher), so the `try/catch` around `AttachTo()` never sees it — which is why
+it stayed invisible until the global handlers from T7 caught it.
+
+**Consequence — a real usability trap, not cosmetic:** `MainWindow` handles
+close with `args.Cancel = true; AppWindow.Hide()`. With no working tray icon,
+closing the window leaves the process running and unreachable, still holding
+port 5757 — so the *next* launch fails to bind with
+`HttpListenerException (183): ... conflicts with an existing registration`.
+This was hit twice during testing.
+
+**Correct fix (not yet applied):** supply a small single-frame **BMP-encoded
+`.ico`** (16×16/32×32) as a dedicated tray asset, added as `Content` in the
+`.csproj`, and point `IconSource` at it. Do not use a PNG, and do not use the
+multi-frame `AppIcon.ico`. Re-confirm by launching and checking the log is
+clean.
+
+### Related config changes made in the same session
+
+- `Storage:VaultPath` in both `appsettings.json` files pointed at a directory
+  that did not exist (4 missing segments). `MarkdownReportStorage.cs:34` calls
+  `Directory.CreateDirectory`, so this would **not** have thrown — it would have
+  silently created an empty tree and written reports somewhere that is not the
+  Obsidian vault. At the user's request it now points at `local-vault/` in the
+  repo root (added to `.gitignore`, since it holds meeting content). The
+  original value is preserved in each file as `Storage:VaultPathOriginal` so it
+  can be restored.
+- `MeetingAssistant.Harness/appsettings.json` was missing entirely, breaking
+  `dotnet build MeetingAssistant.sln` with `MSB3030`. Present now; confirmed
+  covered by `.gitignore` line 15.
+
+### Follow-ups left open
+
+- Tray icon `.ico` fix described above (folds back into T2 / T2.1).
+- Config validation covers **presence only**, by decision. It would not catch a
+  `Storage:VaultPath` that is well-formed but points nowhere real — the exact
+  problem found above. Extending it to resolve paths is a candidate if that
+  recurs.
+- `MeetingAssistant.Harness` still duplicates `ReadRequiredSetting`/`ReadSetting`
+  from `App.xaml.cs` and does not call the validator, so it retains the original
+  fail-on-first-missing-key behaviour.
 
 ---
 
