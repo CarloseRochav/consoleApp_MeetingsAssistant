@@ -1,0 +1,35 @@
+Dev: Oye, necesito que me confirmes bajo qué condiciones se puede actualizar un feedback que ya existe. El módulo de CFS maneja varios estatus y no quiero romper el ciclo.
+
+Teammate: Sí. El primer estatus es Scheduled. Se crea cuando haces un pre-save: solo se llenan los campos, la sesión todavía no se contestó completa.
+
+Dev: O sea que el botón de Save en esa pantalla no es un save de verdad.
+
+Teammate: Exacto. Deberíamos cambiar el label del botón Save a Pre-save, para que se entienda que es un pre-save. Y hay que agregar un hint en la UI indicando que el feedback se tiene que completar en la plataforma CFS.
+
+Dev: ¿Cuándo pasa a Drafted?
+
+Teammate: Cuando la sesión se inicia y se contesta completa. Ahí se guardan start y end en unas tablas dedicadas, y en ese punto ya es visible para el empleado. Ojo: iniciar la sesión no cambia el estatus. Solo cuando se guarda completa pasa de Scheduled a Drafted — Redactado.
+
+Dev: ¿Y después?
+
+Teammate: El empleado abre el feedback ya redactado y pasa a Read. Si lo acepta, va a Accepted y se acaba el ciclo. Accepted es terminal, no hay más transición.
+
+Dev: ¿Si no lo acepta?
+
+Teammate: Si no acepta, entra a Escalation. Primera o segunda escalación, se maneja internamente.
+
+Dev: ¿Se puede corregir un Drafted?
+
+Teammate: Sí. Un feedback drafted se puede editar; al guardar la corrección pasa a Corrected y se vuelve a mandar al empleado para revisión. Desde ahí el flujo es el mismo: Read, y luego Accepted o Escalation.
+
+Dev: ¿Hay más estados finales?
+
+Teammate: Not proceed es un estado final relacionado con si el feedback se escala o no — no lo detallamos hoy. Cancelled también es final; lo puede disparar quien creó el feedback.
+
+Dev: Al inicio me dijiste que no se puede crear un feedback nuevo hasta que el anterior esté finalizado.
+
+Teammate: Sí, eso se mencionó, pero no entramos al detalle de si es por empleado, por periodo o por tipo de feedback.
+
+Dev: ¿Corrected puede pasar más de una vez?
+
+Teammate: No quedó claro. Tampoco quedó clara la diferencia exacta entre Not proceed, Cancelled y Escalation. Y no te di los nombres reales de las tablas de start/end; hay que pedirlos antes de implementar.

@@ -28,32 +28,47 @@ public sealed class MarkdownReportStorage : IReportStorage
         _subFolder = configuration["Storage:SubFolder"] ?? "Meetings";
     }
 
-    public async Task<string> SaveAsync(MeetingReport report, CancellationToken cancellationToken = default)
+    public Task<string> SaveAsync(MeetingReport report, CancellationToken cancellationToken = default)
+    {
+        return SaveMarkdownAsync(MeetingReportMarkdownRenderer.Render(report), report.Metadata, cancellationToken);
+    }
+
+    public async Task<string> SaveMarkdownAsync(
+        string markdown,
+        MeetingReportMetadata? metadata,
+        CancellationToken cancellationToken = default)
     {
         string targetDir = Path.Combine(_vaultPath, _subFolder);
         Directory.CreateDirectory(targetDir);
 
-        DateTimeOffset generatedAt = report.Metadata?.GeneratedAtUtc ?? DateTimeOffset.UtcNow;
-        string fileName = $"meeting-report-{generatedAt:yyyyMMdd-HHmmss}.md";
+        DateTimeOffset generatedAt = metadata?.GeneratedAtUtc ?? DateTimeOffset.UtcNow;
+        string prefix = SanitizeFilePrefix(metadata?.PromptId) ?? "meeting-report";
+        string fileName = $"{prefix}-{generatedAt:yyyyMMdd-HHmmss}.md";
         string fullPath = Path.Combine(targetDir, fileName);
 
-        string markdown = Render(report, generatedAt);
-        await File.WriteAllTextAsync(fullPath, markdown, Encoding.UTF8, cancellationToken);
+        string document = RenderDocument(markdown, metadata, generatedAt);
+        await File.WriteAllTextAsync(fullPath, document, Encoding.UTF8, cancellationToken);
 
         return fullPath;
     }
 
-    private static string Render(MeetingReport report, DateTimeOffset generatedAt)
+    private static string RenderDocument(string markdown, MeetingReportMetadata? metadata, DateTimeOffset generatedAt)
     {
         var sb = new StringBuilder();
 
         sb.AppendLine("---");
-        sb.AppendLine("type: meeting-report");
+        sb.AppendLine(metadata?.PromptId == FunctionalSpecPrompt.Id
+            ? "type: functional-spec"
+            : "type: meeting-report");
         sb.AppendLine($"generated: {generatedAt:yyyy-MM-dd HH:mm}");
-        if (report.Metadata is { } metadata)
+        if (metadata is not null)
         {
             sb.AppendLine($"llm-provider: {metadata.LlmProvider}");
             sb.AppendLine($"llm-model: {metadata.LlmModel}");
+            if (!string.IsNullOrWhiteSpace(metadata.PromptId))
+            {
+                sb.AppendLine($"prompt-id: {metadata.PromptId}");
+            }
             sb.AppendLine($"prompt-version: {metadata.PromptVersion}");
             sb.AppendLine($"tokens-input: {metadata.InputTokens}");
             sb.AppendLine($"tokens-output: {metadata.OutputTokens}");
@@ -62,58 +77,39 @@ public sealed class MarkdownReportStorage : IReportStorage
         sb.AppendLine("---");
         sb.AppendLine();
 
-        sb.AppendLine($"# Meeting report — {generatedAt:yyyy-MM-dd HH:mm}");
-        sb.AppendLine();
-
-        sb.AppendLine("## Summary");
-        sb.AppendLine(report.Summary);
-        sb.AppendLine();
-
-        AppendBulletSection(sb, "Insights", report.Insights);
-        AppendBulletSection(sb, "Requirements", report.Requirements);
-        AppendBulletSection(sb, "Indications", report.Indications);
-
-        sb.AppendLine("## Task list");
-        if (report.TaskList.Count == 0)
+        string body = markdown.TrimStart();
+        if (body.StartsWith("---", StringComparison.Ordinal))
         {
-            sb.AppendLine("- (none)");
-        }
-        else
-        {
-            foreach (TaskItem task in report.TaskList)
+            // El renderer no debe incluir frontmatter; si llega uno, se
+            // descarta para no duplicar el bloque YAML de arriba.
+            int secondFence = body.IndexOf("---", 3, StringComparison.Ordinal);
+            if (secondFence >= 0)
             {
-                sb.AppendLine($"- [ ] **({FormatPriority(task.Priority)})** {task.Task}");
-                sb.AppendLine($"  - {task.Context}");
+                body = body[(secondFence + 3)..].TrimStart();
             }
         }
-        sb.AppendLine();
 
-        AppendBulletSection(sb, "Open questions", report.OpenQuestions);
+        sb.Append(body);
+        if (!body.EndsWith('\n'))
+        {
+            sb.AppendLine();
+        }
 
         return sb.ToString();
     }
 
-    private static void AppendBulletSection(StringBuilder sb, string title, IReadOnlyList<string> items)
+    private static string? SanitizeFilePrefix(string? promptId)
     {
-        sb.AppendLine($"## {title}");
-        if (items.Count == 0)
-        {
-            sb.AppendLine("- (none)");
-        }
-        else
-        {
-            foreach (string item in items)
-            {
-                sb.AppendLine($"- {item}");
-            }
-        }
-        sb.AppendLine();
-    }
+        if (string.IsNullOrWhiteSpace(promptId)) return null;
 
-    private static string FormatPriority(Priority priority) => priority switch
-    {
-        Priority.High => "high",
-        Priority.Low => "low",
-        _ => "medium"
-    };
+        char[] invalid = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(promptId.Length);
+        foreach (char c in promptId)
+        {
+            builder.Append(invalid.Contains(c) ? '-' : c);
+        }
+
+        string sanitized = builder.ToString().Trim().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+    }
 }

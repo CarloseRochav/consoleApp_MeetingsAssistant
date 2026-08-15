@@ -217,6 +217,7 @@ public partial class App : Application
             ReadRequiredSetting(configuration, "Deepgram", "ApiKey", "DEEPGRAM_API_KEY")));
         services.AddSingleton<ILlmClient>(_ => CreateLlmClient(configuration));
         services.AddSingleton<ICostEstimator, ConfigPricingCostEstimator>();
+        services.AddSingleton<IPromptCatalog, BuiltInPromptCatalog>();
         services.AddSingleton<ILlmReportExtractor, LlmReportExtractor>();
         services.AddSingleton<IReportStorage, MarkdownReportStorage>();
         services.AddSingleton<IMeetingPipeline>(provider => new MeetingPipeline(

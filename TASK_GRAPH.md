@@ -2,9 +2,12 @@
 
 **Source:** `roadmap-meeting-ai-assistant.md`, "Fase 3 — Integración al flujo de trabajo diario".
 **Author:** Lead Software Architect analysis, 2026-08-07. Updated 2026-08-11,
-2026-08-13 (T7 — startup diagnostics; corrects the T2 tray-icon diagnosis).
-**Scope:** implementation steps to close Fase 3. No source code included below — this
-is the plan a developer executes against.
+2026-08-13 (T7 — startup diagnostics; corrects the T2 tray-icon diagnosis),
+2026-08-14 (T8 — prompt catalog, attach transcript, vault save, rendered
+Markdown preview).
+**Scope:** implementation steps to close Fase 3, plus the T8 prompt-catalog
+branch (Fase 2/4 quality work brought forward). No source code included
+below — this is the plan a developer executes against.
 
 ## Status
 
@@ -16,6 +19,7 @@ is the plan a developer executes against.
 | T2.1 — Fix stale RecordPage state after external triggers | 🔴 TODO — **blocks T3** |
 | T3–T6 | ⬜ Not started — T3 instructions below, ready once T2.1 lands |
 | T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
+| T8 — Prompt catalog after transcript | ✅ DONE (2026-08-14). Follow-ups same day: attach `.txt`, vault-path UX, rendered MD preview |
 
 ## Current-state findings (verified against code, not assumed)
 
@@ -83,8 +87,16 @@ T1 (centralize recording state) ── DONE
   └─> T5 (optional autostart via StartupTask)
 T2, T5 ─────────────────────────────────────────> T6 (MSIX signing + local install)
 
-T7 (Joplin storage backend) ── independent, depends on nothing above,
+T7 (startup diagnostics) ── independent, depends on nothing above,
                                 blocks nothing above (parallel branch)
+
+T8 (prompt catalog after transcript) ── independent of T2.1–T6.
+        Depends only on the Fase 1 extractor existing.
+        Does not block T2.1/T3.
+        Same-day follow-ups (all landed 2026-08-14):
+          T8.1 attach existing .txt transcript
+          T8.2 make vault save path visible + open in Explorer
+          T8.3 tabbed report viewer (rendered MD / raw MD)
 ```
 
 T1 is the prerequisite for everything else. T1.5 and T2.1 were not part of
@@ -932,6 +944,120 @@ clean.
 - `MeetingAssistant.Harness` still duplicates `ReadRequiredSetting`/`ReadSetting`
   from `App.xaml.cs` and does not call the validator, so it retains the original
   fail-on-first-missing-key behaviour.
+
+---
+
+## T8 — Prompt catalog after transcript + report viewer
+
+**Status: ✅ DONE** — 2026-08-14, including same-day follow-ups T8.1–T8.3.
+**Depends on:** Fase 1 extractor (done). Independent of T2.1 / T3.
+**Touches:** `MeetingAssistant.Core` (catalog, prompt, extractor, pipeline
+split — still no provider packages), `Infrastructure/Storage`,
+`App` RecordPage/ViewModel/coordinator + Markdig preview,
+`Harness` extract-from-transcript path.
+
+### Why
+The extractor had a single hardcoded system prompt
+(`ReportExtractionPrompt` v1 — assignment-meeting JSON). As soon as a
+transcript existed, the only thing the app could do was run that prompt
+and save a `MeetingReport`. Real use needs more than one report shape
+and a pause after the transcript: pick a prompt, **view it**, generate,
+**view the report** (rendered, not only raw), and find the file in the
+Obsidian vault.
+
+### What landed
+
+**T8 — catalog + pipeline split**
+1. Core `IPromptCatalog` / `PromptDefinition` (id, display name,
+   description, version, system prompt, output kind). Two built-in
+   entries:
+   - `assignment-meeting` @ v1 — original structured `MeetingReport`.
+   - `functional-spec` @ **v2** — user-supplied technical-analyst
+     prompt. Output is Markdown in the **same language as the
+     transcript**. Six sections: executive summary, entities/states,
+     flow diagram (text or Mermaid), business rules, pending points,
+     agreed actions. Not bound to any product domain. An earlier v1
+     JSON schema / sample-domain wording was replaced the same day.
+2. `ILlmReportExtractor.ExtractAsync` takes an optional `promptId`
+   and returns `ExtractionResult` (Markdown body + metadata + prompt,
+   plus `MeetingReport` only for the assignment prompt).
+3. RecordPage stops at the transcript:
+   `StopRecordingAndTranscribeAsync` / `TranscribeAudioFileAsync` /
+   `ExtractAndSaveAsync`. Tray / HTTP / harness-record still run the
+   full pipeline with the default prompt.
+4. Vault save: `Storage:VaultPath` + `Storage:SubFolder`
+   (`MeetingReports`). Frontmatter includes `prompt-id`. File prefix
+   follows the prompt (`meeting-report-…` / `functional-spec-…`).
+5. RecordPage: catalog ComboBox, prompt preview, "Generar reporte".
+   Same transcript can be re-run with a different prompt.
+6. Harness: `--extract-transcript <file> [--prompt <id>]` and
+   `--verify-render`.
+
+**T8.1 — attach existing transcript**
+- RecordPage button **Adjuntar transcripción (.txt)**. Loads the file
+  into `LastTranscript` (no Deepgram) and reuses the catalog/generate
+  path. Rejects non-`.txt` and empty files. Disabled while recording
+  or processing. Audio import was renamed **Procesar audio existente**.
+
+**T8.2 — vault path visible**
+- Reports were already written to the configured Obsidian vault, under
+  `MeetingReports` (not the vault root — easy to miss). RecordPage now
+  labels **Guardado en el vault de Obsidian**, shows the full path, and
+  has **Mostrar en el Explorador** (`explorer.exe /select`).
+
+**T8.3 — rendered Markdown tab**
+- Report area is a `TabView`: **Vista previa** (default) and
+  **Markdown** (raw). Preview = Markdig **1.3.2** → HTML in `WebView2`.
+  `UseAdvancedExtensions` + `DisableHtml`. Theme follows the app
+  (light/dark). YAML frontmatter is stripped before render. Markdig is
+  referenced only from `MeetingAssistant.App` — Core still has zero
+  package references. If WebView2 fails to start, the error is shown
+  and the raw tab still works.
+
+### Acceptance criteria (all of T8–T8.3)
+- After record / process-audio / attach-`.txt`, the transcript is on
+  screen and the LLM is **not** called until the user picks a prompt
+  and clicks generate.
+- Catalog lists both built-in prompts; selecting one shows the full
+  system prompt. Generate writes a new vault file (does not overwrite)
+  and refreshes the on-screen report.
+- Generated file lands in `{VaultPath}/MeetingReports/` with
+  `prompt-id` in the frontmatter. The path is visible in the UI;
+  Explorer can select that file.
+- Report viewer has two tabs: rendered Markdown and raw Markdown.
+- Tray / HTTP stop still auto-extract with `assignment-meeting`.
+- `MeetingAssistant.Core.csproj` still has zero package references.
+- `dotnet build MeetingAssistant.sln` succeeds.
+
+### Validation notes (2026-08-14)
+- `dotnet build MeetingAssistant.sln` — 0 errors, 0 warnings after
+  each increment (catalog, v2 prompt, attach `.txt`, Explorer button,
+  TabView + Markdig). Final App build with Markdig 1.3.2: 0/0.
+- `MeetingAssistant.Core.csproj` still has zero package references.
+  Markdig lives only in `MeetingAssistant.App.csproj`.
+- `--verify-render` lists `assignment-meeting @v1` and
+  `functional-spec @v2`, and asserts the v2 prompt contains the six
+  user-specified sections and does not name an external product.
+- Real LLM extracts via harness `--extract-transcript` +
+  `--prompt functional-spec` produced vault files
+  `functional-spec-20260814-165821.md` (v1 prompt, later superseded)
+  and `functional-spec-20260814-175515.md` (v2, Spanish output
+  matching a Spanish transcript, six requested sections).
+- A later UI generate wrote
+  `functional-spec-20260814-180734.md` into the configured vault's
+  `MeetingReports` folder (confirmed on disk). The preview in the app
+  is a copy of that file, not a substitute for it.
+- `dotnet run --project src/MeetingAssistant.App` reached
+  "Launching packaged application..." and stayed up. Tab click-through
+  of Vista previa / Markdown was confirmed by the user ("Pretty well");
+  no GUI automation from this session.
+
+### Follow-ups left open (T8)
+- Mermaid diagrams in a functional-spec report render as fenced code
+  in the preview (Markdig does not execute Mermaid). Not requested.
+- Settings still has no UI to edit `Storage:VaultPath` / `SubFolder`.
+- T2.1 (stale RecordPage after tray/HTTP start) is unchanged and
+  still blocks T3.
 
 ---
 

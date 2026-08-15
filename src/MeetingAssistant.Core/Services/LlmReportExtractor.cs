@@ -10,8 +10,17 @@ namespace MeetingAssistant.Core.Abstractions;
 /// </summary>
 public interface ILlmReportExtractor
 {
-    Task<MeetingReport> ExtractAsync(string transcript, CancellationToken cancellationToken = default);
+    Task<ExtractionResult> ExtractAsync(
+        string transcript,
+        string? promptId = null,
+        CancellationToken cancellationToken = default);
 }
+
+public sealed record ExtractionResult(
+    string MarkdownBody,
+    MeetingReport? StructuredReport,
+    MeetingReportMetadata Metadata,
+    PromptDefinition Prompt);
 
 /// <summary>
 /// Prompt de extracción versionado. Se mantiene como constante nombrada (no un
@@ -21,6 +30,7 @@ public interface ILlmReportExtractor
 /// </summary>
 public static class ReportExtractionPrompt
 {
+    public const string Id = "assignment-meeting";
     public const string Version = "v1";
 
     public const string SystemPrompt = """
@@ -92,23 +102,36 @@ public sealed class LlmReportExtractor : ILlmReportExtractor
 {
     private readonly ILlmClient _llmClient;
     private readonly ICostEstimator _costEstimator;
+    private readonly IPromptCatalog _promptCatalog;
     private readonly int _maxOutputTokens;
 
-    public LlmReportExtractor(ILlmClient llmClient, ICostEstimator costEstimator, int maxOutputTokens = 4096)
+    public LlmReportExtractor(
+        ILlmClient llmClient,
+        ICostEstimator costEstimator,
+        IPromptCatalog promptCatalog,
+        int maxOutputTokens = 4096)
     {
         _llmClient = llmClient;
         _costEstimator = costEstimator;
+        _promptCatalog = promptCatalog;
         _maxOutputTokens = maxOutputTokens;
     }
 
-    public async Task<MeetingReport> ExtractAsync(string transcript, CancellationToken cancellationToken = default)
+    public async Task<ExtractionResult> ExtractAsync(
+        string transcript,
+        string? promptId = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(transcript))
         {
             throw new ArgumentException("El transcript no puede estar vacío.", nameof(transcript));
         }
 
-        string fullPrompt = $"{ReportExtractionPrompt.SystemPrompt}\n\n--- TRANSCRIPCIÓN ---\n\n{transcript}";
+        PromptDefinition prompt = string.IsNullOrWhiteSpace(promptId)
+            ? _promptCatalog.Default
+            : _promptCatalog.GetById(promptId);
+
+        string fullPrompt = $"{prompt.SystemPrompt}\n\n--- TRANSCRIPCIÓN ---\n\n{transcript}";
 
         LlmProviderResponse response = await _llmClient.GenerateAsync(
             new LlmRequest(fullPrompt, _maxOutputTokens),
@@ -120,21 +143,57 @@ public sealed class LlmReportExtractor : ILlmReportExtractor
                 $"{_llmClient.Provider} ({_llmClient.Model}) no devolvió texto para extraer el reporte.");
         }
 
-        MeetingReport report = MeetingReportParser.Parse(response.Text);
-
         decimal estimatedCost = _costEstimator.EstimateCostUsd(
             _llmClient.Provider, _llmClient.Model, response.InputTokens, response.OutputTokens);
 
-        return report with
+        var metadata = new MeetingReportMetadata(
+            GeneratedAtUtc: DateTimeOffset.UtcNow,
+            LlmProvider: _llmClient.Provider,
+            LlmModel: _llmClient.Model,
+            PromptVersion: prompt.Version,
+            InputTokens: response.InputTokens,
+            OutputTokens: response.OutputTokens,
+            EstimatedCostUsd: estimatedCost,
+            PromptId: prompt.Id);
+
+        return prompt.OutputKind switch
         {
-            Metadata = new MeetingReportMetadata(
-                GeneratedAtUtc: DateTimeOffset.UtcNow,
-                LlmProvider: _llmClient.Provider,
-                LlmModel: _llmClient.Model,
-                PromptVersion: ReportExtractionPrompt.Version,
-                InputTokens: response.InputTokens,
-                OutputTokens: response.OutputTokens,
-                EstimatedCostUsd: estimatedCost)
+            PromptOutputKind.StructuredMeetingReport => BuildMeetingReport(response.Text, metadata, prompt),
+            PromptOutputKind.FunctionalSpecification => BuildFunctionalSpec(response.Text, metadata, prompt),
+            _ => throw new InvalidOperationException($"Output kind no soportado: {prompt.OutputKind}.")
         };
+    }
+
+    private static ExtractionResult BuildMeetingReport(string raw, MeetingReportMetadata metadata, PromptDefinition prompt)
+    {
+        MeetingReport report = MeetingReportParser.Parse(raw) with { Metadata = metadata };
+        return new ExtractionResult(MeetingReportMarkdownRenderer.Render(report), report, metadata, prompt);
+    }
+
+    private static ExtractionResult BuildFunctionalSpec(string raw, MeetingReportMetadata metadata, PromptDefinition prompt)
+    {
+        string markdown = StripOuterMarkdownFence(raw);
+        if (string.IsNullOrWhiteSpace(markdown))
+        {
+            throw new MeetingReportParseException(
+                "El LLM devolvió una respuesta vacía para la especificación funcional.",
+                raw);
+        }
+
+        return new ExtractionResult(markdown, null, metadata, prompt);
+    }
+
+    private static string StripOuterMarkdownFence(string text)
+    {
+        string trimmed = text.Trim();
+        if (!trimmed.StartsWith("```")) return trimmed;
+
+        int firstNewline = trimmed.IndexOf('\n');
+        if (firstNewline < 0) return trimmed;
+
+        int closingFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
+        return closingFence > firstNewline
+            ? trimmed[(firstNewline + 1)..closingFence].Trim()
+            : trimmed[(firstNewline + 1)..].Trim();
     }
 }

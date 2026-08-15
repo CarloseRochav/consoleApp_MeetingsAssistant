@@ -73,7 +73,8 @@ public sealed record MeetingReportMetadata(
     string PromptVersion,
     int InputTokens,
     int OutputTokens,
-    decimal EstimatedCostUsd);
+    decimal EstimatedCostUsd,
+    string? PromptId = null);
 
 /// <summary>
 /// Parsing robusto: aunque el prompt prohíbe explícitamente markdown fences y texto

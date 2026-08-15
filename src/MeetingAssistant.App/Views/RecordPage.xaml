@@ -6,30 +6,91 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
     <ScrollViewer Padding="32">
-        <StackPanel Spacing="16" MaxWidth="720">
+        <StackPanel Spacing="16" MaxWidth="880">
             <TextBlock Text="Grabar reunión" Style="{StaticResource TitleTextBlockStyle}" />
-            <TextBlock Text="Inicia la grabación y deténla cuando termine la reunión. El reporte se transcribirá, extraerá y guardará automáticamente."
+            <TextBlock Text="Puedes grabar, procesar un audio existente, o adjuntar una transcripción .txt. El reporte se guarda en el vault de Obsidian (carpeta MeetingReports)."
                        TextWrapping="Wrap" />
             <Button Content="{Binding ButtonText}"
                     Command="{Binding ToggleRecordingCommand}"
                     HorizontalAlignment="Left"
                     MinWidth="180" />
-            <Button Content="Procesar archivo existente"
+            <Button Content="Procesar audio existente"
                     Click="ProcessExistingAudio_Click"
+                    IsEnabled="{Binding CanLoadExternalSource}"
+                    HorizontalAlignment="Left"
+                    MinWidth="180" />
+            <Button Content="Adjuntar transcripción (.txt)"
+                    Click="AttachTranscriptFile_Click"
+                    IsEnabled="{Binding CanLoadExternalSource}"
                     HorizontalAlignment="Left"
                     MinWidth="180" />
             <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
             <TextBlock Text="{Binding ErrorDetails}"
                        TextWrapping="Wrap"
                        Foreground="DarkRed" />
-            <TextBlock Text="{Binding LastSavedReportPath}" TextWrapping="Wrap" />
+
             <TextBlock Text="Transcripción" Style="{StaticResource SubtitleTextBlockStyle}" />
             <TextBox Text="{Binding LastTranscript, Mode=OneWay}"
                      AcceptsReturn="True"
                      IsReadOnly="True"
                      TextWrapping="Wrap"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     MinHeight="240" />
+                     MinHeight="200" />
+
+            <TextBlock Text="Prompt de extracción" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock Text="Cuando la transcripción esté lista, elige cómo procesarla. Puedes cambiar de prompt y volver a generar sobre la misma transcripción."
+                       TextWrapping="Wrap" />
+            <ComboBox Header="Catálogo"
+                      ItemsSource="{Binding Prompts}"
+                      SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
+                      DisplayMemberPath="DisplayName"
+                      IsEnabled="{Binding HasTranscript}"
+                      HorizontalAlignment="Stretch" />
+            <TextBlock Text="{Binding SelectedPrompt.Description}"
+                       TextWrapping="Wrap"
+                       Opacity="0.8" />
+            <TextBlock Text="Prompt seleccionado" />
+            <TextBox Text="{Binding SelectedPromptText, Mode=OneWay}"
+                     AcceptsReturn="True"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     MinHeight="180"
+                     FontFamily="Consolas" />
+            <Button Content="Generar reporte"
+                    Command="{Binding GenerateReportCommand}"
+                    HorizontalAlignment="Left"
+                    MinWidth="180" />
+
+            <TextBlock Text="Reporte generado" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock Text="Guardado en el vault de Obsidian" />
+            <TextBlock Text="{Binding LastSavedReportPath}"
+                       TextWrapping="Wrap" />
+            <Button Content="Mostrar en el Explorador"
+                    Command="{Binding OpenSavedReportCommand}"
+                    HorizontalAlignment="Left"
+                    MinWidth="180" />
+            <TabView x:Name="ReportViewer"
+                     IsAddTabButtonVisible="False"
+                     TabWidthMode="SizeToContent"
+                     MinHeight="420"
+                     SelectionChanged="ReportViewer_SelectionChanged">
+                <TabViewItem Header="Vista previa" IsClosable="False">
+                    <WebView2 x:Name="ReportPreview"
+                              MinHeight="380"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch" />
+                </TabViewItem>
+                <TabViewItem Header="Markdown" IsClosable="False">
+                    <TextBox Text="{Binding LastGeneratedReport, Mode=OneWay}"
+                             AcceptsReturn="True"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             MinHeight="380"
+                             FontFamily="Consolas" />
+                </TabViewItem>
+            </TabView>
         </StackPanel>
     </ScrollViewer>
 </Page>

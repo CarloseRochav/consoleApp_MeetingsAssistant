@@ -72,6 +72,12 @@
 5. Vista "Detalle de reporte": renderizado de summary/insights/tasklist, botón de re-exportar a Obsidian
 6. Vista "Configuración": API keys, path del vault, edición del system prompt
 
+**Avance traído adelante (T8, 2026-08-14):** el prompt ya no es único ni
+hardcodeado en el extractor. Hay un catálogo en Core (`assignment-meeting` y
+`functional-spec`). En RecordPage, después de la transcripción se elige el
+prompt, se ve el texto, se genera el reporte y se muestra el Markdown.
+Tray/HTTP siguen auto-extrayendo con el prompt por defecto.
+
 ### Criterio de salida
 - Puedes grabar una reunión completa desde la UI, sin tocar consola, y ver el reporte generado en pantalla
 

@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MeetingAssistant.App.Services;
 using MeetingAssistant.Core.Abstractions;
+using MeetingAssistant.Core.Models;
 
 namespace MeetingAssistant.App.ViewModels;
 
@@ -11,34 +13,69 @@ public partial class RecordViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ButtonText))]
+    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
+    [NotifyPropertyChangedFor(nameof(CanLoadExternalSource))]
     [NotifyCanExecuteChangedFor(nameof(ToggleRecordingCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
     private bool isRecording;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
+    [NotifyPropertyChangedFor(nameof(CanLoadExternalSource))]
     [NotifyCanExecuteChangedFor(nameof(ToggleRecordingCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
     private bool isProcessing;
 
     [ObservableProperty]
     private string statusMessage = "Listo para grabar.";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSavedReport))]
+    [NotifyCanExecuteChangedFor(nameof(OpenSavedReportCommand))]
     private string? lastSavedReportPath;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasTranscript))]
+    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
+    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
     private string? lastTranscript;
+
+    [ObservableProperty]
+    private string? lastGeneratedReport;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedPromptText))]
+    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
+    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
+    private PromptDefinition? selectedPrompt;
 
     [ObservableProperty]
     private string? errorDetails;
 
+    public IReadOnlyList<PromptDefinition> Prompts { get; }
+
     public string ButtonText => IsRecording ? "Detener grabación" : "Grabar reunión";
 
-    public RecordViewModel(RecordingCoordinator recordingCoordinator)
+    public bool HasTranscript => !string.IsNullOrWhiteSpace(LastTranscript);
+
+    public bool CanGenerateReport =>
+        HasTranscript && SelectedPrompt is not null && !IsProcessing && !IsRecording;
+
+    public bool CanLoadExternalSource => !IsRecording && !IsProcessing;
+
+    public bool HasSavedReport => !string.IsNullOrWhiteSpace(LastSavedReportPath) && File.Exists(LastSavedReportPath);
+
+    public string SelectedPromptText => SelectedPrompt?.SystemPrompt ?? string.Empty;
+
+    public RecordViewModel(RecordingCoordinator recordingCoordinator, IPromptCatalog promptCatalog)
     {
         _recordingCoordinator = recordingCoordinator;
+        Prompts = promptCatalog.GetAll();
+        SelectedPrompt = promptCatalog.Default;
         IsRecording = _recordingCoordinator.IsRecording;
         IsProcessing = _recordingCoordinator.IsProcessing;
         StatusMessage = IsProcessing
-            ? "Procesando (transcribiendo y extrayendo el reporte)..."
+            ? "Procesando..."
             : IsRecording ? "Grabando..." : "Listo para grabar.";
     }
 
@@ -66,6 +103,7 @@ public partial class RecordViewModel : ObservableObject
             StatusMessage = "Grabando...";
             LastSavedReportPath = null;
             LastTranscript = null;
+            LastGeneratedReport = null;
             ErrorDetails = null;
         }
         catch (Exception ex)
@@ -79,20 +117,21 @@ public partial class RecordViewModel : ObservableObject
     private async Task StopAsync()
     {
         IsProcessing = true;
-        StatusMessage = "Procesando (transcribiendo y extrayendo el reporte)...";
+        StatusMessage = "Transcribiendo...";
         try
         {
-            MeetingPipelineResult result = await _recordingCoordinator.StopRecordingAndProcessAsync();
+            TranscriptionSession session = await _recordingCoordinator.StopRecordingAndTranscribeAsync();
             IsRecording = _recordingCoordinator.IsRecording;
-            LastTranscript = result.Transcription.Transcript;
-            LastSavedReportPath = result.SavedReportPath;
+            LastTranscript = session.Transcription.Transcript;
+            LastGeneratedReport = null;
+            LastSavedReportPath = null;
             ErrorDetails = null;
-            StatusMessage = $"Reporte guardado en: {result.SavedReportPath}";
+            StatusMessage = "Transcripción lista. Elige un prompt y genera el reporte.";
         }
         catch (Exception ex)
         {
             IsRecording = _recordingCoordinator.IsRecording;
-            StatusMessage = $"Error al procesar la reunión: {ex.Message}";
+            StatusMessage = $"Error al transcribir la reunión: {ex.Message}";
             ErrorDetails = ex.ToString();
         }
         finally
@@ -104,25 +143,112 @@ public partial class RecordViewModel : ObservableObject
     public async Task ProcessExistingAudioAsync(string audioPath)
     {
         IsProcessing = true;
-        StatusMessage = "Procesando archivo existente (transcribiendo y extrayendo el reporte)...";
+        StatusMessage = "Transcribiendo archivo existente...";
         LastSavedReportPath = null;
         LastTranscript = null;
+        LastGeneratedReport = null;
         ErrorDetails = null;
         try
         {
-            MeetingPipelineResult result = await _recordingCoordinator.ProcessExistingAudioAsync(audioPath);
-            LastTranscript = result.Transcription.Transcript;
-            LastSavedReportPath = result.SavedReportPath;
-            StatusMessage = $"Reporte guardado en: {result.SavedReportPath}";
+            TranscriptionSession session = await _recordingCoordinator.TranscribeExistingAudioAsync(audioPath);
+            LastTranscript = session.Transcription.Transcript;
+            StatusMessage = "Transcripción lista. Elige un prompt y genera el reporte.";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error al procesar el archivo: {ex.Message}";
+            StatusMessage = $"Error al transcribir el archivo: {ex.Message}";
             ErrorDetails = ex.ToString();
         }
         finally
         {
             IsProcessing = _recordingCoordinator.IsProcessing;
         }
+    }
+
+    public async Task LoadTranscriptFileAsync(string transcriptPath)
+    {
+        if (!CanLoadExternalSource)
+        {
+            StatusMessage = "No se puede adjuntar una transcripción mientras hay una grabación o un proceso en curso.";
+            return;
+        }
+
+        IsProcessing = true;
+        StatusMessage = "Cargando transcripción...";
+        LastSavedReportPath = null;
+        LastTranscript = null;
+        LastGeneratedReport = null;
+        ErrorDetails = null;
+        try
+        {
+            if (!string.Equals(Path.GetExtension(transcriptPath), ".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Solo se aceptan archivos .txt.");
+            }
+
+            string transcript = await File.ReadAllTextAsync(transcriptPath);
+            if (string.IsNullOrWhiteSpace(transcript))
+            {
+                throw new InvalidOperationException("El archivo de transcripción está vacío.");
+            }
+
+            LastTranscript = transcript;
+            StatusMessage = $"Transcripción cargada desde {Path.GetFileName(transcriptPath)}. Elige un prompt y genera el reporte.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error al cargar la transcripción: {ex.Message}";
+            ErrorDetails = ex.ToString();
+        }
+        finally
+        {
+            IsProcessing = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanGenerateReport))]
+    private async Task GenerateReportAsync()
+    {
+        if (SelectedPrompt is null || string.IsNullOrWhiteSpace(LastTranscript))
+        {
+            return;
+        }
+
+        IsProcessing = true;
+        StatusMessage = $"Extrayendo el reporte con «{SelectedPrompt.DisplayName}»...";
+        ErrorDetails = null;
+        try
+        {
+            ExtractionSaveResult result = await _recordingCoordinator.ExtractAndSaveAsync(
+                LastTranscript, SelectedPrompt.Id);
+            LastGeneratedReport = result.ReportMarkdown;
+            LastSavedReportPath = result.SavedReportPath;
+            StatusMessage = $"Reporte guardado en el vault de Obsidian: {result.SavedReportPath}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error al generar el reporte: {ex.Message}";
+            ErrorDetails = ex.ToString();
+        }
+        finally
+        {
+            IsProcessing = _recordingCoordinator.IsProcessing;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSavedReport))]
+    private void OpenSavedReport()
+    {
+        if (string.IsNullOrWhiteSpace(LastSavedReportPath) || !File.Exists(LastSavedReportPath))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "explorer.exe",
+            Arguments = $"/select,\"{LastSavedReportPath}\"",
+            UseShellExecute = true
+        });
     }
 }

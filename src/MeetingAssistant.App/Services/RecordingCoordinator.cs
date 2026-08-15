@@ -113,6 +113,93 @@ public sealed class RecordingCoordinator
         }
     }
 
+    public async Task<TranscriptionSession> StopRecordingAndTranscribeAsync(CancellationToken cancellationToken = default)
+    {
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!IsRecording)
+            {
+                throw new InvalidOperationException("No hay una grabación en curso.");
+            }
+
+            _isProcessing = true;
+            OnStateChanged();
+
+            return await _pipeline.StopRecordingAndTranscribeAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            RaiseRecordingFailed(exception);
+            throw;
+        }
+        finally
+        {
+            _isProcessing = false;
+            OnStateChanged();
+            _operationLock.Release();
+        }
+    }
+
+    public async Task<TranscriptionSession> TranscribeExistingAudioAsync(string audioPath, CancellationToken cancellationToken = default)
+    {
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (IsRecording || IsProcessing)
+            {
+                throw new InvalidOperationException("No se puede procesar un archivo mientras hay una grabación o proceso en curso.");
+            }
+
+            _isProcessing = true;
+            OnStateChanged();
+
+            return await _pipeline.TranscribeAudioFileAsync(audioPath, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            RaiseRecordingFailed(exception);
+            throw;
+        }
+        finally
+        {
+            _isProcessing = false;
+            OnStateChanged();
+            _operationLock.Release();
+        }
+    }
+
+    public async Task<ExtractionSaveResult> ExtractAndSaveAsync(
+        string transcript,
+        string promptId,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (IsRecording)
+            {
+                throw new InvalidOperationException("No se puede extraer un reporte mientras hay una grabación en curso.");
+            }
+
+            _isProcessing = true;
+            OnStateChanged();
+
+            return await _pipeline.ExtractAndSaveAsync(transcript, promptId, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            RaiseRecordingFailed(exception);
+            throw;
+        }
+        finally
+        {
+            _isProcessing = false;
+            OnStateChanged();
+            _operationLock.Release();
+        }
+    }
+
     private void OnStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
 
     private void RaiseRecordingCompleted(MeetingPipelineResult result)
