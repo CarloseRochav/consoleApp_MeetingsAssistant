@@ -18,9 +18,64 @@ below — this is the plan a developer executes against.
 | T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; see T2.2) |
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
-| T4–T6 | ⬜ Not started |
+| T4 — Toast on report ready / on failure | ⬜ Not started — **next** |
+| T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
+| T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
+| T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
 | T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
 | T8 — Prompt catalog after transcript | ✅ DONE (2026-08-14). Follow-ups same day: attach `.txt`, vault-path UX, rendered MD preview |
+
+## Orden de cierre de Fase 3 (replanificado 2026-08-22)
+
+El orden original del grafo (T4 → T5 → T6) tiene una dependencia circular que
+no se ve hasta llegar ahi: T5 declara un `StartupTask`, que solo se comporta de
+verdad cuando la app tiene identidad de paquete real, y esa identidad la produce
+T6 — pero los criterios de aceptacion de T6 dan por hecho que T4 y T5 ya
+funcionan. Se resuelve partiendo T6 en dos.
+
+| # | Tarea | Por que va aqui |
+|---|---|---|
+| 1 | **T4 — toast** | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
+| 2 | **T6a — identidad de paquete + firma** | Reemplazar el `Identity/Publisher` placeholder (`CN=AppPublisher`), generar el certificado self-signed (fuera del repo o gitignoreado — el `.gitignore` cubre `AppPackages/`, `*.msix*`, `*.appx*`, `*.pubxml`, pero **no** `*.pfx`: verificarlo antes de generar nada), y producir un `.msix` sideload instalable. Sin este paso T5 no se puede validar. |
+| 3 | **T5 — autostart** | `Windows.ApplicationModel.StartupTask` + un solo toggle en `SettingsPage` (un control, no la pagina completa). Ya contra el paquete firmado, asi que `RequestEnableAsync()` y los estados `DisabledByUser`/`DisabledByPolicy` se pueden probar de verdad en `Task Manager > Startup Apps`. |
+| 4 | **T6b — pase de aceptacion final** | Instalar el paquete de verdad (no `dotnet run`) y re-verificar T2–T5 completos sobre esa instalacion, mas desinstalacion limpia sin startup task ni proceso de bandeja huerfano. Esto es lo que cierra Fase 3. |
+
+### Verificaciones sueltas, para la primera sesion con GUI que toque
+
+No son tareas propias; se cuelan en cualquiera de los pasos de arriba.
+
+- Click derecho en la bandeja despues de un `POST /recording/start`: el label
+  debe decir "Detener grabación". Es lo que decide si `RightClickCommand` corre
+  antes de que se construya el menu nativo (ver T2.2).
+- Confirmar que el hotkey `Ctrl+Alt+F9` no colisiona con nada en uso real
+  despues de unos dias; si molesta, es cambio de `appsettings.json`, no de codigo.
+
+### Lo que queda fuera de Fase 3, anotado para no perderlo
+
+Ninguno bloquea el cierre de Fase 3, y ninguno es nuevo — estan dispersos en las
+notas de T1, T7 y T8, juntos aqui para que se vean como backlog y no como
+sorpresas:
+
+- **Fase 2 sin terminar:** `HistoryPage` y `SettingsPage` siguen siendo stubs.
+  T5 solo agrega un toggle a Settings; el resto de la pagina (vault path,
+  `SubFolder`, API keys, edicion de prompt) sigue pendiente.
+- **HTTP no pasa por el coordinador:** `LocalRecordingApiServer` llama a
+  `IMeetingPipeline` directo, asi que no levanta `StateChanged` /
+  `RecordingCompleted` / `RecordingFailed`. Consecuencia viva: una grabacion
+  disparada por HTTP no actualiza `RecordPage` ni dispara el toast de T4.
+  Arreglarlo es rutear el server por `RecordingCoordinator`.
+- **Validacion de configuracion solo verifica presencia** (T7): no detecta un
+  `Storage:VaultPath` bien formado que apunte a un directorio inexistente, que
+  es justo el problema que se encontro el 2026-08-13.
+- **`MeetingAssistant.Harness` duplica** `ReadRequiredSetting`/`ReadSetting` de
+  `App.xaml.cs` y no llama al validador.
+- **Calidad de transcripcion (Fase 0, diferido):** Deepgram Keyterm Prompting
+  para jerga tecnica mezclada ES/EN. Es Fase 4, y ya hay reportes reales
+  suficientes para decidir si el volumen de errores lo justifica.
+- **Mermaid** en reportes functional-spec se renderiza como bloque de codigo en
+  la vista previa (Markdig no ejecuta Mermaid). Nunca se pidio.
+
+---
 
 ## Current-state findings (verified against code, not assumed)
 
@@ -83,10 +138,11 @@ T1 (centralize recording state) ── DONE
   └─> T1.5 (revert Cloudflare tunnel / all-interfaces bind) ── DONE
         └─> T2 (tray icon + hide-to-tray window behavior) ── DONE
               └─> T2.1 (fix stale RecordPage state) ── DONE
-                    ├─> T3 (global hotkey)
+                    ├─> T3 (global hotkey) ── DONE
                     └─> T4 (toast notification on report ready / on error)
-  └─> T5 (optional autostart via StartupTask)
-T2, T5 ─────────────────────────────────────────> T6 (MSIX signing + local install)
+T4 ─> T6a (package identity + signing) ─> T5 (autostart) ─> T6b (final acceptance)
+      (T6 partido en dos el 2026-08-22: la identidad de paquete tiene que
+       existir antes de T5, y el pase de aceptacion tiene que ir despues)
 
 T7 (startup diagnostics) ── independent, depends on nothing above,
                                 blocks nothing above (parallel branch)
@@ -892,8 +948,14 @@ of the Settings page beyond this control), new file under
 
 ## T6 — MSIX signing and local persistent install
 
-**Depends on:** T2, T5 (validates the packaged-identity assumptions both rely
-on).
+**Partido en dos el 2026-08-22** (ver "Orden de cierre de Fase 3" arriba):
+**T6a** son los pasos 1–3 de abajo — identidad real, certificado y `.msix`
+instalable — y va **antes** de T5, porque sin identidad de paquete el
+`StartupTask` de T5 no se puede validar. **T6b** es el paso 4 y los criterios
+de aceptacion, que re-verifican T2–T5 sobre la instalacion real y cierran
+Fase 3.
+
+**Depends on:** T2 (T6a); T2–T5 completos (T6b).
 **Touches:** `Package.appxmanifest`, packaging/signing config (new files —
 certificate, publish profile — must be checked against `.gitignore`; the
 repo's `.gitignore` already excludes `AppPackages/`, `*.msix*`, `*.appx*`,
