@@ -15,9 +15,10 @@ below — this is the plan a developer executes against.
 |---|---|
 | T1 — Centralize recording state | ✅ DONE (validated 2026-08-11) |
 | T1.5 — Revert unauthorized network exposure | ✅ DONE (validated 2026-08-11) |
-| T2 — Tray icon + hide-to-tray | 🟡 Fix applied 2026-08-21 (`Assets/TrayIcon.ico`, single-frame BMP-encoded), verified headlessly against the exact failing API — **still needs one GUI launch to confirm the icon appears**. See T2.2 |
-| T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (implemented + build-verified 2026-08-21; GUI acceptance criteria pending the same launch as T2.2). No longer blocks T3 |
-| T3–T6 | ⬜ Not started — T3 unblocked as of 2026-08-21; the only open input is the default hotkey combination |
+| T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; see T2.2) |
+| T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
+| T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
+| T4–T6 | ⬜ Not started |
 | T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
 | T8 — Prompt catalog after transcript | ✅ DONE (2026-08-14). Follow-ups same day: attach `.txt`, vault-path UX, rendered MD preview |
 
@@ -622,7 +623,7 @@ what happens in a meeting.
 
 ## T2.2 — Tray icon .ico fix and T2.1 implementation (2026-08-21)
 
-**Status: 🟡 Implemented and build-verified; one GUI launch still required.**
+**Status: ✅ DONE — GUI-validated 2026-08-21.**
 **Touches:** `Assets/TrayIcon.ico` (new), `MeetingAssistant.App.csproj`,
 `Services/TrayIconService.cs`, `ViewModels/RecordViewModel.cs`.
 
@@ -652,11 +653,9 @@ variable from a path that has already burned two debugging sessions.
 AND mask) — deliberately not PNG-compressed, since PNG-inside-ICO is the other
 thing `System.Drawing.Icon` handles badly.
 
-**Not verified:** that the icon visibly appears in the notification area. That
-needs one interactive launch; the session that made the fix had no GUI access.
-If it still fails, the exception reaches `startup-errors.log` through the T7
-global handlers (the async continuation is outside the `try/catch` around
-`AttachTo()`), so read that file first.
+The icon was subsequently confirmed visible in the notification area during an
+interactive launch on 2026-08-21. No new icon exception was written to
+`startup-errors.log` during that launch.
 
 ### T2.1 state sync
 
@@ -695,19 +694,21 @@ still leave a hidden `RecordPage` stale. Same T1 gap, deliberately out of scope
   `MeetingAssistant.App.build.appxrecipe`, i.e. it is part of the deployed
   package layout. (The `bin/**/AppX/Assets` folder still lacks it, but that
   folder is a stale 2026-08-12 layout and is not what deployment reads.)
-- **Not performed:** any GUI run. A `MeetingAssistant.App` process from an
-  earlier session was still alive on the machine, and killing it could have
-  discarded a recording in progress.
-
-### Acceptance criteria still open
-
-- Tray icon visible in the notification area, and `startup-errors.log` clean
-  after launch.
-- The four T2.1 acceptance criteria above, exercised from the tray.
+- Interactive launch: icon visible; tray start changed the tray label and the
+  open RecordPage to "Detener grabación" / "Grabando..."; tray stop processed
+  the recording and generated the report; the user confirmed the tray
+  capabilities and normal page flow worked.
+- GUI testing exposed a separate bug in the original tray wiring: H.NotifyIcon's
+  default WinUI `PopupMenu` invokes `ICommand`, but all three items used XAML
+  `Click` handlers, so toggle/open/exit were inert. They now use `RelayCommand`
+  / `AsyncRelayCommand`; caught recording failures are also persisted to
+  `startup-errors.log` instead of being notification-only.
 
 ---
 
 ## T3 — Global hotkey to start/stop recording
+
+**Status: ✅ DONE — implemented and GUI-validated 2026-08-21.**
 
 **Depends on:** T2 (done), T2.1 (must land first — same reasoning as T1.5
 blocking T2: get the state-sync story consistent before adding a third
@@ -752,6 +753,29 @@ trigger source).
   toast from T4), not swallowed silently.
 - No leaked hotkey registration after a clean "Salir" (verify: after exit,
   the same hotkey combination can be registered by another test process).
+
+### Validation notes (2026-08-21)
+
+- Added App-local `GlobalHotkeyService`; no new NuGet package. It uses
+  `RegisterHotKey` / `UnregisterHotKey` and `SetWindowSubclass` /
+  `RemoveWindowSubclass`, keeping the subclass delegate alive for the service
+  lifetime. The HWND comes from `WindowNative.GetWindowHandle`.
+- Configuration keys are `Hotkey:Modifiers` and `Hotkey:Key`. The fallback and
+  example default are `Control+Alt` + `F9` (`Ctrl+Alt+F9`), selected by the user
+  on 2026-08-21 after rejecting the earlier `Ctrl+Shift+R` choice because it
+  conflicts with browser hard refresh.
+- With the main window hidden, the user started and stopped a real recording
+  with `Ctrl+Alt+F9`; RecordPage updated live and showed the resulting transcript
+  and saved report path.
+- Collision exercised for real: a separate Win32 probe registered
+  `Ctrl+Alt+F9` first. The app still launched and remained responsive; the
+  failure was surfaced through the tray and logged as Win32 error 1409 under
+  `GlobalHotkeyService.Register`.
+- Clean-exit cleanup exercised for real: after tray "Salir", the app process
+  was gone and the separate probe immediately registered the same combination.
+- `dotnet build MeetingAssistant.sln` completed with 0 errors and 0 warnings.
+- `MeetingAssistant.Core.csproj` was rechecked and still has zero package
+  references.
 
 ---
 
@@ -1157,10 +1181,10 @@ Obsidian vault.
 - Store submission / public distribution of the MSIX package — the roadmap
   scope is "Personal, independiente."
 
-## Open questions for the user (non-blocking, but affect T3 defaults)
+## Open questions for the user
 
-- What hotkey combination should be the default for T3? (Needs to avoid
-  colliding with common IDE/OS shortcuts on this machine.)
+- ~~What hotkey combination should be the default for T3?~~ Resolved
+  2026-08-21: `Ctrl+Alt+F9`, selected by the user after real testing.
 - ~~Should "Salir" from the tray while a recording is in progress block with
   a confirmation dialog, or auto-stop-and-process before exiting?~~ Resolved
   in T2: confirmation dialog, discard-on-confirm (see T2 step 4).

@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.UI.Xaml;
@@ -28,19 +29,26 @@ public sealed class TrayIconService : IDisposable
         if (_trayIcon is not null) return;
 
         var menu = new MenuFlyout();
-        menu.Opening += (_, _) => RefreshToggleLabel();
 
-        _toggleRecordingItem = new MenuFlyoutItem();
-        _toggleRecordingItem.Click += ToggleRecording_Click;
+        _toggleRecordingItem = new MenuFlyoutItem
+        {
+            Command = new AsyncRelayCommand(ToggleRecordingAsync)
+        };
         menu.Items.Add(_toggleRecordingItem);
 
-        var openWindowItem = new MenuFlyoutItem { Text = "Abrir ventana principal" };
-        openWindowItem.Click += (_, _) => OpenMainWindowRequested?.Invoke(this, EventArgs.Empty);
+        var openWindowItem = new MenuFlyoutItem
+        {
+            Text = "Abrir ventana principal",
+            Command = new RelayCommand(() => OpenMainWindowRequested?.Invoke(this, EventArgs.Empty))
+        };
         menu.Items.Add(openWindowItem);
         menu.Items.Add(new MenuFlyoutSeparator());
 
-        var exitItem = new MenuFlyoutItem { Text = "Salir" };
-        exitItem.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
+        var exitItem = new MenuFlyoutItem
+        {
+            Text = "Salir",
+            Command = new RelayCommand(() => ExitRequested?.Invoke(this, EventArgs.Empty))
+        };
         menu.Items.Add(exitItem);
 
         // IMPORTANTE: esto debe ser Assets/TrayIcon.ico, un .ico de UN SOLO
@@ -73,7 +81,16 @@ public sealed class TrayIconService : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private async void ToggleRecording_Click(object sender, RoutedEventArgs e)
+    public void SetStatus(string text)
+    {
+        if (_trayIcon is not null)
+            _trayIcon.ToolTipText = text;
+    }
+
+    public void ShowError(string title, string message) =>
+        _trayIcon?.ShowNotification(title, message, NotificationIcon.Error);
+
+    private async Task ToggleRecordingAsync()
     {
         try
         {
@@ -84,6 +101,7 @@ public sealed class TrayIconService : IDisposable
         }
         catch (Exception exception)
         {
+            App.LogStartupFailure("TrayIconService.ToggleRecording", exception);
             _trayIcon?.ShowNotification("Meeting Assistant", exception.Message, NotificationIcon.Error);
         }
         finally

@@ -19,6 +19,7 @@ public partial class App : Application
     private MainWindow? _window;
     private LocalRecordingApiServer? _apiServer;
     private TrayIconService? _trayIconService;
+    private GlobalHotkeyService? _globalHotkeyService;
     private StartupErrorWindow? _errorWindow;
     private Exception? _configurationFailure;
     private bool _isExiting;
@@ -110,6 +111,9 @@ public partial class App : Application
             // antes de que exista cualquier UI para mostrar el error.
             LogStartupFailure("TrayIconService.AttachTo", exception);
         }
+
+        _globalHotkeyService = Services.GetRequiredService<GlobalHotkeyService>();
+        _globalHotkeyService.Register(_window);
     }
 
     /// <summary>
@@ -182,7 +186,7 @@ public partial class App : Application
         }
     }
 
-    private static void LogStartupFailure(string context, Exception exception)
+    internal static void LogStartupFailure(string context, Exception exception)
     {
         try
         {
@@ -228,6 +232,7 @@ public partial class App : Application
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
         services.AddSingleton<RecordingCoordinator>();
         services.AddSingleton<TrayIconService>();
+        services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();
@@ -257,6 +262,7 @@ public partial class App : Application
 
         _isExiting = true;
         _apiServer.Stop();
+        _globalHotkeyService?.Dispose();
         _trayIconService?.Dispose();
         _window.BeginExitFromTray();
         Exit();
