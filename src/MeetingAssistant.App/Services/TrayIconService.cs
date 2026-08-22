@@ -30,6 +30,19 @@ public sealed class TrayIconService : IDisposable
 
         var menu = new MenuFlyout();
 
+        // El label se refresca por StateChanged del coordinador, pero el
+        // endpoint HTTP llama a IMeetingPipeline directo y no levanta ese
+        // evento (hueco documentado en T1). Releer el estado vivo cada vez que
+        // se abre el menu es lo que lo mantiene correcto tras un start por
+        // HTTP; se valido en T2 y se perdio al migrar los Click a Command.
+        // Con ContextMenuMode.PopupMenu (el default de H.NotifyIcon, y la
+        // razon por la que los Click eran inertes) el MenuFlyout nunca se
+        // muestra como flyout XAML, asi que Opening por si solo no basta; de
+        // ahi el RightClickCommand de mas abajo. Opening se deja porque es el
+        // que aplica si el modo cambia a SecondWindow/ActiveWindow.
+        // RefreshToggleLabel es idempotente, correr los dos no molesta.
+        menu.Opening += (_, _) => RefreshToggleLabel();
+
         _toggleRecordingItem = new MenuFlyoutItem
         {
             Command = new AsyncRelayCommand(ToggleRecordingAsync)
@@ -68,6 +81,7 @@ public sealed class TrayIconService : IDisposable
             IconSource = new BitmapImage(new Uri("ms-appx:///Assets/TrayIcon.ico")),
             ContextFlyout = menu
         };
+        _trayIcon.RightClickCommand = new RelayCommand(RefreshToggleLabel);
         _trayIcon.ForceCreate();
         RefreshToggleLabel();
     }

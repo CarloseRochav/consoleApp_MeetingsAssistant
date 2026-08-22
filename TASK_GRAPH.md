@@ -703,6 +703,22 @@ still leave a hidden `RecordPage` stale. Same T1 gap, deliberately out of scope
   `Click` handlers, so toggle/open/exit were inert. They now use `RelayCommand`
   / `AsyncRelayCommand`; caught recording failures are also persisted to
   `startup-errors.log` instead of being notification-only.
+- **Regression introduced and fixed (2026-08-22):** that same rewrite dropped
+  `menu.Opening += (_, _) => RefreshToggleLabel();`. Without it the tray label
+  refreshes only from `RecordingCoordinator.StateChanged`, and the HTTP endpoint
+  calls `IMeetingPipeline` directly without raising it — so a recording started
+  with `POST /recording/start` left the tray reading "Grabar reunión", the exact
+  case T2's validation notes had verified. Restoring `menu.Opening` alone is not
+  enough, and understanding why matters: `ContextMenuMode` defaults to
+  `PopupMenu`, so H.NotifyIcon builds a native menu and never shows the
+  `MenuFlyout` as a XAML flyout — the same reason the `Click` handlers were
+  inert. `TrayContextMenuOpen` exists only as a protected method in the WinUI
+  port (it does not compile as an event), so the label refresh is now also wired
+  to `TaskbarIcon.RightClickCommand`, which is public. `menu.Opening` is kept for
+  the `SecondWindow`/`ActiveWindow` modes; `RefreshToggleLabel` is idempotent.
+  **Unverified:** whether `RightClickCommand` runs before the native menu is
+  built. If a right-click after an HTTP-triggered start still shows a stale
+  label, that ordering is the thing to check first.
 
 ---
 
@@ -773,7 +789,15 @@ trigger source).
   `GlobalHotkeyService.Register`.
 - Clean-exit cleanup exercised for real: after tray "Salir", the app process
   was gone and the separate probe immediately registered the same combination.
-- `dotnet build MeetingAssistant.sln` completed with 0 errors and 0 warnings.
+- `dotnet build MeetingAssistant.sln` completed with 0 errors. **Correction
+  (2026-08-22):** the original note here claimed 0 warnings; a full build still
+  emits the pre-existing `CS0649` for `LocalRecordingApiServer._cts`
+  (`LocalRecordingApiServer.cs:28`), reconfirmed with a forced rebuild of
+  `MeetingAssistant.Infrastructure`. It predates T3 and is unrelated to it — the
+  0-warning reading came from an incremental build that skipped Infrastructure,
+  reproduced here: a plain `dotnet build` after touching only App prints
+  0 warnings, while `-t:Rebuild` prints the CS0649. Report solution build
+  results from a rebuild, or name the project that was actually compiled.
 - `MeetingAssistant.Core.csproj` was rechecked and still has zero package
   references.
 
