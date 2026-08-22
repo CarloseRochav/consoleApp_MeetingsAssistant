@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Dispatching;
 using MeetingAssistant.App.Services;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Models;
@@ -10,6 +11,16 @@ namespace MeetingAssistant.App.ViewModels;
 public partial class RecordViewModel : ObservableObject
 {
     private readonly RecordingCoordinator _recordingCoordinator;
+    private readonly DispatcherQueue? _dispatcherQueue;
+
+    /// <summary>
+    /// Mayor que cero mientras esta vista es la que esta ejecutando la
+    /// operacion. Los eventos del coordinador que llegan en ese lapso ya
+    /// estan reflejados por el metodo local, asi que se ignoran para no
+    /// pisar mensajes de estado mas especificos ("Transcribiendo...",
+    /// "Reporte guardado en...").
+    /// </summary>
+    private int _localOperationDepth;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ButtonText))]
@@ -72,11 +83,90 @@ public partial class RecordViewModel : ObservableObject
         _recordingCoordinator = recordingCoordinator;
         Prompts = promptCatalog.GetAll();
         SelectedPrompt = promptCatalog.Default;
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         IsRecording = _recordingCoordinator.IsRecording;
         IsProcessing = _recordingCoordinator.IsProcessing;
         StatusMessage = IsProcessing
             ? "Procesando..."
             : IsRecording ? "Grabando..." : "Listo para grabar.";
+
+        // MainWindow y RecordPage se construyen una sola vez; la bandeja (y
+        // mas adelante el hotkey) pueden iniciar o detener una grabacion sin
+        // que esta instancia se entere. Sin estas suscripciones la pagina
+        // muestra estado viejo al reabrir la ventana.
+        _recordingCoordinator.StateChanged += OnCoordinatorStateChanged;
+        _recordingCoordinator.RecordingCompleted += OnCoordinatorRecordingCompleted;
+        _recordingCoordinator.RecordingFailed += OnCoordinatorRecordingFailed;
+    }
+
+    private void OnCoordinatorStateChanged(object? sender, EventArgs e)
+    {
+        if (Volatile.Read(ref _localOperationDepth) > 0) return;
+
+        RunOnUiThread(() =>
+        {
+            IsRecording = _recordingCoordinator.IsRecording;
+            IsProcessing = _recordingCoordinator.IsProcessing;
+
+            if (IsRecording)
+            {
+                StatusMessage = "Grabando...";
+            }
+            else if (IsProcessing)
+            {
+                StatusMessage = "Procesando...";
+            }
+            else if (StatusMessage is "Grabando..." or "Procesando...")
+            {
+                // Solo se limpia si el mensaje seguia siendo transitorio: el
+                // evento de fin llega antes que este y ya dejo el resultado.
+                StatusMessage = "Listo para grabar.";
+            }
+        });
+    }
+
+    private void OnCoordinatorRecordingCompleted(object? sender, RecordingCompletedEventArgs e)
+    {
+        if (Volatile.Read(ref _localOperationDepth) > 0) return;
+
+        MeetingPipelineResult result = e.Result;
+        RunOnUiThread(() =>
+        {
+            LastTranscript = result.Transcription.Transcript;
+            LastGeneratedReport = result.ReportMarkdown;
+            LastSavedReportPath = result.SavedReportPath;
+            SelectedPrompt = Prompts.FirstOrDefault(p => p.Id == result.Prompt.Id) ?? SelectedPrompt;
+            ErrorDetails = null;
+            StatusMessage = $"Reporte guardado en el vault de Obsidian: {result.SavedReportPath}";
+        });
+    }
+
+    private void OnCoordinatorRecordingFailed(object? sender, RecordingFailedEventArgs e)
+    {
+        if (Volatile.Read(ref _localOperationDepth) > 0) return;
+
+        Exception exception = e.Exception;
+        RunOnUiThread(() =>
+        {
+            StatusMessage = $"Error al procesar la reunion: {exception.Message}";
+            ErrorDetails = exception.ToString();
+        });
+    }
+
+    /// <summary>
+    /// El coordinador levanta sus eventos en el hilo que llamo la operacion
+    /// (la bandeja usa el hilo de UI, otros disparadores no tienen por que).
+    /// Mutar propiedades observables fuera del hilo de UI rompe el binding.
+    /// </summary>
+    private void RunOnUiThread(Action action)
+    {
+        if (_dispatcherQueue is null || _dispatcherQueue.HasThreadAccess)
+        {
+            action();
+            return;
+        }
+
+        _dispatcherQueue.TryEnqueue(() => action());
     }
 
     private bool CanToggleRecording() => !IsProcessing;
@@ -96,6 +186,7 @@ public partial class RecordViewModel : ObservableObject
 
     private async Task StartAsync()
     {
+        _localOperationDepth++;
         try
         {
             await _recordingCoordinator.StartRecordingAsync();
@@ -112,12 +203,17 @@ public partial class RecordViewModel : ObservableObject
             StatusMessage = $"Error al iniciar la grabación: {ex.Message}";
             ErrorDetails = ex.ToString();
         }
+        finally
+        {
+            _localOperationDepth--;
+        }
     }
 
     private async Task StopAsync()
     {
         IsProcessing = true;
         StatusMessage = "Transcribiendo...";
+        _localOperationDepth++;
         try
         {
             TranscriptionSession session = await _recordingCoordinator.StopRecordingAndTranscribeAsync();
@@ -136,6 +232,7 @@ public partial class RecordViewModel : ObservableObject
         }
         finally
         {
+            _localOperationDepth--;
             IsProcessing = false;
         }
     }
@@ -144,6 +241,7 @@ public partial class RecordViewModel : ObservableObject
     {
         IsProcessing = true;
         StatusMessage = "Transcribiendo archivo existente...";
+        _localOperationDepth++;
         LastSavedReportPath = null;
         LastTranscript = null;
         LastGeneratedReport = null;
@@ -161,6 +259,7 @@ public partial class RecordViewModel : ObservableObject
         }
         finally
         {
+            _localOperationDepth--;
             IsProcessing = _recordingCoordinator.IsProcessing;
         }
     }
@@ -217,6 +316,7 @@ public partial class RecordViewModel : ObservableObject
         IsProcessing = true;
         StatusMessage = $"Extrayendo el reporte con «{SelectedPrompt.DisplayName}»...";
         ErrorDetails = null;
+        _localOperationDepth++;
         try
         {
             ExtractionSaveResult result = await _recordingCoordinator.ExtractAndSaveAsync(
@@ -232,6 +332,7 @@ public partial class RecordViewModel : ObservableObject
         }
         finally
         {
+            _localOperationDepth--;
             IsProcessing = _recordingCoordinator.IsProcessing;
         }
     }

@@ -4,7 +4,7 @@
 **Author:** Lead Software Architect analysis, 2026-08-07. Updated 2026-08-11,
 2026-08-13 (T7 — startup diagnostics; corrects the T2 tray-icon diagnosis),
 2026-08-14 (T8 — prompt catalog, attach transcript, vault save, rendered
-Markdown preview).
+Markdown preview), 2026-08-21 (T2.2 — tray-icon .ico fix + T2.1 implementado).
 **Scope:** implementation steps to close Fase 3, plus the T8 prompt-catalog
 branch (Fase 2/4 quality work brought forward). No source code included
 below — this is the plan a developer executes against.
@@ -15,9 +15,9 @@ below — this is the plan a developer executes against.
 |---|---|
 | T1 — Centralize recording state | ✅ DONE (validated 2026-08-11) |
 | T1.5 — Revert unauthorized network exposure | ✅ DONE (validated 2026-08-11) |
-| T2 — Tray icon + hide-to-tray | 🔴 **Tray icon still broken** — the 2026-08-12 PNG fix did not work; now confirmed with a real managed stack trace (2026-08-13, see T7). Hide-to-tray works, which makes this a usability trap |
-| T2.1 — Fix stale RecordPage state after external triggers | 🔴 TODO — **blocks T3** |
-| T3–T6 | ⬜ Not started — T3 instructions below, ready once T2.1 lands |
+| T2 — Tray icon + hide-to-tray | 🟡 Fix applied 2026-08-21 (`Assets/TrayIcon.ico`, single-frame BMP-encoded), verified headlessly against the exact failing API — **still needs one GUI launch to confirm the icon appears**. See T2.2 |
+| T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (implemented + build-verified 2026-08-21; GUI acceptance criteria pending the same launch as T2.2). No longer blocks T3 |
+| T3–T6 | ⬜ Not started — T3 unblocked as of 2026-08-21; the only open input is the default hotkey combination |
 | T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
 | T8 — Prompt catalog after transcript | ✅ DONE (2026-08-14). Follow-ups same day: attach `.txt`, vault-path UX, rendered MD preview |
 
@@ -81,7 +81,7 @@ below — this is the plan a developer executes against.
 T1 (centralize recording state) ── DONE
   └─> T1.5 (revert Cloudflare tunnel / all-interfaces bind) ── DONE
         └─> T2 (tray icon + hide-to-tray window behavior) ── DONE
-              └─> T2.1 (fix stale RecordPage state) ── TODO, blocks T3
+              └─> T2.1 (fix stale RecordPage state) ── DONE
                     ├─> T3 (global hotkey)
                     └─> T4 (toast notification on report ready / on error)
   └─> T5 (optional autostart via StartupTask)
@@ -617,6 +617,93 @@ what happens in a meeting.
   behaves exactly as before — no regression to the existing, already-correct
   path.
 - `dotnet build MeetingAssistant.sln` succeeds.
+
+---
+
+## T2.2 — Tray icon .ico fix and T2.1 implementation (2026-08-21)
+
+**Status: 🟡 Implemented and build-verified; one GUI launch still required.**
+**Touches:** `Assets/TrayIcon.ico` (new), `MeetingAssistant.App.csproj`,
+`Services/TrayIconService.cs`, `ViewModels/RecordViewModel.cs`.
+
+### Tray icon
+
+The failing path was reproduced headlessly instead of inferred: each candidate
+asset was loaded with `new System.Drawing.Icon(stream)` — the exact constructor
+at the bottom of the 2026-08-13 stack trace (`StreamExtensions.ToSmallIcon`).
+
+| Asset | Result |
+|---|---|
+| `Square44x44Logo.targetsize-24_altform-unplated.png` (what shipped) | `ArgumentException: Argument 'picture' must be a picture that can be used as a Icon` — the reported failure, reproduced exactly |
+| `AppIcon.ico` (6 frames, 370 KB) | loads fine |
+| `TrayIcon.ico` (new, 1 frame, 4 KB) | loads fine |
+
+Note the middle row: the multi-frame `AppIcon.ico` is *not* rejected by this
+API, so the 2026-08-12 diagnosis ("the multi-frame `.ico` is what crashed the
+app at launch") was never confirmed and remains unproven. What is now proven is
+that the PNG cannot work. `TrayIcon.ico` was chosen over reverting to
+`AppIcon.ico` because it is the asset the 2026-08-13 correction already
+specified, it is 4 KB instead of 370 KB, and it removes the multi-frame
+variable from a path that has already burned two debugging sessions.
+
+`Assets/TrayIcon.ico` is generated from `Assets/Square44x44Logo.scale-200.png`
+(88x88) downscaled to a single 32x32 frame written as a raw DIB/BMP payload
+(BITMAPINFOHEADER with doubled height, 32-bit BGRA bottom-up XOR data, zeroed
+AND mask) — deliberately not PNG-compressed, since PNG-inside-ICO is the other
+thing `System.Drawing.Icon` handles badly.
+
+**Not verified:** that the icon visibly appears in the notification area. That
+needs one interactive launch; the session that made the fix had no GUI access.
+If it still fails, the exception reaches `startup-errors.log` through the T7
+global handlers (the async continuation is outside the `try/catch` around
+`AttachTo()`), so read that file first.
+
+### T2.1 state sync
+
+`RecordViewModel` now subscribes to `RecordingCoordinator.StateChanged`,
+`RecordingCompleted` and `RecordingFailed`, marshalling every update through
+`DispatcherQueue.TryEnqueue` (queue captured in the constructor with
+`DispatcherQueue.GetForCurrentThread()`).
+
+Two details worth knowing before touching this code again:
+
+1. **`_localOperationDepth`.** The coordinator raises its events synchronously
+   from inside the call, so a RecordPage-initiated operation would receive its
+   own events and overwrite the specific message it had just set
+   ("Transcribiendo...", "Reporte guardado en...") with a generic
+   "Procesando..." / "Listo para grabar.". Every RecordPage-initiated
+   coordinator call increments this counter in a `try`/`finally`; the handlers
+   read it at *raise* time, before enqueuing, and skip. External triggers (tray,
+   and later the hotkey) are unaffected — the counter is zero for them.
+2. **The idle transition does not blank a result.** `StopRecordingAndProcessAsync`
+   raises `RecordingCompleted` first and only then, from its `finally`, the idle
+   `StateChanged`. The idle branch therefore resets `StatusMessage` only when it
+   is still one of the transient strings, so the report path written by the
+   completion handler survives.
+
+Unchanged and still true: the HTTP endpoint calls `IMeetingPipeline` directly,
+not the coordinator, so HTTP-triggered runs raise none of these events and will
+still leave a hidden `RecordPage` stale. Same T1 gap, deliberately out of scope
+(see T2.1 step 7).
+
+### Verification actually performed
+
+- `dotnet build MeetingAssistant.sln` — 0 errors, 1 pre-existing warning
+  (`LocalRecordingApiServer._cts`, CS0649, unrelated to this change).
+- The icon load matrix above, run for real against `System.Drawing`.
+- `Assets\TrayIcon.ico` confirmed present in the generated
+  `MeetingAssistant.App.build.appxrecipe`, i.e. it is part of the deployed
+  package layout. (The `bin/**/AppX/Assets` folder still lacks it, but that
+  folder is a stale 2026-08-12 layout and is not what deployment reads.)
+- **Not performed:** any GUI run. A `MeetingAssistant.App` process from an
+  earlier session was still alive on the machine, and killing it could have
+  discarded a recording in progress.
+
+### Acceptance criteria still open
+
+- Tray icon visible in the notification area, and `startup-errors.log` clean
+  after launch.
+- The four T2.1 acceptance criteria above, exercised from the tray.
 
 ---
 

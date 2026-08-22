@@ -43,19 +43,21 @@ public sealed class TrayIconService : IDisposable
         exitItem.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
         menu.Items.Add(exitItem);
 
-        // IMPORTANT: use a plain raster asset here, not Assets/AppIcon.ico.
-        // H.NotifyIcon converts IconSource to a native HICON synchronously
-        // during ForceCreate(); a multi-frame .ico loaded through
-        // BitmapImage is not a reliably decodable source for that
-        // conversion and was reproducing a hard, unhandled-exception crash
-        // (STATUS_STOWED_EXCEPTION / 0xC000027B in Microsoft.UI.Xaml.dll,
-        // confirmed via Windows Event Viewer) on every launch. The 24px
-        // unplated PNG is the asset Windows itself generates for exactly
-        // this taskbar/tray use case.
+        // IMPORTANTE: esto debe ser Assets/TrayIcon.ico, un .ico de UN SOLO
+        // frame codificado como DIB/BMP (32x32, BGRA). No un .png y no el
+        // Assets/AppIcon.ico multi-frame. H.NotifyIcon convierte IconSource
+        // con ImageExtensions.ToIconAsync -> StreamExtensions.ToSmallIcon,
+        // que pasa el stream crudo a System.Drawing.Icon(Stream), y ese
+        // constructor solo acepta un stream ICO. Con el .png fallaba con
+        // "Argument 'picture' must be a picture that can be used as a Icon"
+        // de forma asincrona (continuacion en el dispatcher), fuera del
+        // alcance del try/catch de App.xaml.cs: la app quedaba sin icono de
+        // bandeja, la ventana se ocultaba al cerrar y el proceso seguia vivo
+        // e inalcanzable, reteniendo el puerto de la API local.
         _trayIcon = new TaskbarIcon
         {
             ToolTipText = "Meeting Assistant",
-            IconSource = new BitmapImage(new Uri("ms-appx:///Assets/Square44x44Logo.targetsize-24_altform-unplated.png")),
+            IconSource = new BitmapImage(new Uri("ms-appx:///Assets/TrayIcon.ico")),
             ContextFlyout = menu
         };
         _trayIcon.ForceCreate();
