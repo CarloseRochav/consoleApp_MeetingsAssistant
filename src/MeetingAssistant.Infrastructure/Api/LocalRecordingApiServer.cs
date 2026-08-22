@@ -50,9 +50,9 @@ public sealed class LocalRecordingApiServer : IDisposable
             throw new InvalidOperationException("LocalRecordingApiServer ya está corriendo.");
         }
 
-        //_cts = new CancellationTokenSource();
-        //_listener.Start();
-        //_listenLoop = Task.Run(() => ListenLoopAsync(_cts.Token));
+        _cts = new CancellationTokenSource();
+        _listener.Start();
+        _listenLoop = Task.Run(() => ListenLoopAsync(_cts.Token));
     }
 
     public void Stop()

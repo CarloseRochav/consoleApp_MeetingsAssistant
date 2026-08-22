@@ -19,6 +19,7 @@ below — this is the plan a developer executes against.
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
 | T4 — Toast on report ready / on failure | 🟡 Implemented and Rebuild-validated 2026-08-22; visual GUI checks pending |
+| T4.1 — Single-instance + HTTP listener reactivado | 🟡 Implemented and build-verified 2026-08-22; falta el clic real en un toast |
 | T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
 | T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
 | T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
@@ -63,7 +64,8 @@ sorpresas:
   `IMeetingPipeline` directo, asi que no levanta `StateChanged` /
   `RecordingCompleted` / `RecordingFailed`. Consecuencia viva: una grabacion
   disparada por HTTP no actualiza `RecordPage` ni dispara el toast de T4.
-  Arreglarlo es rutear el server por `RecordingCoordinator`.
+  Arreglarlo es rutear el server por `RecordingCoordinator`. Dejo de ser
+  teorico el 2026-08-22, cuando el listener se reactivo (ver T4.1).
 - **Validacion de configuracion solo verifica presencia** (T7): no detecta un
   `Storage:VaultPath` bien formado que apunte a un directorio inexistente, que
   es justo el problema que se encontro el 2026-08-13.
@@ -925,6 +927,89 @@ needed).
 - Known gap intentionally unchanged: HTTP recordings call
   `IMeetingPipeline` directly, bypass `RecordingCoordinator`, and therefore do
   not produce T4 toasts or coordinator UI events.
+
+---
+
+## T4.1 — Instancia unica y reactivacion del endpoint HTTP (2026-08-22)
+
+**Status: 🟡 Implementado y verificado por build; falta un clic real en un toast.**
+**Touches:** `Program.cs` (nuevo), `MeetingAssistant.App.csproj`, `App.xaml.cs`,
+`Infrastructure/Api/LocalRecordingApiServer.cs`.
+
+Dos hallazgos de la revision de T4, ninguno causado por T4 mismo.
+
+### El endpoint HTTP llevaba nueve dias muerto
+
+`LocalRecordingApiServer.Start()` tenia sus tres lineas comentadas desde el
+commit `a489565` ("Cahnges", 2026-08-13): no se creaba el `CancellationTokenSource`,
+no se llamaba `_listener.Start()` y no se lanzaba el loop. `git log -L` lo ubica
+ahi. La hipotesis mas probable es que fue un parche para el
+`HttpListenerException (183)` que documenta T7, cuando el icono de bandeja roto
+dejaba procesos huerfanos reteniendo el puerto; con la bandeja funcionando desde
+T2.2 esa razon ya no aplica.
+
+Consecuencias que conviene tener presentes al leer el resto de este documento:
+
+- Fase 3 paso 3 aparece descrito como implementado y funcionando en varias
+  secciones. Lo esta como codigo, pero no estuvo escuchando en ese periodo.
+- La nota de validacion de T2 dice haber verificado un `POST /recording/start`
+  con la bandeja abierta. Esa verificacion es del 2026-08-11, anterior al
+  commit que lo apago, asi que era cierta cuando se escribio.
+- El warning `CS0649` sobre `_cts` — descartado tres veces como "preexistente y
+  no relacionado", incluida una vez por mi — era exactamente el compilador
+  senalando este codigo muerto. Al reactivar el listener el warning desaparece
+  solo, y la solucion compila con 0 warnings.
+
+Reactivado a pedido del usuario. El endpoint conserva su token obligatorio y la
+verificacion de `RemoteEndPoint` loopback; no se cambio nada de su superficie.
+
+**Vuelve a estar vivo un hueco conocido:** las grabaciones disparadas por HTTP
+llaman a `IMeetingPipeline` directo, no al `RecordingCoordinator`, asi que no
+actualizan `RecordPage` ni generan toast de T4. Mientras el listener estuvo
+apagado eso era teorico; ya no lo es.
+
+### T4 obliga a que la app sea de instancia unica
+
+`AppNotificationManager.Default.Register()` registra el activador COM de la app.
+Un clic en un toast activa la app por COM y, sin redireccion, Windows lanza un
+proceso nuevo. No habia nada de instancia unica en el proyecto: ni `AppInstance`,
+ni `GetActivatedEventArgs`, ni un `Main` propio.
+
+Con cerrar-oculta-la-ventana (T2), un segundo proceso significa dos iconos de
+bandeja, un `RegisterHotKey` que falla (T3) y — ahora que el listener volvio —
+el bind del puerto reventando con `HttpListenerException 183`, que es el mismo
+choque descrito en T2.2. Aplica igual a relanzar la app a mano teniendola
+oculta.
+
+`Program.cs` es ahora el punto de entrada (`DISABLE_XAML_GENERATED_MAIN` en el
+csproj). Hace `AppInstance.FindOrRegisterForKey`, y si no es la instancia dueña
+redirige la activacion con `RedirectActivationToAsync` y sale sin levantar UI.
+La instancia viva escucha `AppInstance.GetCurrent().Activated` y responde con
+`ShowFromTray()`, marshaleado por `DispatcherQueue`: sin eso, un segundo
+lanzamiento no haria nada visible y pareceria que la app no arranco.
+
+### Verificacion
+
+- `dotnet build MeetingAssistant.sln -t:Rebuild`: 0 errores y **0 warnings** —
+  el `CS0649` desaparecio al reactivar el listener, que es la confirmacion de
+  que ese warning venia de ahi.
+- Arranque real con `dotnet run`: la app levanta con el `Main` propio (el
+  riesgo principal de este cambio era romper el arranque) y
+  `startup-errors.log` queda limpio.
+- **Instancia unica ejercitada de verdad:** con la app corriendo (pid 37224) se
+  lanzo el `.exe` una segunda vez. El segundo proceso (pid 16832) salio solo y
+  quedo una sola instancia viva. Ese es exactamente el camino que recorre un
+  clic en un toast: proceso nuevo, redireccion, salida.
+- **Endpoint HTTP verificado vivo:** `POST http://localhost:5757/recording/start`
+  sin token responde **401**, no un timeout de conexion. Confirma a la vez que
+  el listener volvio y que el token sigue siendo obligatorio; no se inicio
+  ninguna grabacion.
+- Al cerrar el proceso, el puerto queda libre: la conexion TCP a 5757 pasa a ser
+  rechazada.
+- **Sin verificar:** el clic real en un toast de punta a punta, y que la ventana
+  efectivamente vuelva al frente al recibir la redireccion (se comprobo la
+  redireccion y la salida del segundo proceso, no lo que se ve en pantalla).
+  Queda para el mismo pase con GUI que las verificaciones visuales de T4 y T6b.
 
 ---
 

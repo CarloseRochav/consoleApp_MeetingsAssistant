@@ -11,6 +11,7 @@ using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
+using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
 
 namespace MeetingAssistant.App;
@@ -110,6 +111,13 @@ public partial class App : Application
         MainWindow = _window;
         _window.Activate();
 
+        // Program.cs redirige a esta instancia cualquier lanzamiento posterior
+        // (incluida la activacion por COM al hacer clic en un toast). Como
+        // cerrar la ventana solo la oculta, lo util al recibir la redireccion
+        // es traerla de vuelta: si no, un segundo lanzamiento no haria nada
+        // visible y pareceria que la app no arranco.
+        AppInstance.GetCurrent().Activated += OnInstanceActivated;
+
         try
         {
             _trayIconService = Services.GetRequiredService<TrayIconService>();
@@ -200,6 +208,12 @@ public partial class App : Application
             // escrito por el llamador es el único registro que queda.
             LogStartupFailure("App.ShowStartupError", windowException);
         }
+    }
+
+    private void OnInstanceActivated(object? sender, AppActivationArguments args)
+    {
+        // Llega en un hilo del runtime, no en el de UI.
+        _window?.DispatcherQueue.TryEnqueue(() => _window?.ShowFromTray());
     }
 
     internal static void LogStartupFailure(string context, Exception exception)
