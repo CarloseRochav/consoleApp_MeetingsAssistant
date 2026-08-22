@@ -18,7 +18,7 @@ below — this is the plan a developer executes against.
 | T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; see T2.2) |
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
-| T4 — Toast on report ready / on failure | ⬜ Not started — **next** |
+| T4 — Toast on report ready / on failure | 🟡 Implemented and Rebuild-validated 2026-08-22; visual GUI checks pending |
 | T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
 | T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
 | T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
@@ -35,7 +35,7 @@ funcionan. Se resuelve partiendo T6 en dos.
 
 | # | Tarea | Por que va aqui |
 |---|---|---|
-| 1 | **T4 — toast** | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
+| 1 | **T4 — toast** — codigo terminado; validacion visual pendiente | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
 | 2 | **T6a — identidad de paquete + firma** | Reemplazar el `Identity/Publisher` placeholder (`CN=AppPublisher`), generar el certificado self-signed (fuera del repo o gitignoreado — el `.gitignore` cubre `AppPackages/`, `*.msix*`, `*.appx*`, `*.pubxml`, pero **no** `*.pfx`: verificarlo antes de generar nada), y producir un `.msix` sideload instalable. Sin este paso T5 no se puede validar. |
 | 3 | **T5 — autostart** | `Windows.ApplicationModel.StartupTask` + un solo toggle en `SettingsPage` (un control, no la pagina completa). Ya contra el paquete firmado, asi que `RequestEnableAsync()` y los estados `DisabledByUser`/`DisabledByPolicy` se pueden probar de verdad en `Task Manager > Startup Apps`. |
 | 4 | **T6b — pase de aceptacion final** | Instalar el paquete de verdad (no `dotnet run`) y re-verificar T2–T5 completos sobre esa instalacion, mas desinstalacion limpia sin startup task ni proceso de bandeja huerfano. Esto es lo que cierra Fase 3. |
@@ -861,6 +861,8 @@ trigger source).
 
 ## T4 — Toast notification when the report is ready (and on failure)
 
+**Status: 🟡 IMPLEMENTED, VISUAL VALIDATION PENDING** — 2026-08-22.
+
 **Depends on:** T2 (must work while the window is hidden/tray-only — this is
 why the roadmap's "Toast/InfoBar" choice must resolve to **Toast**, not
 `InfoBar`: `InfoBar` only renders inside a visible page, which defeats the
@@ -902,6 +904,27 @@ needed).
   icon), which requires the app to be running with package identity —
   confirm this is true both under `dotnet run` (WinApp BuildTools debug
   registration) and after T6's real MSIX install.
+
+### Validation notes (2026-08-22)
+
+- `dotnet build MeetingAssistant.sln -t:Rebuild`: passed with 0 errors and 1
+  warning. The warning is the preexisting `CS0649` on
+  `LocalRecordingApiServer._cts`; T4 did not introduce it.
+- `dotnet run --project src/MeetingAssistant.App`: the updated packaged debug
+  app launched successfully after closing a stale instance from 2026-08-21.
+- Sent `Alt+F4` to hide the window and `Ctrl+Alt+F9` twice to exercise the
+  hidden-window recording path. Repeated with `Deepgram__ApiKey` set to an
+  invalid value only in the launched process to exercise the critical failure
+  path; no real `appsettings.json` value was changed.
+- The automation environment could send the desktop input but could not
+  reliably observe Windows notification UI. Therefore toast visibility,
+  success-path saved-report text, failure-path error text, app name/icon
+  attribution, and `Unregister()` through an actual tray **Salir** click remain
+  explicitly unverified. Final attribution against the installed MSIX remains
+  part of T6b as planned.
+- Known gap intentionally unchanged: HTTP recordings call
+  `IMeetingPipeline` directly, bypass `RecordingCoordinator`, and therefore do
+  not produce T4 toasts or coordinator UI events.
 
 ---
 

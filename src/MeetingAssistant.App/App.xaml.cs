@@ -11,6 +11,7 @@ using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
+using Microsoft.Windows.AppNotifications;
 
 namespace MeetingAssistant.App;
 
@@ -18,6 +19,8 @@ public partial class App : Application
 {
     private MainWindow? _window;
     private LocalRecordingApiServer? _apiServer;
+    private ReportNotificationService? _reportNotificationService;
+    private bool _appNotificationsRegistered;
     private TrayIconService? _trayIconService;
     private GlobalHotkeyService? _globalHotkeyService;
     private StartupErrorWindow? _errorWindow;
@@ -89,6 +92,19 @@ public partial class App : Application
     {
         _apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
         _apiServer.Start();
+
+        try
+        {
+            _reportNotificationService = Services.GetRequiredService<ReportNotificationService>();
+            AppNotificationManager.Default.Register();
+            _appNotificationsRegistered = true;
+        }
+        catch (Exception exception)
+        {
+            _reportNotificationService?.Dispose();
+            _reportNotificationService = null;
+            LogStartupFailure("AppNotificationManager.Register", exception);
+        }
 
         _window = Services.GetRequiredService<MainWindow>();
         MainWindow = _window;
@@ -231,6 +247,7 @@ public partial class App : Application
             provider.GetRequiredService<IReportStorage>(),
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
         services.AddSingleton<RecordingCoordinator>();
+        services.AddSingleton<ReportNotificationService>();
         services.AddSingleton<TrayIconService>();
         services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<LocalRecordingApiServer>();
@@ -262,6 +279,18 @@ public partial class App : Application
 
         _isExiting = true;
         _apiServer.Stop();
+        _reportNotificationService?.Dispose();
+        if (_appNotificationsRegistered)
+        {
+            try
+            {
+                AppNotificationManager.Default.Unregister();
+            }
+            catch (Exception exception)
+            {
+                LogStartupFailure("AppNotificationManager.Unregister", exception);
+            }
+        }
         _globalHotkeyService?.Dispose();
         _trayIconService?.Dispose();
         _window.BeginExitFromTray();
