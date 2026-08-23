@@ -18,9 +18,10 @@ below — this is the plan a developer executes against.
 | T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; see T2.2) |
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
-| T4 — Toast on report ready / on failure | 🟡 Implemented; **cobertura corregida en T4.2** (el flujo de dos pasos de la ventana no levantaba eventos). Rebuild-validated 2026-08-23; visual GUI checks pending |
+| T4 — Toast on report ready / on failure | 🔴 **Nunca funcionó**: `Register()` fallaba en cada arranque por falta del activador COM en el manifiesto (ver T4.3). Corregido 2026-08-23; falta confirmar el arranque limpio |
 | T4.1 — Single-instance + HTTP listener reactivado | 🟡 Implemented and build-verified 2026-08-22; falta el clic real en un toast |
 | T4.2 — Toasts para todo el ciclo (inicio, transcripción, reporte, fallo) | 🟡 Implemented and Rebuild-validated 2026-08-23; visual GUI checks pending |
+| T4.3 — Activador COM en el manifiesto + traza de diagnóstico | 🟡 Causa raíz de T4 encontrada y corregida 2026-08-23; falta confirmar `Register OK` en el log |
 | T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
 | T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
 | T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
@@ -1108,6 +1109,96 @@ Si molesta en uso real, el cambio natural es filtrar en
 levanta estos eventos nuevos y sigue sin toast. Es el mismo hueco del backlog.
 
 ---
+## T4.3 — Register() llevaba fallando desde que T4 existe (2026-08-23)
+
+**Status: 🟡 Causa raiz encontrada y corregida; falta confirmar el arranque limpio.**
+**Touches:** `Package.appxmanifest`, `App.xaml.cs` (LogDiagnostic + nota de la
+ruta del log), `Services/ActivityNotificationService.cs` (traza).
+
+Reportado por el usuario despues de T4.2: seguia sin ver toasts. T4.2 arreglo
+un hueco real de cobertura de eventos, pero no era la causa de que no
+apareciera nada, porque **T4 nunca mostro un solo toast.**
+
+### La causa
+
+```
+[AppNotificationManager.Register] COMException 0x80004005
+    No COM servers are registered for this app
+```
+
+En **cada arranque** desde que se implemento T4: 10:26, 10:36, 11:57 y 12:03
+del 2026-08-23, y presumiblemente todos los anteriores. El `catch` de
+`LaunchCore` hace exactamente lo que se diseno que hiciera — loguear y seguir
+sin toasts — asi que la app arrancaba normal y el fallo no tenia superficie.
+
+`Package.appxmanifest` no declaraba el activador COM. Una app **sin empaquetar**
+se registra sola al llamar `Register()`; una **empaquetada** como esta necesita
+declararlo en el manifiesto: `windows.comServer` con un `ExeServer` y
+`windows.toastNotificationActivation` con el mismo `ToastActivatorCLSID`. El
+manifiesto no tenia ni un bloque `<Extensions>`.
+
+Esto invalida la nota de validacion de T4 que decia que el toast solo estaba
+"pendiente de verificacion visual": no estaba pendiente, estaba roto.
+
+### Por que tardo tanto en verse
+
+`StartupErrorLogPath` usa `Environment.SpecialFolder.LocalApplicationData`. El
+comentario del codigo explicaba que se evito `AppContext.BaseDirectory` porque
+bajo WindowsApps la escritura se redirige de forma opaca — correcto, pero
+incompleto: **corriendo empaquetada, `LocalApplicationData` tambien esta
+redirigido.** El log no estaba en `%LOCALAPPDATA%\MeetingAssistant` sino en
+`%LOCALAPPDATA%\Packages\{PackageFamilyName}\LocalCache\Local\MeetingAssistant`.
+
+Buscarlo en la ruta equivocada llevo a concluir dos veces que "Register() nunca
+fallo porque no hay log". El comentario del codigo ahora dice donde buscarlo de
+verdad.
+
+### El unico toast que si aparecio
+
+El del 2026-08-23 11:58:59 que reporto el usuario no venia del pipeline: era el
+globo de la bandeja (`_trayIcon.ShowError("Error de hotkey", ...)`) por
+`InvalidOperationException: La transcripcion del audio ... vino vacia — no se
+detecto habla` sobre una grabacion de 9 segundos. H.NotifyIcon lo entrega como
+toast bajo el AUMID de la app, que es por que el contador de notificaciones se
+movio y parecio que el canal funcionaba.
+
+### Metodo de diagnostico, para reusarlo
+
+El contador de toasts entregados por AUMID es observable y fiable en tiempo
+real:
+
+```
+HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\{AUMID}
+    PeriodicNotificationCount, LastNotificationAddedTime (FILETIME)
+```
+
+Sirve para distinguir "no se mostro" de "se mostro y no lo vi". Contrastado
+mandando un toast de prueba al mismo AUMID con `ToastNotificationManager` desde
+PowerShell: el contador subio al instante.
+
+Se agrego `App.LogDiagnostic(string)` y trazas en
+`ActivityNotificationService`: una al suscribirse y una por cada toast mostrado.
+Sin eso, un toast que no aparece no deja rastro en ningun lado y no se puede
+distinguir "el evento nunca llego" de "Show corrio y Windows no mostro nada".
+
+### Verificacion
+
+- `dotnet build MeetingAssistant.sln -t:Rebuild`: 0 errores, 0 advertencias.
+- **Pendiente:** arrancar con el manifiesto nuevo y confirmar en el log
+  `AppNotificationManager.Register OK` en vez de la `COMException`, y despues
+  los cuatro toasts a ojo.
+
+### Trampa de build, anotada porque ya mordio dos veces
+
+Con la app corriendo, `dotnet build` reporta exito pero **no actualiza el layout
+`AppX\`**: el proceso vivo tiene el `.exe` y el `.dll` tomados. El binario nuevo
+queda en `win-x64\` y el que se ejecuta sigue siendo el viejo. Hay que cerrar la
+app (bandeja > Salir) **antes** de compilar, y relanzar con `dotnet run`, que
+ademas vuelve a registrar la identidad debug — necesario aca, porque el
+activador COM se registra al registrar el paquete, no al compilar.
+
+---
+
 
 ## T5 — Optional autostart on Windows boot
 

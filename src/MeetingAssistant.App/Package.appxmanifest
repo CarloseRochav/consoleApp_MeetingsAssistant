@@ -6,7 +6,9 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap rescap systemai">
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap rescap systemai com desktop">
 
   <Identity
     Name="962A0BC5-A1BC-432A-8A38-55011BFE3EE0"
@@ -43,6 +45,36 @@
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+
+      <!--
+        Activador COM de las notificaciones (T4). Sin estas dos extensiones,
+        AppNotificationManager.Default.Register() falla en cada arranque con
+        COMException 0x80004005 "No COM servers are registered for this app",
+        el catch de LaunchCore desecha el servicio y la app no muestra ni un
+        solo toast. Una app sin empaquetar se registra sola; una empaquetada
+        como esta necesita declararlo aca.
+
+        El CLSID debe ser el mismo en ambas extensiones y no debe cambiar entre
+        versiones: es la identidad con la que Windows reactiva la app cuando se
+        hace clic en un toast. El valor de Arguments de abajo es literal y lo
+        parsea el runtime del WindowsAppSDK; no se toca. La redireccion de esa
+        activacion a la instancia viva es lo que resuelve Program.cs.
+      -->
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="MeetingAssistant.App.exe"
+                           DisplayName="MeetingAssistant.App"
+                           Arguments="----AppNotificationActivated:">
+              <com:Class Id="3f1f4fbd-17b2-475e-aba8-3062a52f414f" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation
+            ToastActivatorCLSID="3f1f4fbd-17b2-475e-aba8-3062a52f414f" />
+        </desktop:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

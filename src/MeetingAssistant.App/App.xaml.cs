@@ -99,6 +99,7 @@ public partial class App : Application
             _activityNotificationService = Services.GetRequiredService<ActivityNotificationService>();
             AppNotificationManager.Default.Register();
             _appNotificationsRegistered = true;
+            LogDiagnostic("AppNotificationManager.Register OK; ActivityNotificationService suscrito.");
         }
         catch (Exception exception)
         {
@@ -146,6 +147,13 @@ public partial class App : Application
     /// el directorio base queda bajo WindowsApps, donde la escritura falla o se
     /// redirige de forma opaca, y el log se perdía justo en el escenario que
     /// más importa depurar.
+    ///
+    /// Ojo con dónde buscarlo: corriendo empaquetada, LocalApplicationData
+    /// tambien está redirigido, así que el archivo NO aparece en
+    /// %LOCALAPPDATA%\MeetingAssistant sino en
+    /// %LOCALAPPDATA%\Packages\{PackageFamilyName}\LocalCache\Local\MeetingAssistant.
+    /// El 2026-08-23 esa confusión hizo dar por bueno un Register() que llevaba
+    /// fallando en cada arranque desde que se implementó T4.
     /// </summary>
     public static string StartupErrorLogPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -228,6 +236,29 @@ public partial class App : Application
         {
             // Si ni siquiera se puede escribir el log de diagnóstico, no hay
             // nada más que hacer aquí sin arriesgar un segundo crash.
+        }
+    }
+
+    /// <summary>
+    /// Traza de diagnóstico, en el mismo archivo que
+    /// <see cref="LogStartupFailure"/>. Existe porque una notificación no tiene
+    /// ninguna superficie donde depurarse: cuando no aparece un toast, sin esto
+    /// no hay forma de distinguir "el evento nunca llegó al servicio" de "Show
+    /// se llamó y Windows no lo mostró", que son problemas opuestos.
+    /// </summary>
+    internal static void LogDiagnostic(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(StartupErrorLogPath)!);
+            File.AppendAllText(
+                StartupErrorLogPath,
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [diag] {message}\n");
+        }
+        catch
+        {
+            // Mismo criterio que LogStartupFailure: si no se puede escribir el
+            // diagnóstico, no vale arriesgar un segundo fallo por dejar rastro.
         }
     }
 

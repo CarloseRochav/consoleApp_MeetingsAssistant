@@ -31,21 +31,30 @@ public sealed class ActivityNotificationService : IDisposable
         _coordinator.TranscriptReady += OnTranscriptReady;
         _coordinator.ReportSaved += OnReportSaved;
         _coordinator.RecordingFailed += OnRecordingFailed;
+        App.LogDiagnostic("ActivityNotificationService suscrito al coordinador.");
     }
 
     private void OnRecordingStarted(object? sender, EventArgs e) =>
-        Show("Grabación iniciada", "MeetingAssistant está capturando el audio de la reunión.");
+        Show("RecordingStarted", "Grabación iniciada",
+            "MeetingAssistant está capturando el audio de la reunión.");
 
     private void OnTranscriptReady(object? sender, TranscriptReadyEventArgs e) =>
-        Show("Transcripción lista", "Abre la ventana para elegir un prompt y generar el reporte.");
+        Show("TranscriptReady", "Transcripción lista",
+            "Abre la ventana para elegir un prompt y generar el reporte.");
 
     private void OnReportSaved(object? sender, ReportSavedEventArgs e) =>
-        Show("Reporte listo", e.SavedReportPath, e.Prompt.DisplayName);
+        Show("ReportSaved", "Reporte listo", e.SavedReportPath, e.Prompt.DisplayName);
 
     private void OnRecordingFailed(object? sender, RecordingFailedEventArgs e) =>
-        Show(e.Operation, e.Exception.Message);
+        Show("RecordingFailed", e.Operation, e.Exception.Message);
 
-    private static void Show(string title, string body, string? footer = null)
+    /// <summary>
+    /// <paramref name="eventName"/> existe solo para la traza: un toast que no
+    /// aparece no deja rastro en ningún lado, y sin esto no se puede distinguir
+    /// "el evento nunca llegó al servicio" de "Show corrió y Windows no mostró
+    /// nada", que son problemas opuestos.
+    /// </summary>
+    private static void Show(string eventName, string title, string body, string? footer = null)
     {
         try
         {
@@ -59,13 +68,14 @@ public sealed class ActivityNotificationService : IDisposable
             }
 
             AppNotificationManager.Default.Show(builder.BuildNotification());
+            App.LogDiagnostic($"Toast mostrado por {eventName}.");
         }
         catch (Exception exception)
         {
             // Una notificación es conveniencia, no dependencia crítica: si el
             // canal de toasts falla, la operación que la disparó sigue siendo
             // válida y lo único que se pierde es el aviso.
-            App.LogStartupFailure("ActivityNotificationService.Show", exception);
+            App.LogStartupFailure($"ActivityNotificationService.Show({eventName})", exception);
         }
     }
 
