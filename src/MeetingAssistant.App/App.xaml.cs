@@ -20,7 +20,7 @@ public partial class App : Application
 {
     private MainWindow? _window;
     private LocalRecordingApiServer? _apiServer;
-    private ReportNotificationService? _reportNotificationService;
+    private ActivityNotificationService? _activityNotificationService;
     private bool _appNotificationsRegistered;
     private TrayIconService? _trayIconService;
     private GlobalHotkeyService? _globalHotkeyService;
@@ -96,14 +96,14 @@ public partial class App : Application
 
         try
         {
-            _reportNotificationService = Services.GetRequiredService<ReportNotificationService>();
+            _activityNotificationService = Services.GetRequiredService<ActivityNotificationService>();
             AppNotificationManager.Default.Register();
             _appNotificationsRegistered = true;
         }
         catch (Exception exception)
         {
-            _reportNotificationService?.Dispose();
-            _reportNotificationService = null;
+            _activityNotificationService?.Dispose();
+            _activityNotificationService = null;
             LogStartupFailure("AppNotificationManager.Register", exception);
         }
 
@@ -261,7 +261,7 @@ public partial class App : Application
             provider.GetRequiredService<IReportStorage>(),
             Path.Combine(AppContext.BaseDirectory, "meeting-output")));
         services.AddSingleton<RecordingCoordinator>();
-        services.AddSingleton<ReportNotificationService>();
+        services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
         services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<LocalRecordingApiServer>();
@@ -293,7 +293,7 @@ public partial class App : Application
 
         _isExiting = true;
         _apiServer.Stop();
-        _reportNotificationService?.Dispose();
+        _activityNotificationService?.Dispose();
         if (_appNotificationsRegistered)
         {
             try

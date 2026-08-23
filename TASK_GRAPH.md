@@ -18,8 +18,9 @@ below — this is the plan a developer executes against.
 | T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; see T2.2) |
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
-| T4 — Toast on report ready / on failure | 🟡 Implemented and Rebuild-validated 2026-08-22; visual GUI checks pending |
+| T4 — Toast on report ready / on failure | 🟡 Implemented; **cobertura corregida en T4.2** (el flujo de dos pasos de la ventana no levantaba eventos). Rebuild-validated 2026-08-23; visual GUI checks pending |
 | T4.1 — Single-instance + HTTP listener reactivado | 🟡 Implemented and build-verified 2026-08-22; falta el clic real en un toast |
+| T4.2 — Toasts para todo el ciclo (inicio, transcripción, reporte, fallo) | 🟡 Implemented and Rebuild-validated 2026-08-23; visual GUI checks pending |
 | T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
 | T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
 | T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
@@ -1010,6 +1011,101 @@ lanzamiento no haria nada visible y pareceria que la app no arranco.
   efectivamente vuelva al frente al recibir la redireccion (se comprobo la
   redireccion y la salida del segundo proceso, no lo que se ve en pantalla).
   Queda para el mismo pase con GUI que las verificaciones visuales de T4 y T6b.
+
+---
+
+## T4.2 — Los toasts no cubrian el flujo de la ventana (2026-08-23)
+
+**Status: 🟡 Implementado y compilado; validacion visual pendiente igual que T4.**
+**Touches:** `Services/RecordingCoordinator.cs`, `Services/ReportNotificationService.cs`
+(renombrado a `ActivityNotificationService.cs`), `App.xaml.cs`.
+
+Reportado por el usuario: "no veo ningun toast al grabar ni al generar el
+reporte". No era un fallo del canal de notificaciones.
+
+### Que estaba pasando
+
+`ReportNotificationService` se suscribia a `RecordingCompleted`, y el
+coordinador solo levanta ese evento en dos de sus seis metodos:
+`StopRecordingAndProcessAsync` (bandeja/hotkey) y `ProcessExistingAudioAsync`
+(cargar un `.wav`). El flujo de la ventana es el de dos pasos que introdujo
+**T8** — `StopRecordingAndTranscribeAsync` y despues `ExtractAndSaveAsync` — y
+ninguno de los dos levantaba nada al terminar bien.
+
+T4 se escribio contra el modelo de un solo paso que T8 ya habia reemplazado en
+`RecordPage`. Efecto neto: el reporte se guardaba y no habia ningun evento que
+lo anunciara, justo en el camino mas usado.
+
+Sintoma colateral que confirma lo invertido que estaba: `RaiseRecordingFailed`
+si estaba en los seis metodos, asi que desde la ventana un **fallo** daba toast
+(redundante, el error ya se ve en pantalla) y un **exito** no daba nada.
+
+### Evidencia
+
+- `HKCU:\...\Notifications\Settings\962A0BC5-...!App` existia con
+  `PeriodicNotificationCount = 3` y `LastNotificationAddedTime = 2026-08-22
+  00:08:26`, o sea los toasts de la sesion de T4. Registro, identidad de
+  paquete (`IsDevelopmentMode = True`) y `ToastEnabled = 1`: todo sano.
+- Las dos grabaciones del usuario del 2026-08-23 (`meeting-20260823-103035.wav`
+  y `meeting-20260823-103642.wav`) **no movieron el contador**. Cero
+  notificaciones para dos reportes generados desde la ventana.
+- `startup-errors.log` no existia: `Register()` nunca fallo y `Show()` nunca
+  lanzo. El problema no estaba en el canal sino en quien lo llamaba.
+
+### Que se cambio
+
+Se descarto levantar `RecordingCompleted` desde `ExtractAndSaveAsync`: su
+payload es un `MeetingPipelineResult`, que exige `Audio` y `Transcription`,
+datos que ese metodo no tiene — rellenarlos habria sido inventar valores.
+
+En su lugar, tres eventos nuevos en `RecordingCoordinator`:
+
+- `RecordingStarted` — la captura arranco. `StateChanged` no servia: se dispara
+  en cada transicion y no distingue el arranque de un refresco cualquiera.
+- `TranscriptReady` — hay transcript y falta elegir prompt. Es un estado
+  terminal del flujo de dos pasos: la app queda esperando al usuario.
+- `ReportSaved` — se guardo un reporte, con la ruta y el `PromptDefinition`.
+  Lo levantan los **tres** caminos que guardan.
+
+`RecordingFailedEventArgs` gana `Operation`, un texto ya presentable de que se
+estaba intentando. El evento cubre seis caminos distintos; sin eso, un aviso
+fuera de la ventana no puede decir si fallo la grabacion, la transcripcion o el
+reporte, y el titulo fijo "No se pudo crear el reporte" era falso en cuatro de
+los seis casos.
+
+Los cinco `Raise*` pasan por un unico `RaiseSafely<TArgs>` generico. Antes eran
+dos copias del mismo bucle de invocacion aislada; con tres eventos mas habrian
+sido cinco.
+
+`ReportNotificationService` pasa a llamarse `ActivityNotificationService` — ya
+no notifica solo reportes — y escucha `RecordingStarted`, `TranscriptReady`,
+`ReportSaved` y `RecordingFailed`. **Deja de escuchar `RecordingCompleted` a
+proposito:** `StopRecordingAndProcessAsync` levanta los dos, y suscribirse a
+ambos daria dos toasts por la misma grabacion.
+
+Contenido, respetando la regla de T4 de no filtrar la reunion al historial de
+notificaciones de Windows: ruta guardada, nombre del prompt y mensaje de error.
+Nunca transcript ni contenido de la reunion. `TranscriptReady` dice "abre la
+ventana para elegir un prompt", no un fragmento del transcript.
+
+### Decision de diseno anotada
+
+Los toasts salen **siempre**, tambien con la ventana visible, donde duplican lo
+que ya dice `StatusMessage`. Se eligio asi por pedido explicito del usuario
+("notificar las acciones de la app") y porque condicionarlo a la visibilidad de
+la ventana agrega estado y vuelve el comportamiento impredecible al probarlo.
+Si molesta en uso real, el cambio natural es filtrar en
+`ActivityNotificationService`, no en el coordinador.
+
+### Verificacion
+
+- `dotnet build MeetingAssistant.sln -t:Rebuild`: 0 errores y 0 advertencias.
+- **Pendiente de GUI**, igual que T4: ver los cuatro toasts de verdad
+  (inicio, transcripcion lista, reporte listo, fallo) y confirmar el texto.
+
+**Sin tocar, a proposito:** `LocalRecordingApiServer` sigue llamando a
+`IMeetingPipeline` directo, asi que una grabacion disparada por HTTP tampoco
+levanta estos eventos nuevos y sigue sin toast. Es el mismo hueco del backlog.
 
 ---
 
