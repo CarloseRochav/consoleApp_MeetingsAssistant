@@ -92,7 +92,23 @@ public partial class App : Application
     private void LaunchCore()
     {
         _apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
-        _apiServer.Start();
+
+        try
+        {
+            _apiServer.Start();
+        }
+        catch (Exception exception)
+        {
+            // El endpoint HTTP local es un disparador opcional: la bandeja y el
+            // hotkey son los caminos principales, y una grabación disparada por
+            // HTTP hoy ni siquiera levanta los eventos del coordinador. Aun así
+            // esto era la primera sentencia de LaunchCore y estaba fuera de todo
+            // try/catch, así que un puerto que no se puede escuchar abortaba el
+            // arranque entero: sin Register() de notificaciones, sin ventana, sin
+            // bandeja y sin hotkey — la app muerta por una conveniencia. Mismo
+            // criterio que TrayIconService: se registra y se sigue.
+            LogStartupFailure("LocalRecordingApiServer.Start", exception);
+        }
 
         try
         {

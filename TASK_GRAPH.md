@@ -18,10 +18,11 @@ below — this is the plan a developer executes against.
 | T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; see T2.2) |
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
-| T4 — Toast on report ready / on failure | 🔴 **Nunca funcionó**: `Register()` fallaba en cada arranque por falta del activador COM en el manifiesto (ver T4.3). Corregido 2026-08-23; falta confirmar el arranque limpio |
+| T4 — Toast on report ready / on failure | 🟡 El canal **ya funciona**: `Register OK` en el log 2026-08-24 14:23. Faltan los toasts del camino de éxito (`TranscriptReady`, `ReportSaved`), nunca ejercitados |
 | T4.1 — Single-instance + HTTP listener reactivado | 🟡 Implemented and build-verified 2026-08-22; falta el clic real en un toast |
-| T4.2 — Toasts para todo el ciclo (inicio, transcripción, reporte, fallo) | 🟡 Implemented and Rebuild-validated 2026-08-23; visual GUI checks pending |
-| T4.3 — Activador COM en el manifiesto + traza de diagnóstico | 🟡 Causa raíz de T4 encontrada y corregida 2026-08-23; falta confirmar `Register OK` en el log |
+| T4.2 — Toasts para todo el ciclo (inicio, transcripción, reporte, fallo) | 🟡 2 de 4 confirmados 2026-08-24 (`RecordingStarted`, `RecordingFailed`); faltan `TranscriptReady` y `ReportSaved` |
+| T4.3 — Activador COM en el manifiesto + traza de diagnóstico | ✅ DONE — `AppNotificationManager.Register OK` confirmado en el log 2026-08-24 14:23:18, tras desbloquear T4.4 |
+| T4.4 — El endpoint HTTP mataba el arranque entero | ✅ DONE (2026-08-24). Reserva `http://+:5757/` + `Start()` fuera de `try/catch`: bloqueaba la validación de T4.3 |
 | T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
 | T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
 | T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
@@ -38,7 +39,7 @@ funcionan. Se resuelve partiendo T6 en dos.
 
 | # | Tarea | Por que va aqui |
 |---|---|---|
-| 1 | **T4 — toast** — codigo terminado; validacion visual pendiente | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
+| 1 | **T4 — toast** — canal confirmado 2026-08-24 (`Register OK`, 2 de 4 toasts); faltan los del camino de exito | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
 | 2 | **T6a — identidad de paquete + firma** | Reemplazar el `Identity/Publisher` placeholder (`CN=AppPublisher`), generar el certificado self-signed (fuera del repo o gitignoreado — el `.gitignore` cubre `AppPackages/`, `*.msix*`, `*.appx*`, `*.pubxml`, pero **no** `*.pfx`: verificarlo antes de generar nada), y producir un `.msix` sideload instalable. Sin este paso T5 no se puede validar. |
 | 3 | **T5 — autostart** | `Windows.ApplicationModel.StartupTask` + un solo toggle en `SettingsPage` (un control, no la pagina completa). Ya contra el paquete firmado, asi que `RequestEnableAsync()` y los estados `DisabledByUser`/`DisabledByPolicy` se pueden probar de verdad en `Task Manager > Startup Apps`. |
 | 4 | **T6b — pase de aceptacion final** | Instalar el paquete de verdad (no `dotnet run`) y re-verificar T2–T5 completos sobre esa instalacion, mas desinstalacion limpia sin startup task ni proceso de bandeja huerfano. Esto es lo que cierra Fase 3. |
@@ -1196,6 +1197,105 @@ queda en `win-x64\` y el que se ejecuta sigue siendo el viejo. Hay que cerrar la
 app (bandeja > Salir) **antes** de compilar, y relanzar con `dotnet run`, que
 ademas vuelve a registrar la identidad debug — necesario aca, porque el
 activador COM se registra al registrar el paquete, no al compilar.
+
+---
+
+## T4.4 — El endpoint HTTP mataba el arranque entero (2026-08-24)
+
+**Status: ✅ DONE.** Reportado por el usuario como una excepcion al arrancar.
+**Touches:** `App.xaml.cs` (`LaunchCore`), mas un cambio de estado de maquina
+fuera del repo.
+
+```
+[App.OnLaunched] System.Net.HttpListenerException (5): Access is denied.
+   at MeetingAssistant.Infrastructure.Api.LocalRecordingApiServer.Start()
+   at MeetingAssistant.App.App.LaunchCore()
+```
+
+Dos problemas distintos, y el segundo es el que convierte un fallo menor en una
+app muerta.
+
+### Causa 1 — una reserva de URL tapaba el prefijo (estado de maquina)
+
+Existia una reserva en http.sys para `http://+:5757/` a nombre del usuario. El
+codigo escucha en `http://localhost:5757/`. Los prefijos `localhost` **no**
+necesitan reserva; es la *existencia* de la reserva de comodin fuerte sobre ese
+puerto la que le niega el registro al prefijo especifico. Medido, sin elevar:
+
+| Prefijo | Resultado |
+|---|---|
+| `http://localhost:5799/` (sin reserva) | OK |
+| `http://localhost:5757/` | **Access denied (5)** |
+| `http://+:5757/` (el reservado) | OK |
+
+Descartados por medicion: el puerto estaba libre, no estaba en ningun rango
+excluido (`netsh interface ipv4 show excludedportrange`), y no habia proceso
+huerfano — un choque de puerto da 183, no 5.
+
+Resuelto con `netsh http delete urlacl url=http://+:5757/` (elevado). Se eligio
+borrarla en vez de agregar una para `localhost:5757`: esa reserva era un permiso
+permanente para que cualquier proceso del usuario escuchara en 5757 en **todas
+las interfaces** sin elevacion — la forma exacta de exposicion que T1.5 saco del
+codigo.
+
+**Origen desconocido.** El patron `+:{port}` coincide con el bind revertido de
+`91f0ac0`, pero el log lo desmiente: el error aparece solo dos veces en todo el
+historial, ambas el 2026-08-24. Si la reserva existiera desde el 08-11, los
+arranques del 08-23 habrian fallado igual. Agregarla requiere elevacion.
+
+### Causa 2 — `Start()` estaba fuera de todo `try/catch` (el defecto real)
+
+`_apiServer.Start()` era la **primera sentencia** de `LaunchCore()` y no estaba
+protegida. Al lanzar, la excepcion sube hasta el `catch` de `OnLaunched` y nada
+de lo que sigue corre: ni `Register()` de notificaciones, ni el servicio de
+toasts, ni `_window.Activate()`, ni la bandeja, ni el hotkey. Confirmado en el
+proceso vivo: su unica ventana era `"MeetingAssistant - error al iniciar"`.
+
+Contradice el criterio que el propio brief de T4 exige para las conveniencias
+("una notificacion es conveniencia, no dependencia critica") y que
+`TrayIconService` ya respetaba. El endpoint HTTP es igual de opcional: la bandeja
+y el hotkey son los caminos principales, y una grabacion disparada por HTTP hoy
+ni siquiera levanta los eventos del coordinador.
+
+Envuelto en `try/catch` + `LogStartupFailure`, mismo patron que `TrayIconService`.
+
+### Por que bloqueaba a T4.3
+
+**Esta era la razon de que no hubiera ninguna traza de `Register` en el log**, ni
+`OK` ni `COMException`: no se llegaba a esa linea. La verificacion pendiente de
+T4.3 era imposible mientras esto estuviera roto, y el manifiesto ya estaba bien
+desde `fb3f609`.
+
+### Verificacion
+
+- `dotnet build MeetingAssistant.sln -t:Rebuild`: 0 errores, 0 advertencias.
+- Arranque limpio del usuario 2026-08-24 14:23, sin excepcion de `HttpListener`.
+- `[diag] AppNotificationManager.Register OK` en el log a las 14:23:18.919 —
+  **cierra el pendiente de T4.3.**
+- `[diag] Toast mostrado por RecordingStarted` (14:24:12) y
+  `Toast mostrado por RecordingFailed` (14:24:31) sobre una grabacion sin habla
+  detectada. La traza prueba que `Show()` corrio sin lanzar; no prueba que
+  Windows lo dibujara.
+- **Sin verificar:** los toasts de `TranscriptReady` y `ReportSaved` — el camino
+  de exito nunca se ejercito porque la transcripcion vino vacia. Tampoco se
+  re-corrio el `POST` que devuelve 401 de T4.1.
+
+### Hallazgo colateral: hay una segunda copia del proyecto
+
+`D:\stuffProjectsCH\proyecto-codex-worker` es otro checkout de esta misma app
+(commit `9183e0e` + "Task 2 Completed"), con el **mismo puerto 5757** y la
+**misma identidad de paquete** (`962A0BC5-A1BC-432A-8A38-55011BFE3EE0`, identica
+en los dos manifiestos). Consecuencias:
+
+- Si las dos corren a la vez chocan en el puerto, en `RegisterHotKey` y en los
+  dos iconos de bandeja. Peor: al compartir identidad comparten la clave de
+  `AppInstance`, asi que lanzar una **redirige a la otra** en vez de arrancar.
+- Comparten el directorio de log redirigido, o sea que `startup-errors.log`
+  mezcla arranques de las dos copias. Tenerlo presente al leer este log como
+  evidencia.
+- Esa copia tiene el mismo defecto de `LaunchCore` sin corregir.
+
+Para el pase de GUI de T4/T6b: asegurarse de que solo corra una copia.
 
 ---
 
