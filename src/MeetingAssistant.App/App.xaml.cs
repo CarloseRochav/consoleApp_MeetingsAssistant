@@ -164,12 +164,21 @@ public partial class App : Application
     /// redirige de forma opaca, y el log se perdía justo en el escenario que
     /// más importa depurar.
     ///
-    /// Ojo con dónde buscarlo: corriendo empaquetada, LocalApplicationData
-    /// tambien está redirigido, así que el archivo NO aparece en
-    /// %LOCALAPPDATA%\MeetingAssistant sino en
-    /// %LOCALAPPDATA%\Packages\{PackageFamilyName}\LocalCache\Local\MeetingAssistant.
-    /// El 2026-08-23 esa confusión hizo dar por bueno un Register() que llevaba
-    /// fallando en cada arranque desde que se implementó T4.
+    /// Ojo con dónde buscarlo, porque depende de CÓMO esté registrada la app y
+    /// no de esta ruta. Hay que mirar los dos lados antes de concluir que no hay
+    /// log:
+    ///
+    ///   - MSIX firmado e instalado: %LOCALAPPDATA%\MeetingAssistant\
+    ///     (la ruta plana, tal cual la arma este Path.Combine). Medido en T6a y
+    ///     confirmado de nuevo en T5.
+    ///   - Registro de desarrollo (`dotnet run`): LocalApplicationData está
+    ///     redirigido y el archivo aparece bajo
+    ///     %LOCALAPPDATA%\Packages\{PackageFamilyName}\LocalCache\Local\MeetingAssistant.
+    ///
+    /// Buscar en el lado equivocado ya costó caro dos veces: el 2026-08-23 hizo
+    /// dar por bueno un Register() que llevaba fallando en cada arranque desde
+    /// que se implementó T4. Este comentario decía que la ruta plana nunca se
+    /// usaba, lo cual dejó de ser cierto al instalar el paquete firmado en T6a.
     /// </summary>
     public static string StartupErrorLogPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
