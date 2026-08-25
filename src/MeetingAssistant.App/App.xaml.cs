@@ -185,6 +185,11 @@ public partial class App : Application
         "MeetingAssistant",
         "startup-errors.log");
 
+    public static string MeetingOutputDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MeetingAssistant",
+        "meeting-output");
+
     private void RegisterGlobalExceptionHandlers()
     {
         // Excepciones no manejadas en el hilo de UI de XAML.
@@ -315,7 +320,7 @@ public partial class App : Application
             provider.GetRequiredService<ITranscriptionClient>(),
             provider.GetRequiredService<ILlmReportExtractor>(),
             provider.GetRequiredService<IReportStorage>(),
-            Path.Combine(AppContext.BaseDirectory, "meeting-output")));
+            MeetingOutputDirectory));
         services.AddSingleton<RecordingCoordinator>();
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
