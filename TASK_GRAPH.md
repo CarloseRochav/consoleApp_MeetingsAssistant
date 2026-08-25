@@ -18,9 +18,9 @@ below — this is the plan a developer executes against.
 | T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; see T2.2) |
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
-| T4 — Toast on report ready / on failure | 🟡 El canal **ya funciona**: `Register OK` en el log 2026-08-24 14:23. Faltan los toasts del camino de éxito (`TranscriptReady`, `ReportSaved`), nunca ejercitados |
+| T4 — Toast on report ready / on failure | 🟢 **Criterio crítico cumplido**: toast de fallo visible con la ventana cerrada, GUI-confirmado por el usuario 2026-08-25 (arranque del 08-24 14:24). Faltan los toasts del camino de éxito |
 | T4.1 — Single-instance + HTTP listener reactivado | 🟡 Implemented and build-verified 2026-08-22; falta el clic real en un toast |
-| T4.2 — Toasts para todo el ciclo (inicio, transcripción, reporte, fallo) | 🟡 2 de 4 confirmados 2026-08-24 (`RecordingStarted`, `RecordingFailed`); faltan `TranscriptReady` y `ReportSaved` |
+| T4.2 — Toasts para todo el ciclo (inicio, transcripción, reporte, fallo) | 🟡 2 de 4 **vistos en pantalla** con la ventana cerrada (`RecordingStarted`, `RecordingFailed`), GUI-confirmado 2026-08-25; faltan `TranscriptReady` y `ReportSaved` (el camino de éxito nunca se ejercitó: transcripción vacía) |
 | T4.3 — Activador COM en el manifiesto + traza de diagnóstico | ✅ DONE — `AppNotificationManager.Register OK` confirmado en el log 2026-08-24 14:23:18, tras desbloquear T4.4 |
 | T4.4 — El endpoint HTTP mataba el arranque entero | ✅ DONE (2026-08-24). Reserva `http://+:5757/` + `Start()` fuera de `try/catch`: bloqueaba la validación de T4.3 |
 | T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
@@ -1276,6 +1276,10 @@ desde `fb3f609`.
   `Toast mostrado por RecordingFailed` (14:24:31) sobre una grabacion sin habla
   detectada. La traza prueba que `Show()` corrio sin lanzar; no prueba que
   Windows lo dibujara.
+- **Confirmado en pantalla por el usuario (2026-08-25):** los dos toasts eran
+  visibles con la ventana cerrada. Eso cierra el criterio de aceptacion critico
+  de T4 — un fallo del pipeline sin ventana abierta ya tiene superficie visible,
+  que es el hueco por el que T4 existe.
 - **Sin verificar:** los toasts de `TranscriptReady` y `ReportSaved` — el camino
   de exito nunca se ejercito porque la transcripcion vino vacia. Tampoco se
   re-corrio el `POST` que devuelve 401 de T4.1.
