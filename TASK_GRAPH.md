@@ -53,6 +53,14 @@ No son tareas propias; se cuelan en cualquiera de los pasos de arriba.
   antes de que se construya el menu nativo (ver T2.2).
 - Confirmar que el hotkey `Ctrl+Alt+F9` no colisiona con nada en uso real
   despues de unos dias; si molesta, es cambio de `appsettings.json`, no de codigo.
+- **Toasts del camino de exito** (`TranscriptReady`, `ReportSaved`): una
+  grabacion con habla real, ventana cerrada, que llegue a guardar reporte. Los
+  otros dos toasts ya se vieron en pantalla el 2026-08-24. **Decision del
+  usuario (2026-08-25): se hace despues de T6, contra el paquete instalado, no
+  con `dotnet run`.** Cae dentro de T6b, que ya re-verifica T2-T5 sobre la
+  instalacion real — no queda como verificacion suelta aparte. Consecuencia
+  aceptada: si el camino de exito estuviera roto, se descubre recien ahi, con el
+  log ya mudado de ruta por el `Publisher` nuevo (ver T6a).
 
 ### Lo que queda fuera de Fase 3, anotado para no perderlo
 
