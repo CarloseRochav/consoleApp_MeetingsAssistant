@@ -23,7 +23,7 @@ below — this is the plan a developer executes against.
 | T4.2 — Toasts para todo el ciclo (inicio, transcripción, reporte, fallo) | 🟡 2 de 4 **vistos en pantalla** con la ventana cerrada (`RecordingStarted`, `RecordingFailed`), GUI-confirmado 2026-08-25; faltan `TranscriptReady` y `ReportSaved` (el camino de éxito nunca se ejercitó: transcripción vacía) |
 | T4.3 — Activador COM en el manifiesto + traza de diagnóstico | ✅ DONE — `AppNotificationManager.Register OK` confirmado en el log 2026-08-24 14:23:18, tras desbloquear T4.4 |
 | T4.4 — El endpoint HTTP mataba el arranque entero | ✅ DONE (2026-08-24). Reserva `http://+:5757/` + `Start()` fuera de `try/catch`: bloqueaba la validación de T4.3 |
-| T6a — Package identity + signing | ⬜ Not started (split out of T6; must precede T5) |
+| T6a — Package identity + signing | ✅ DONE (2026-08-25: signed x64 MSIX installed and launched through its registered AUMID; tray icon visually confirmed) |
 | T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
 | T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
 | T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
@@ -40,7 +40,7 @@ funcionan. Se resuelve partiendo T6 en dos.
 | # | Tarea | Por que va aqui |
 |---|---|---|
 | 1 | **T4 — toast** — canal confirmado 2026-08-24 (`Register OK`, 2 de 4 toasts); faltan los del camino de exito | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
-| 2 | **T6a — identidad de paquete + firma** | Reemplazar el `Identity/Publisher` placeholder (`CN=AppPublisher`), generar el certificado self-signed (fuera del repo o gitignoreado — el `.gitignore` cubre `AppPackages/`, `*.msix*`, `*.appx*`, `*.pubxml`, pero **no** `*.pfx`: verificarlo antes de generar nada), y producir un `.msix` sideload instalable. Sin este paso T5 no se puede validar. |
+| 2 | **T6a — identidad de paquete + firma — ✅ DONE 2026-08-25** | Se agregó primero la cobertura raíz para `*.pfx`, `*.cer` y `*.snk` (la cobertura de packaging previa sólo aplicaba bajo `src/MeetingAssistant.App/`), se reemplazó la identidad placeholder, y se produjo, firmó, instaló y arrancó el `.msix` x64. T5 ya tiene una identidad real contra la cual validarse. |
 | 3 | **T5 — autostart** | `Windows.ApplicationModel.StartupTask` + un solo toggle en `SettingsPage` (un control, no la pagina completa). Ya contra el paquete firmado, asi que `RequestEnableAsync()` y los estados `DisabledByUser`/`DisabledByPolicy` se pueden probar de verdad en `Task Manager > Startup Apps`. |
 | 4 | **T6b — pase de aceptacion final** | Instalar el paquete de verdad (no `dotnet run`) y re-verificar T2–T5 completos sobre esa instalacion, mas desinstalacion limpia sin startup task ni proceso de bandeja huerfano. Esto es lo que cierra Fase 3. |
 
@@ -1364,10 +1364,11 @@ Fase 3.
 
 **Depends on:** T2 (T6a); T2–T5 completos (T6b).
 **Touches:** `Package.appxmanifest`, packaging/signing config (new files —
-certificate, publish profile — must be checked against `.gitignore`; the
-repo's `.gitignore` already excludes `AppPackages/`, `*.msix*`, `*.appx*`,
-`*.pubxml`, so the *output* is already safe, but a `.pfx` certificate file if
-generated in-repo is not currently excluded — verify and add if needed).
+certificate, publish profile — must be checked against `.gitignore`). Before
+T6a, packaging output was ignored only below `src/MeetingAssistant.App/`; root
+`AppPackages/` and certificate files anywhere in the repo were trackable. T6a
+added root coverage for `*.pfx`, `*.cer` and `*.snk` before creating the
+certificate and kept the package under the app project's ignored directory.
 
 ### Implementation
 1. Replace the placeholder `Identity/Publisher` (`CN=AppPublisher`) in
@@ -1385,6 +1386,69 @@ generated in-repo is not currently excluded — verify and add if needed).
 4. Verify Developer Mode requirement (already documented in `AGENTS.md`) is
    sufficient for sideload install without additional certificate trust
    steps, or document the one-time "trust this certificate" step if needed.
+
+### T6a validation — 2026-08-25
+
+- **Ignore protection ran before certificate creation.** `git check-ignore -v`
+  resolved both `cert.pfx` at repo root and
+  `src/MeetingAssistant.App/cert.pfx` to root `.gitignore:20`. It also verified
+  the new `*.cer` and `*.snk` rules. No certificate appeared in `git status`.
+- **Identity and certificate match exactly.** Manifest Publisher and
+  certificate Subject are both `CN=MeetingAssistant Local Publisher`.
+  `DisplayName`/visual display name are `Meeting Assistant`, and
+  `PublisherDisplayName` is `MeetingAssistant Local Publisher`. The code-signing
+  certificate thumbprint is `AD5A94D0DA131E47F395DD937721551C72AF5D52`, valid
+  through 2029-08-25. Its private key lives in `Cert:\CurrentUser\My`; only the
+  public `.cer` was exported, outside the repo, under
+  `%LOCALAPPDATA%\MeetingAssistant\Signing\`.
+- **One-time trust step was required.** `CurrentUser\TrustedPeople` (and even
+  `CurrentUser\Root`) was insufficient for `Add-AppxPackage`, which failed with
+  `0x800B0109`. An elevated `certutil -addstore TrustedPeople <cer>` imported
+  the public certificate into `LocalMachine\TrustedPeople`; after that,
+  `Get-AuthenticodeSignature` returned `Valid` and installation succeeded.
+- **Package built, signed and installed for x64.** Output:
+  `src/MeetingAssistant.App/AppPackages/MeetingAssistant.App_1.0.0.0_x64_Test/MeetingAssistant.App_1.0.0.0_x64.msix`.
+  The old development registration (`CN=AppPublisher`, `IsDevelopmentMode=True`)
+  was removed before installation. `Get-AppxPackage` then showed exactly one
+  package, `Status=Ok`, `IsDevelopmentMode=False`, installed under
+  `C:\Program Files\WindowsApps`, with the new Publisher. `SignatureKind` is
+  `Developer`, as expected for the trusted self-signed sideload certificate.
+- **New identifiers:** PFN
+  `962A0BC5-A1BC-432A-8A38-55011BFE3EE0_n5p1q6rt9wnn4`; AUMID
+  `962A0BC5-A1BC-432A-8A38-55011BFE3EE0_n5p1q6rt9wnn4!App`. Toast diagnostics
+  must use
+  `HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\962A0BC5-A1BC-432A-8A38-55011BFE3EE0_n5p1q6rt9wnn4!App`.
+  That registry key did not exist yet because T6a did not fire a toast; firing
+  and clicking real toasts remains in T6b.
+- **Observed diagnostic-log location differs from the pre-T6a prediction.** On
+  the installed full-trust MSIX, the effective path is
+  `%LOCALAPPDATA%\MeetingAssistant\startup-errors.log`, not either PFN's
+  `LocalCache` tree. The 2026-08-25 09:52 and 10:11 installed launches both
+  appended `AppNotificationManager.Register OK` there. Debugging this installed
+  package must use that observed path; the former
+  `%LOCALAPPDATA%\Packages\962A0BC5-A1BC-432A-8A38-55011BFE3EE0_1z32rh13vfry6\...`
+  path is stale, and the analogous new-PFN path was absent.
+- **Actual installed launch:** invoked through the registered AppsFolder/Start
+  activation for the AUMID above, never `dotnet run`. The running executable
+  came from `C:\Program Files\WindowsApps\...\MeetingAssistant.App.exe`; the
+  HTTP listener returned `401` to a request without its token; and a desktop
+  capture visually confirmed the `Meeting Assistant` window plus the tray icon
+  matching `Assets/TrayIcon.ico` in the notification-area overflow.
+- The real `appsettings.json` was confirmed present inside the installed
+  package. Therefore this MSIX contains API keys: it must stay local and must
+  not be shared. A distributable build requires a separate future migration of
+  configuration to `%LOCALAPPDATA%`; that was documented, not implemented in
+  T6a.
+- The app process was stopped before both packaging and the final rebuild; the
+  terminal could not invoke the tray menu during those pre-build closures, so
+  it stopped the process and verified it was absent before compiling. Final
+  `dotnet build MeetingAssistant.sln -t:Rebuild` completed with 0 warnings and
+  0 errors. The MSIX packaging run completed with 0 errors and one tooling-only
+  warning because `mspdbcmf.exe` was not installed, so no symbols package was
+  generated; the `.msix` itself was generated and signature-validated.
+- T5 and T6b were not exercised. In particular, this pass did not validate the
+  hotkey, success-path toasts, autostart, or uninstall cleanup against the
+  installed package.
 
 ### Acceptance criteria
 - A freshly-installed (not `dotnet run`) copy of the app launches from the

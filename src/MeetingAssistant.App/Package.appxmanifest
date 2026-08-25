@@ -12,14 +12,14 @@
 
   <Identity
     Name="962A0BC5-A1BC-432A-8A38-55011BFE3EE0"
-    Publisher="CN=AppPublisher"
+    Publisher="CN=MeetingAssistant Local Publisher"
     Version="1.0.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="962A0BC5-A1BC-432A-8A38-55011BFE3EE0" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>MeetingAssistant.App</DisplayName>
-    <PublisherDisplayName>AppPublisher</PublisherDisplayName>
+    <DisplayName>Meeting Assistant</DisplayName>
+    <PublisherDisplayName>MeetingAssistant Local Publisher</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -37,8 +37,8 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="MeetingAssistant.App"
-        Description="MeetingAssistant.App"
+        DisplayName="Meeting Assistant"
+        Description="Meeting Assistant"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">

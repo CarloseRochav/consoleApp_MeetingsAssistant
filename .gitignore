@@ -17,6 +17,9 @@ local-vault/
 .env.*
 appsettings.Development.json
 appsettings.json
+*.pfx
+*.cer
+*.snk
 
 # Logs
 *.log
