@@ -1162,6 +1162,17 @@ Buscarlo en la ruta equivocada llevo a concluir dos veces que "Register() nunca
 fallo porque no hay log". El comentario del codigo ahora dice donde buscarlo de
 verdad.
 
+> **Superado por T6a (2026-08-25).** Lo de arriba valia para el registro de
+> desarrollo (`IsDevelopmentMode=True`, PFN `..._1z32rh13vfry6`). Sobre el MSIX
+> firmado e instalado la redireccion **no** aplica: el log esta en
+> `%LOCALAPPDATA%\MeetingAssistant\startup-errors.log`, la ruta plana. Medido en
+> los arranques del 2026-08-25 09:52 y 10:11; el arbol `LocalCache` del PFN nuevo
+> esta vacio. Ver las notas de validacion de T6a. Y ojo: al desinstalar el
+> registro de desarrollo, `%LOCALAPPDATA%\Packages\..._1z32rh13vfry6\` **se borro
+> con todo su log adentro** — la evidencia cruda de T4.3 y T4.4 (las
+> `COMException`, el `Register OK` del 08-24, las trazas de los dos toasts) ya no
+> existe en disco. Lo que queda es lo transcrito en este documento.
+
 ### El unico toast que si aparecio
 
 El del 2026-08-23 11:58:59 que reporto el usuario no venia del pipeline: era el
@@ -1458,6 +1469,17 @@ certificate and kept the package under the app project's ignored directory.
   `dotnet run`.
 - Uninstalling via Windows Settings > Apps cleanly removes the app (no
   orphaned startup task registration, no orphaned tray icon process).
+- **Anclaje de confianza, agregado despues de T6a:** instalar el paquete requirio
+  un `certutil -addstore TrustedPeople` **elevado** en `LocalMachine`, porque
+  `CurrentUser\TrustedPeople` no alcanzo (`Add-AppxPackage` fallaba con
+  `0x800B0109`). Eso es estado de maquina que una desinstalacion por
+  Configuracion **no** revierte: el certificado queda como anclaje de confianza
+  valido hasta 2029-08-25, thumbprint `AD5A94D0DA131E47F395DD937721551C72AF5D52`.
+  La limpieza tiene que sacarlo tambien
+  (`Get-ChildItem Cert:\LocalMachine\TrustedPeople`), o el criterio de
+  "desinstalacion limpia" es falso. Precedente directo: la reserva de urlacl de
+  T4.4, que sobrevivio nueve dias a la reversion de su codigo y despues rompio
+  otra cosa.
 - The signing certificate file is not present in `git status` / not tracked.
 
 ---
