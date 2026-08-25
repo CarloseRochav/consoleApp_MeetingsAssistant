@@ -4,11 +4,12 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
   xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  IgnorableNamespaces="uap rescap systemai com desktop">
+  IgnorableNamespaces="uap uap5 rescap systemai com desktop">
 
   <Identity
     Name="962A0BC5-A1BC-432A-8A38-55011BFE3EE0"
@@ -74,6 +75,15 @@
           <desktop:ToastNotificationActivation
             ToastActivatorCLSID="3f1f4fbd-17b2-475e-aba8-3062a52f414f" />
         </desktop:Extension>
+        <uap5:Extension
+          Category="windows.startupTask"
+          Executable="MeetingAssistant.App.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask
+            TaskId="MeetingAssistantStartup"
+            Enabled="false"
+            DisplayName="Meeting Assistant" />
+        </uap5:Extension>
       </Extensions>
     </Application>
   </Applications>

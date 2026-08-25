@@ -6,6 +6,22 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
     <Grid Padding="32">
-        <TextBlock Text="Próximamente" Style="{StaticResource TitleTextBlockStyle}" />
+        <StackPanel
+            MaxWidth="560"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Spacing="16">
+            <TextBlock Text="Configuración" Style="{StaticResource TitleTextBlockStyle}" />
+            <ToggleSwitch
+                x:Name="StartupToggle"
+                Header="Iniciar con Windows"
+                Toggled="StartupToggle_Toggled" />
+            <TextBlock
+                x:Name="StartupStatusText"
+                MaxWidth="520"
+                Opacity="0.75"
+                Text="Consultando el estado configurado en Windows..."
+                TextWrapping="Wrap" />
+        </StackPanel>
     </Grid>
 </Page>

@@ -24,7 +24,7 @@ below — this is the plan a developer executes against.
 | T4.3 — Activador COM en el manifiesto + traza de diagnóstico | ✅ DONE — `AppNotificationManager.Register OK` confirmado en el log 2026-08-24 14:23:18, tras desbloquear T4.4 |
 | T4.4 — El endpoint HTTP mataba el arranque entero | ✅ DONE (2026-08-24). Reserva `http://+:5757/` + `Start()` fuera de `try/catch`: bloqueaba la validación de T4.3 |
 | T6a — Package identity + signing | ✅ DONE (2026-08-25: signed x64 MSIX installed and launched through its registered AUMID; tray icon visually confirmed) |
-| T5 — Optional autostart | ⬜ Not started (needs T6a's real identity to be verifiable) |
+| T5 — Optional autostart | ✅ DONE (2026-08-25: opt-in `StartupTask` GUI-validated against the real PFN; signed MSIX restored afterward) |
 | T6b — Full re-verification against the installed package | ⬜ Not started — closes Fase 3 |
 | T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
 | T8 — Prompt catalog after transcript | ✅ DONE (2026-08-14). Follow-ups same day: attach `.txt`, vault-path UX, rendered MD preview |
@@ -41,7 +41,7 @@ funcionan. Se resuelve partiendo T6 en dos.
 |---|---|---|
 | 1 | **T4 — toast** — canal confirmado 2026-08-24 (`Register OK`, 2 de 4 toasts); faltan los del camino de exito | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
 | 2 | **T6a — identidad de paquete + firma — ✅ DONE 2026-08-25** | Se agregó primero la cobertura raíz para `*.pfx`, `*.cer` y `*.snk` (la cobertura de packaging previa sólo aplicaba bajo `src/MeetingAssistant.App/`), se reemplazó la identidad placeholder, y se produjo, firmó, instaló y arrancó el `.msix` x64. T5 ya tiene una identidad real contra la cual validarse. |
-| 3 | **T5 — autostart** | `Windows.ApplicationModel.StartupTask` + un solo toggle en `SettingsPage` (un control, no la pagina completa). Ya contra el paquete firmado, asi que `RequestEnableAsync()` y los estados `DisabledByUser`/`DisabledByPolicy` se pueden probar de verdad en `Task Manager > Startup Apps`. |
+| 3 | **T5 — autostart — ✅ DONE 2026-08-25** | Se agregó `Windows.ApplicationModel.StartupTask` y un solo toggle en `SettingsPage`. Se validaron la activación real en `Task Manager > Startup Apps` y la relectura de `DisabledByUser`; el MSIX firmado quedó reinstalado al terminar. `DisabledByPolicy`/`EnabledByPolicy` están manejados en UI, pero esta máquina sin directiva administrada no permitió producir esos estados en runtime. |
 | 4 | **T6b — pase de aceptacion final** | Instalar el paquete de verdad (no `dotnet run`) y re-verificar T2–T5 completos sobre esa instalacion, mas desinstalacion limpia sin startup task ni proceso de bandeja huerfano. Esto es lo que cierra Fase 3. |
 
 ### Verificaciones sueltas, para la primera sesion con GUI que toque
@@ -1352,6 +1352,62 @@ of the Settings page beyond this control), new file under
    (T6) — during plain `dotnet run` debug registration it may behave
    differently. Note this explicitly to whoever tests it so a "doesn't work
    under `dotnet run`" result isn't mistaken for a bug.
+
+### T5 validation — 2026-08-25
+
+- El manifiesto declara exactamente una extensión `windows.startupTask` con
+  `TaskId=MeetingAssistantStartup`, `Enabled=false`, ejecutable
+  `MeetingAssistant.App.exe` y `EntryPoint=Windows.FullTrustApplication`. No se
+  modificaron los bloques `windows.comServer` ni
+  `windows.toastNotificationActivation`.
+- `SettingsPage` ganó sólo el toggle **Iniciar con Windows** y su texto de
+  estado. En cada `Loaded` vuelve a consultar `StartupTask.State`; no parte de
+  un `false` local. `DisabledByUser` y `DisabledByPolicy` dejan el control
+  apagado/deshabilitado y explican que debe corregirse desde Windows;
+  `EnabledByPolicy` queda encendido/deshabilitado.
+- Hubo iteración con registro de desarrollo. La instalación firmada existente
+  no fue reemplazada automáticamente por `dotnet run`: la herramienta rechazó
+  el registro hasta quitar el MSIX. Un primer `--no-build` además reutilizó un
+  layout obsoleto con el Publisher/PFN anterior; se descartó y se ejecutó un
+  `dotnet run --project src/MeetingAssistant.App` que construyó el manifiesto
+  actual bajo el PFN real
+  `962A0BC5-A1BC-432A-8A38-55011BFE3EE0_n5p1q6rt9wnn4`, con
+  `IsDevelopmentMode=True`.
+- Prueba GUI real: el toggle cargó apagado desde `StartupTask.State`; al
+  encenderlo mostró el estado activo y `Task Manager > Startup Apps` mostró
+  **Meeting Assistant / Enabled**. Al deshabilitarlo externamente en Task
+  Manager y salir/volver a `SettingsPage`, el toggle se mostró apagado y
+  deshabilitado con la explicación de `DisabledByUser`. No apareció un diálogo
+  de consentimiento de Windows en esta identidad. No se reinició la máquina;
+  se usó la alternativa de Task Manager admitida por los criterios.
+- Sobre el MSIX firmado reinstalado se accionó el control mediante la API de
+  accesibilidad de Windows y se leyó su estado después de cada operación:
+  `Off` / "El inicio automático está desactivado." → `On` / "Meeting Assistant
+  se iniciará cuando entres a Windows." → `Off` / "El inicio automático está
+  desactivado.". Esto validó también el apagado desde la app, no sólo el cambio
+  externo de Task Manager. No fue posible provocar `DisabledByPolicy` o
+  `EnabledByPolicy` en esta máquina sin políticas administradas; esos dos
+  caminos están implementados pero no fueron ejercitados en runtime.
+- La app estuvo cerrada antes de compilar. `dotnet build MeetingAssistant.sln
+  -t:Rebuild` terminó con 0 warnings y 0 errores. El empaquetado x64 firmado
+  terminó con 0 errores y el warning ya conocido de `mspdbcmf.exe` ausente (no
+  se generó paquete de símbolos); `Get-AuthenticodeSignature` devolvió `Valid`.
+- Después de la iteración se quitó sólo el registro de desarrollo y se reinstaló
+  `src/MeetingAssistant.App/AppPackages/MeetingAssistant.App_1.0.0.0_x64_Test/MeetingAssistant.App_1.0.0.0_x64.msix`.
+  `Get-AppxPackage` mostró exactamente un paquete, `Status=Ok`, Publisher
+  `CN=MeetingAssistant Local Publisher`, instalado bajo
+  `C:\Program Files\WindowsApps` e `IsDevelopmentMode=False`. El manifiesto
+  instalado volvió a confirmar la única extensión y `Enabled=false`.
+- La instalación firmada se arrancó realmente y el proceso respondió. El AUMID
+  confirmado sigue siendo
+  `962A0BC5-A1BC-432A-8A38-55011BFE3EE0_n5p1q6rt9wnn4!App`. Esa ejecución
+  agregó las entradas de las 15:46:45 a
+  `%LOCALAPPDATA%\MeetingAssistant\startup-errors.log`; la ruta redirigida
+  `%LOCALAPPDATA%\Packages\962A0BC5-A1BC-432A-8A38-55011BFE3EE0_n5p1q6rt9wnn4\LocalCache\Local\MeetingAssistant\startup-errors.log`
+  no existía. Se comprobaron ambas antes de concluir dónde quedó la traza.
+- `MeetingAssistant.Core.csproj` sigue siendo C# puro, sin referencias de
+  plataforma/proveedor. El `appsettings.json` real continúa ignorado y no forma
+  parte del cambio. T6b no se ejecutó.
 
 ### Acceptance criteria
 - Toggling "Iniciar con Windows" on in Settings, then rebooting (or using

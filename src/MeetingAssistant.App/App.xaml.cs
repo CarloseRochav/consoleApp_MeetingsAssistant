@@ -311,6 +311,7 @@ public partial class App : Application
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
         services.AddSingleton<GlobalHotkeyService>();
+        services.AddSingleton<StartupTaskService>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();

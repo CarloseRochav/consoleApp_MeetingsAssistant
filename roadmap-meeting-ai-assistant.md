@@ -94,7 +94,7 @@ Tray/HTTP siguen auto-extrayendo con el prompt por defecto.
 2. Hotkey global para iniciar/detener grabación
 3. Endpoint HTTP local (`HttpListener`, sin Kestrel) para disparar grabación externamente: `POST /recording/start`, `POST /recording/stop` (síncrono, responde con transcript + reporte + ruta guardada). Requiere token de autenticación por header — no negociable, dado que enciende el micrófono remotamente. Solo bind a `localhost`, nunca a `0.0.0.0`.
 4. Notificación (Toast/`InfoBar`) cuando el reporte esté listo
-5. Autostart opcional en boot de Windows
+5. Autostart opcional en boot de Windows — DONE 2026-08-25 (opt-in `StartupTask`, validado en GUI y con el MSIX firmado reinstalado)
 6. Empaquetado MSIX para instalación local persistente
 
 ### Criterio de salida
