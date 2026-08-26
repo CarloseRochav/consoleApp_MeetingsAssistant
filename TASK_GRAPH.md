@@ -1850,11 +1850,10 @@ Si se quiere autostart, hay que volver a encenderlo.
 
 #### Lo que NO se verificó en esta máquina — dicho explícitamente
 
-**C (hotkey) y D (los cuatro toasts) no se re-ejercitaron contra este paquete
-Debug.** Siguen validados por confirmación del usuario del 2026-08-25 contra la
-instalación de la otra máquina, y por eso T4/T4.1/T4.2 siguen cerrados; pero
-esta combinación exacta de paquete y código (Debug + `f4ae7d4`) no los ejerció.
-Se intentó y **se descartó por decisión del usuario**, no por falta de tiempo.
+**C (hotkey) y D (los toasts) quedaron pendientes al cerrar T6b y se
+resolvieron el mismo dia, en una segunda pasada. Ver
+`### C y D — cierre 2026-08-26` mas abajo.** Lo que sigue describe el estado
+intermedio, y se conserva porque la leccion de metodo vale.
 
 Se registra además, porque es el tipo de cosa que este documento existe para no
 perder: **un primer reporte de que la corrida end-to-end había pasado no se
@@ -1866,6 +1865,95 @@ test HTTP, y el vault con los mismos 5 reportes — el más nuevo de las 10:08:5
 `feature-handoff`. La corrida de las 10:01–10:08 fue bajo el **registro de
 desarrollo viejo**, antes del paquete nuevo. Se anotó como no verificado en vez
 de darlo por bueno.
+
+### C y D — cierre 2026-08-26 (segunda pasada, contra el paquete Debug instalado)
+
+Se ejercitaron con **entrada sintética** (`keybd_event` para el hotkey,
+`PostMessage WM_CLOSE` para ocultar la ventana), no con dedos sobre el teclado.
+Un `WM_HOTKEY` generado así es el mismo mensaje que produce una tecla real y
+llega al mismo `RegisterHotKey`, así que la prueba es válida; lo que **no**
+cubre es que un humano vea el toast dibujado — eso ya lo confirmó el usuario el
+08-25.
+
+**B, complemento — cerrar oculta: MEDIDO.** `WM_CLOSE` a la ventana principal:
+`IsWindowVisible` pasó de `True` a `False` y **el proceso siguió vivo**. Es el
+item de T2 que faltaba medir en esta máquina.
+
+**C — hotkey: PASA, con la ventana oculta.** `Ctrl+Alt+F9` sintético inició la
+grabación (`RecordingStarted` a las 14:45:59) y otro la detuvo, con la ventana
+ya escondida. `RegisterHotKey` está vivo y el hotkey funciona sin ventana, que
+es exactamente lo que T3 prometía y nunca se había medido acá.
+
+**D — tres de los cuatro toasts, MEDIDOS contra esta instalación:**
+
+| Toast | Cómo se produjo | Evidencia |
+|---|---|---|
+| `RecordingStarted` | hotkey, ventana oculta | log 14:45:59, 14:49:39, 14:51:30 |
+| `ReportSaved` | hotkey → `StopRecordingAndProcessAsync` | log 14:47:57 → `assignment-meeting-20260826-214757.md` en el vault |
+| `RecordingFailed` | Deepgram con credencial inválida forzada | log 14:51:37 + `TranscriptionFailedException: Invalid credentials` |
+| `TranscriptReady` | **no producible sin GUI** | ver abajo |
+
+**`TranscriptReady` no se puede disparar desde una terminal, y eso es
+estructural, no falta de ganas.** El mapeo de flujos a eventos lo deja cerrado:
+el hotkey y el endpoint HTTP llaman a `StopRecordingAndProcessAsync`, que levanta
+`ReportSaved` o `RecordingFailed` y **nunca** `TranscriptReady`. El único camino
+que lo levanta es el de dos pasos de RecordPage
+(`StopRecordingAndTranscribeAsync` / `TranscribeExistingAudioAsync`), y ambos
+salen de un botón. Queda como el último item que exige un clic humano.
+
+**El pipeline completo corrió end-to-end bajo este paquete Debug — MEDIDO, y es
+la primera vez en esta máquina con el código de hoy.** Captura por hotkey →
+`.wav` de 9,2 MB en `%LOCALAPPDATA%` → Deepgram → DeepSeek V4 Flash vía Azure
+Foundry → reporte en el vault, `cost-usd: 0.000434`. Cierra la duda que dejaba
+abierta la nota de cierre de T6b sobre esta combinación exacta de paquete y
+código.
+
+**Cómo se forzó `RecordingFailed`, porque el método es reutilizable.** Se puso
+una variable de entorno **de usuario** `Deepgram__ApiKey` con un valor inválido y
+se relanzó la app: la configuración por entorno pisa el `appsettings.json`
+empaquetado. Se quitó la variable y se relanzó al terminar; queda verificado que
+no sobrevivió. Dos cosas que salen de acá y no son el toast:
+
+- **Confirma el hueco de validación de T7** (backlog): una credencial *presente*
+  pero inválida pasa `StartupConfigurationValidator` sin chistar y revienta
+  recién al usarse.
+- **Confirma que hay una vía de escape a la configuración empaquetada.** El
+  `AddEnvironmentVariables()` de `App.xaml.cs` permite pisar cualquier clave con
+  `Seccion__Clave` sin reconstruir el `.msix`. Hoy es la **única** forma de
+  cambiar un ajuste en la app instalada, y es justo lo que la SettingsPage y la
+  mudanza de configuración a `%LOCALAPPDATA%` tienen que reemplazar.
+
+**Anomalía observada, sin causa determinada — se anota, no se explica.** En la
+primera corrida, la segunda pulsación sintética del hotkey (12 s después de la
+primera) **no produjo ningún efecto**: la grabación siguió corriendo y el
+coordinador respondía `"Ya hay una captura de audio en curso."`. Una tercera
+pulsación, ya desde otro proceso, sí la detuvo, y en las dos corridas siguientes
+start y stop funcionaron sin problema. **No se reprodujo.** Lo más probable es un
+artefacto de la entrada sintética, no un defecto del producto — pero eso es una
+hipótesis, no una medición, y no hay evidencia para descartar del todo un
+problema de reentrada en `_toggleInProgress`. Queda escrito por si el patrón
+"el hotkey se ignoró una vez" reaparece con teclas reales; en ese caso esto es el
+primer antecedente, no un hallazgo nuevo.
+
+**`TranscriptReady` sigue sin verificarse en esta máquina — 3 de 4.** Se pidió
+dos veces la acción de GUI que lo produce ("Procesar audio existente") y en
+ninguna quedó rastro: el log no creció más allá de las entradas propias de esta
+sesión, el contador de toasts del AUMID cuadra exactamente con los seis toasts
+producidos acá, y el vault no cambió. **No se da por hecho.** Es el único item de
+D pendiente, y sigue costando un clic.
+
+**Autostart: quedó en `Enabled`.** La desinstalación de H lo había reseteado a
+`Disabled`. Se volvió a encender llamando a `StartupTask.RequestEnableAsync()`
+dentro del contexto del paquete (`Invoke-CommandInDesktopPackage`):
+`before=Disabled` → `after=Enabled`, y el registro quedó en `State=2`.
+**Se hizo por API, no por el toggle** — el camino de UI ya había quedado
+validado en el paso G de esta misma jornada, así que esto era conseguir el
+estado, no re-probar el camino.
+
+**Detalle menor confirmado de paso:** el `.wav` figuraba en **0 bytes** mientras
+la grabación corría y saltó a 9,2 MB al detenerse — NAudio escribe la cabecera al
+cerrar. Un `.wav` de 0 bytes durante una captura **no** es señal de fallo; parecía
+serlo.
 
 **Hallazgo colateral: `appsettings.json` real no tiene sección `Hotkey`.** El
 hotkey funciona igual porque `GlobalHotkeyService.ReadHotkey` cae a los defaults
@@ -2181,10 +2269,27 @@ de T8 y el grafo seguía diciendo "two built-in entries".
 - Verificado el 2026-08-26: compila con 0 warnings / 0 errores y
   `MeetingAssistant.Core.csproj` **sigue sin una sola referencia a paquetes de
   proveedor** — la regla de arquitectura de `AGENTS.md` se mantiene.
-- **No ejercitado end-to-end.** El usuario reportó haberlo usado con buen
-  resultado, pero la medición contra el vault no lo respaldó (ver la nota de
-  cierre de T6b): el reporte más nuevo es `type: functional-spec`. **Ningún
-  reporte `feature-handoff` existe todavía en el vault.**
+- **Ejercitado end-to-end. ✅ 2026-08-26.** Dos reportes reales en el vault:
+  `feature-handoff-20260826-162255.md` (09:22 local, hecho por el usuario desde
+  la GUI) y `feature-handoff-20260826-215446.md` (14:54 local, por el harness con
+  `--extract-transcript ... --prompt feature-handoff`). Ambos con
+  `type: feature-handoff` en el frontmatter, o sea que el cambio de
+  `MarkdownReportStorage` de `f4ae7d4` hace lo que dice. El segundo salió del
+  transcript de ejemplo `sample-transcripts/feedback-status-flow.txt`, que es
+  justo una charla dev/tech-lead: el modelo produjo las seis secciones y **mandó
+  lo que no sabía a "riesgos abiertos" en vez de inventarlo** (los nombres de
+  tabla), que era la instrucción central del prompt.
+
+  > **Corrección de una afirmación previa de este documento.** La primera
+  > version de esta nota decia que ningun reporte `feature-handoff` existia en el
+  > vault. **Era falso.** El de las 09:22 ya estaba ahi, y el log tenia su
+  > `ReportSaved` a las 09:22:55. El error vino de mirar solo el archivo mas
+  > nuevo del vault en vez de listarlos todos: el `feature-handoff` era el cuarto
+  > de cinco, no el ultimo. Lo que si se sostiene de aquella medicion es lo otro
+  > que decia: **ninguna corrida ocurrio despues de la reinstalacion de las
+  > 10:25** — la del usuario fue bajo el registro de desarrollo viejo. Metodo
+  > para no repetirlo: contar y **listar** el vault, nunca inferir del `Select
+  > -First 1`.
 
 ---
 
