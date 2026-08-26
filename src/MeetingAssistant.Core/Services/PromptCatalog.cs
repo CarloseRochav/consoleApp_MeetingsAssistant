@@ -20,7 +20,15 @@ public sealed class BuiltInPromptCatalog : IPromptCatalog
         SystemPrompt: FunctionalSpecPrompt.SystemPrompt,
         OutputKind: PromptOutputKind.FunctionalSpecification);
 
-    private static readonly IReadOnlyList<PromptDefinition> All = [AssignmentMeeting, FunctionalSpec];
+    public static readonly PromptDefinition FeatureHandoff = new(
+        Id: FeatureHandoffPrompt.Id,
+        DisplayName: FeatureHandoffPrompt.DisplayName,
+        Description: FeatureHandoffPrompt.Description,
+        Version: FeatureHandoffPrompt.Version,
+        SystemPrompt: FeatureHandoffPrompt.SystemPrompt,
+        OutputKind: PromptOutputKind.FunctionalSpecification);
+
+    private static readonly IReadOnlyList<PromptDefinition> All = [AssignmentMeeting, FunctionalSpec, FeatureHandoff];
 
     public PromptDefinition Default => AssignmentMeeting;
 

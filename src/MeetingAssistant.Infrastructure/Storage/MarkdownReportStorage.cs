@@ -57,9 +57,9 @@ public sealed class MarkdownReportStorage : IReportStorage
         var sb = new StringBuilder();
 
         sb.AppendLine("---");
-        sb.AppendLine(metadata?.PromptId == FunctionalSpecPrompt.Id
-            ? "type: functional-spec"
-            : "type: meeting-report");
+        sb.AppendLine(string.IsNullOrWhiteSpace(metadata?.PromptId) || metadata.PromptId == ReportExtractionPrompt.Id
+            ? "type: meeting-report"
+            : $"type: {metadata.PromptId}");
         sb.AppendLine($"generated: {generatedAt:yyyy-MM-dd HH:mm}");
         if (metadata is not null)
         {
