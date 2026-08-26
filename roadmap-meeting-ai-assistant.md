@@ -73,8 +73,10 @@
 6. Vista "Configuración": API keys, path del vault, edición del system prompt
 
 **Avance traído adelante (T8, 2026-08-14):** el prompt ya no es único ni
-hardcodeado en el extractor. Hay un catálogo en Core (`assignment-meeting` y
-`functional-spec`). En RecordPage, después de la transcripción se elige el
+hardcodeado en el extractor. Hay un catálogo en Core — `assignment-meeting`,
+`functional-spec` y, desde 2026-08-26, `feature-handoff` (handoff de una feature
+a partir de la llamada con el tech lead: requisitos, alcance, riesgos, pasos y
+criterios de aceptación). En RecordPage, después de la transcripción se elige el
 prompt, se ve el texto, se genera el reporte y se muestra el Markdown.
 Tray/HTTP siguen auto-extrayendo con el prompt por defecto.
 
@@ -83,11 +85,26 @@ Tray/HTTP siguen auto-extrayendo con el prompt por defecto.
 
 ---
 
-## Fase 3 — Integración al flujo de trabajo diario
+## Fase 3 — Integración al flujo de trabajo diario ✅ COMPLETA
 
 **Objetivo:** Que la herramienta desaparezca en tu flujo, no que sea una app que abres manualmente.
 
 **Duración estimada:** 3-5 días
+**Resultado (cerrada 2026-08-26):** tray icon con menú contextual, hotkey global
+`Ctrl+Alt+F9`, endpoint HTTP local autenticado por token, toasts para todo el
+ciclo, autostart opt-in y MSIX firmado instalado de forma persistente. El pase
+de aceptación final (T6b) se corrió **contra el paquete instalado, no con
+`dotnet run`**: identidad de paquete, log de arranque, endpoint, bandeja,
+hotkey, toasts, autostart y desinstalación limpia. El pipeline completo corrió
+end-to-end bajo la instalación y guardó reporte en el vault. El detalle
+item-por-item, con lo que quedó sin verificar y por qué, está en `TASK_GRAPH.md`.
+
+**Deuda conocida que queda de esta fase, al backlog de Fase 4:** una grabación
+disparada por HTTP no pasa por `RecordingCoordinator`, así que no actualiza
+`RecordPage` ni dispara toasts, y sus fallos no quedan en el log — sólo viajan
+en el cuerpo de la respuesta. Además `meeting-output\` crece sin política de
+retención, y la desinstalación **no** borra `%LOCALAPPDATA%\MeetingAssistant\`
+(decisión explícita, no descuido).
 
 ### Pasos
 1. Tray icon con menú contextual (iniciar/detener grabación sin abrir la ventana principal)
@@ -95,9 +112,9 @@ Tray/HTTP siguen auto-extrayendo con el prompt por defecto.
 3. Endpoint HTTP local (`HttpListener`, sin Kestrel) para disparar grabación externamente: `POST /recording/start`, `POST /recording/stop` (síncrono, responde con transcript + reporte + ruta guardada). Requiere token de autenticación por header — no negociable, dado que enciende el micrófono remotamente. Solo bind a `localhost`, nunca a `0.0.0.0`.
 4. Notificación (Toast/`InfoBar`) cuando el reporte esté listo
 5. Autostart opcional en boot de Windows — DONE 2026-08-25 (opt-in `StartupTask`, validado en GUI y con el MSIX firmado reinstalado)
-6. Empaquetado MSIX para instalación local persistente
+6. Empaquetado MSIX para instalación local persistente — DONE 2026-08-25/26 (identidad de paquete real + certificado autofirmado, `.msix` x64 firmado e instalado; desinstalación limpia verificada, incluido el paso manual de sacar el certificado de `LocalMachine\TrustedPeople`, que Windows no revierte solo)
 
-### Criterio de salida
+### Criterio de salida — ✅ CUMPLIDO 2026-08-26
 - Puedes iniciar una grabación con un hotkey sin interrumpir tu flujo de trabajo actual, y recibir una notificación cuando el reporte está en tu vault
 
 ---

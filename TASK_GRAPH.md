@@ -4,7 +4,9 @@
 **Author:** Lead Software Architect analysis, 2026-08-07. Updated 2026-08-11,
 2026-08-13 (T7 — startup diagnostics; corrects the T2 tray-icon diagnosis),
 2026-08-14 (T8 — prompt catalog, attach transcript, vault save, rendered
-Markdown preview), 2026-08-21 (T2.2 — tray-icon .ico fix + T2.1 implementado).
+Markdown preview), 2026-08-21 (T2.2 — tray-icon .ico fix + T2.1 implementado),
+**2026-08-26 (T6b cerrado: T2.2 pasa, G no era defecto, H ejecutada — con esto
+cierra Fase 3; y T8.4, el tercer prompt del catálogo).**
 **Scope:** implementation steps to close Fase 3, plus the T8 prompt-catalog
 branch (Fase 2/4 quality work brought forward). No source code included
 below — this is the plan a developer executes against.
@@ -15,7 +17,7 @@ below — this is the plan a developer executes against.
 |---|---|
 | T1 — Centralize recording state | ✅ DONE (validated 2026-08-11) |
 | T1.5 — Revert unauthorized network exposure | ✅ DONE (validated 2026-08-11) |
-| T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; re-confirmado contra el paquete instalado 2026-08-25). **Sigue abierto sólo T2.2**: el label de la bandeja durante una grabación disparada por HTTP |
+| T2 — Tray icon + hide-to-tray | ✅ DONE (GUI-validated 2026-08-21; re-confirmado contra el paquete instalado 2026-08-25). **T2.2 cerrado 2026-08-26**: con una grabación viva disparada por HTTP, el clic derecho mostró "Detener grabación" — `RightClickCommand` sí corre antes de que se construya el menú nativo |
 | T2.1 — Fix stale RecordPage state after external triggers | ✅ DONE (GUI-validated from tray and hotkey 2026-08-21). No longer blocks T3 |
 | T3 — Global hotkey | ✅ DONE (implemented and GUI-validated 2026-08-21; default `Ctrl+Alt+F9`) |
 | T4 — Toast on report ready / on failure | 🟢 **Criterio crítico cumplido**: toast de fallo visible con la ventana cerrada, GUI-confirmado por el usuario 2026-08-25 (arranque del 08-24 14:24). **✅ CERRADO 2026-08-25 noche:** el usuario confirmó los toasts contra el paquete instalado, camino de éxito incluido |
@@ -24,8 +26,8 @@ below — this is the plan a developer executes against.
 | T4.3 — Activador COM en el manifiesto + traza de diagnóstico | ✅ DONE — `AppNotificationManager.Register OK` confirmado en el log 2026-08-24 14:23:18, tras desbloquear T4.4 |
 | T4.4 — El endpoint HTTP mataba el arranque entero | ✅ DONE (2026-08-24). Reserva `http://+:5757/` + `Start()` fuera de `try/catch`: bloqueaba la validación de T4.3 |
 | T6a — Package identity + signing | ✅ DONE (2026-08-25: signed x64 MSIX installed and launched through its registered AUMID; tray icon visually confirmed) |
-| T5 — Optional autostart | ✅ DONE (2026-08-25: opt-in `StartupTask` GUI-validated against the real PFN; signed MSIX restored afterward) |
-| T6b — Full re-verification against the installed package | 🟡 Casi cerrado (2026-08-25). La instalación firmada tuvo que **reproducirse en esta máquina** — T6a/T5 se habían hecho en otra (ver notas). **A y F medidas; B, C, D y E vistas por el usuario; el pipeline completo corrió end-to-end instalado y guardó reporte en el vault.** Quedan **T2.2** (label de bandeja, 10 segundos), **G** (autostart: API probada sana, falta la medición que decide si hay defecto) y **H** (desinstalación) |
+| T5 — Optional autostart | ✅ DONE (2026-08-25: opt-in `StartupTask` GUI-validated against the real PFN; signed MSIX restored afterward). **2026-08-26: la sospecha de defecto quedó descartada con medición** — escritura y lectura del toggle son correctas; lo que engañaba era la pestaña de Inicio del Administrador de tareas, que no se refresca sola. `StartupTaskService` no se tocó |
+| T6b — Full re-verification against the installed package | ✅ **CERRADO 2026-08-26** en la máquina `D:` (la de T6a/T5). Los tres pendientes que quedaban se resolvieron: **T2.2 pasa** (label "Detener grabación" con grabación viva, visto por el usuario), **G no es defecto** (la medición decisiva confirmó la hipótesis de la pestaña rancia del Administrador de tareas) y **H pasa entero**, incluida la limpieza manual del certificado. A y F re-medidas acá. **Salvedad registrada: C y D no se re-ejercitaron contra este paquete Debug** — siguen validados del 2026-08-25 en la otra máquina |
 | T7 — Startup diagnostics + config validation | ✅ DONE (built, run and verified 2026-08-13) |
 | T8 — Prompt catalog after transcript | ✅ DONE (2026-08-14). Follow-ups same day: attach `.txt`, vault-path UX, rendered MD preview |
 
@@ -42,15 +44,16 @@ funcionan. Se resuelve partiendo T6 en dos.
 | 1 | **T4 — toast** — canal confirmado 2026-08-24 (`Register OK`, 2 de 4 toasts); faltan los del camino de exito | Es lo unico que queda que cierra un hueco real y no pulido. Hoy, si el pipeline falla con la ventana oculta, no hay ninguna superficie visible: el error muere en `RecordViewModel.StatusMessage`, que nadie ve si `RecordPage` no esta abierto. T3 empeoro esto sin querer — grabar sin abrir la ventana ya es el camino normal, asi que un fallo silencioso significa una reunion que crees capturada y no lo esta. Sin paquete nuevo: `AppNotificationManager` viene en el WindowsAppSDK 2.3.1 ya referenciado. |
 | 2 | **T6a — identidad de paquete + firma — ✅ DONE 2026-08-25** | Se agregó primero la cobertura raíz para `*.pfx`, `*.cer` y `*.snk` (la cobertura de packaging previa sólo aplicaba bajo `src/MeetingAssistant.App/`), se reemplazó la identidad placeholder, y se produjo, firmó, instaló y arrancó el `.msix` x64. T5 ya tiene una identidad real contra la cual validarse. |
 | 3 | **T5 — autostart — ✅ DONE 2026-08-25** | Se agregó `Windows.ApplicationModel.StartupTask` y un solo toggle en `SettingsPage`. Se validaron la activación real en `Task Manager > Startup Apps` y la relectura de `DisabledByUser`; el MSIX firmado quedó reinstalado al terminar. `DisabledByPolicy`/`EnabledByPolicy` están manejados en UI, pero esta máquina sin directiva administrada no permitió producir esos estados en runtime. |
-| 4 | **T6b — pase de aceptacion final — 🟡 EN CURSO 2026-08-25** | Instalar el paquete de verdad (no `dotnet run`) y re-verificar T2–T5 completos sobre esa instalacion, mas desinstalacion limpia sin startup task ni proceso de bandeja huerfano. Esto es lo que cierra Fase 3. Hecho: instalacion firmada **reproducida en esta maquina** (T6a se habia hecho en otra), arranque/identidad y endpoint HTTP medidos, fix del paso 0 confirmado, **B/C/D/E vistas por el usuario**, y el pipeline completo corriendo end-to-end instalado con reporte guardado en el vault. **Faltan exactamente tres cosas para cerrar Fase 3: T2.2, la medicion que decide lo del autostart (G), y la desinstalacion limpia (H).** |
+| 4 | **T6b — pase de aceptacion final — ✅ CERRADO 2026-08-26** | Instalar el paquete de verdad (no `dotnet run`) y re-verificar T2–T5 completos sobre esa instalacion, mas desinstalacion limpia sin startup task ni proceso de bandeja huerfano. **Con esto cierra Fase 3.** Las tres cosas que faltaban el 08-25 se cerraron el 08-26: T2.2 pasa, G resulto no ser defecto, y H paso entero incluida la limpieza manual del certificado. Ver `### T6b cierre — 2026-08-26`. |
 
 ### Verificaciones sueltas, para la primera sesion con GUI que toque
 
 No son tareas propias; se cuelan en cualquiera de los pasos de arriba.
 
-- Click derecho en la bandeja despues de un `POST /recording/start`: el label
-  debe decir "Detener grabación". Es lo que decide si `RightClickCommand` corre
-  antes de que se construya el menu nativo (ver T2.2).
+- ~~Click derecho en la bandeja despues de un `POST /recording/start`: el label
+  debe decir "Detener grabación".~~ **RESUELTO 2026-08-26: dijo "Detener
+  grabación".** `RightClickCommand` corre antes de que se construya el menu
+  nativo. Ver T2.2.
 - Confirmar que el hotkey `Ctrl+Alt+F9` no colisiona con nada en uso real
   despues de unos dias; si molesta, es cambio de `appsettings.json`, no de codigo.
 - **Toasts del camino de exito** (`TranscriptReady`, `ReportSaved`): una
@@ -87,6 +90,29 @@ sorpresas:
   suficientes para decidir si el volumen de errores lo justifica.
 - **Mermaid** en reportes functional-spec se renderiza como bloque de codigo en
   la vista previa (Markdig no ejecuta Mermaid). Nunca se pidio.
+
+Agregados al cerrar T6b el 2026-08-26 — estos si son nuevos:
+
+- **Los fallos del camino HTTP no dejan rastro en ningun lado.** Van solo en el
+  cuerpo de la respuesta: no llegan a `startup-errors.log`. Si una grabacion
+  disparada por HTTP falla y nadie mira la respuesta, se pierde. Va junto con el
+  hueco del coordinador de arriba, es la misma causa raiz.
+- **`meeting-output\` no tiene politica de retencion.** Crece sin limite y la
+  desinstalacion no lo toca (decision explicita, ver T6b). Al 2026-08-26 son 4
+  archivos, ~130 MB, dos de ellos reuniones reales de ~60 MB. Un `.wav` de 14
+  minutos pesa ~60 MB, asi que el crecimiento no es despreciable.
+- **Los nombres de archivo no usan la misma base de tiempo.** El `.wav` sale con
+  hora local y el reporte con UTC para la misma grabacion, asi que una reunion de
+  la noche aparece con fecha del dia siguiente al ordenar por nombre.
+- **El paquete Release nunca se ejercito.** Todo lo validado end-to-end, en las
+  dos maquinas, fue Debug. En Release el csproj activa `PublishTrimmed` y
+  `PublishReadyToRun`, y no hay ninguna evidencia de que el paquete recortado
+  sobreviva a WinUI + MVVM/DI por reflexion + los SDKs de proveedor. **Si alguna
+  vez se quiere distribuir Release, eso es una validacion propia, no un
+  supuesto.**
+- **El `.msix` instalado contiene el `appsettings.json` real, con API keys**
+  (documentado en T6a, sigue vigente). Debe quedarse local. Un build
+  distribuible exige antes mover la configuracion a `%LOCALAPPDATA%`.
 
 ---
 
@@ -1706,6 +1732,147 @@ de tareas; cuatro `.wav` en `%LOCALAPPDATA%\MeetingAssistant\meeting-output\`, d
 de ellos con audio real; y un reporte nuevo en el vault. La desinstalación (H)
 sigue sin ejecutarse.
 
+### T6b cierre — 2026-08-26 (máquina `D:`, la de T6a/T5)
+
+**Contexto de máquina.** Esta sesión corrió en
+`D:\stuffProjectsCH\consoleApp_MeetingsAssistant`, que es la máquina de T6a/T5
+— **no** la de las notas del 08-25, que son de
+`C:\Projects\PersonnalTool_App\...`. Acá el certificado es
+`AD5A94D0DA131E47F395DD937721551C72AF5D52`, no el `9B006BCB…` de la otra.
+
+**Estado encontrado al empezar: la instalación firmada ya no existía.**
+`Get-AppxPackage` daba `SignatureKind=None`, `IsDevelopmentMode=True`, y el
+proceso corría desde
+`src\MeetingAssistant.App\bin\x64\Debug\...\AppX\MeetingAssistant.App.exe`. O
+sea, un `dotnet run` había reemplazado el paquete firmado, exactamente el
+escenario contra el que advierte la precondición del brief. Se rehizo el
+paquete antes de validar nada.
+
+**Configuración del paquete: Debug, a propósito**, con el mismo criterio que
+usó la otra máquina el 08-25 — en Release el csproj activa `PublishTrimmed` y
+`PublishReadyToRun`, y recortar WinUI + MVVM/DI por reflexión puede romper en
+runtime, contaminando un pase de aceptación *de comportamiento*. Nota nueva:
+**el `.msix` que produjo T6a en esta máquina era Release** (carpeta
+`..._x64_Test`, sin `Debug` en el nombre) y **nunca ejercitó el pipeline**. No
+hay ninguna evidencia de que el paquete Release recortado pueda transcribir y
+extraer; el único que corrió end-to-end, acá y en la otra máquina, es Debug.
+Salida: `AppPackages\MeetingAssistant.App_1.0.0.0_x64_Debug_Test\MeetingAssistant.App_1.0.0.0_x64_Debug.msix`,
+0 errores y la misma advertencia sólo-de-tooling por `mspdbcmf.exe` ausente.
+Firma `Valid`, instalado con `SignatureKind=Developer`,
+`IsDevelopmentMode=False`, un solo paquete.
+
+**A. Arranque e identidad — MEDIDO, los tres items.** Arrancó por
+`shell:AppsFolder\...!App`; proceso desde `C:\Program Files\WindowsApps\...`;
+`AppNotificationManager.Register OK` en la ruta plana **sin** excepción de
+`LocalRecordingApiServer.Start`; un solo paquete; puerto 5757 en `Listen`
+(owner PID 4 = HTTP.sys).
+
+**B. T2.2 — PASA. Visto por el usuario. Cerrado desde el 08-21.** Con una
+grabación viva disparada por `POST /recording/start`, el clic derecho en la
+bandeja mostró **"Detener grabación"**. Queda contestada la pregunta que
+originó T2.2: `RightClickCommand` **sí** corre antes de que se construya el
+menú nativo. El icono de bandeja además se vio correcto (el custom, no el
+genérico), o sea que la excepción de carga de icono del 08-25 11:00 no
+reaparece bajo este paquete.
+
+**F. Endpoint HTTP — MEDIDO.** Sin token → 401; token inválido → 401; token
+válido → 200 `{"status":"recording"}`. El `stop` devolvió 409 por el guard de
+transcripción vacía (era silencio), y un segundo `stop` devolvió 409 con
+`"No hay una captura de audio en curso para detener."`, probando que el primero
+sí detuvo la captura y el pipeline volvió a idle. La grabación escribió
+`meeting-20260826-102657.wav` bajo `%LOCALAPPDATA%`, confirmando otra vez el fix
+del paso 0. Sin toast, como estaba anticipado (hueco conocido del backlog).
+
+> **Trampa de medición, anotada para no repetirla:** leer el cuerpo de un 409
+> con `Invoke-WebRequest` + `$_.Exception.Response.GetResponseStream()` devuelve
+> **vacío** — el stream ya fue consumido. Parecía que el 409 no traía cuerpo, y
+> sí lo trae (`WriteJsonAsync` escribe `error` + `details`). Con
+> `System.Net.Http.HttpClient` se lee bien. No era un defecto del producto.
+
+**G. T5 autostart — NO ES DEFECTO. Medición decisiva hecha.** Se confirmó la
+hipótesis principal que dejó abierta el 08-25: el Administrador de tareas no se
+refresca solo. Secuencia, con baseline limpio (`State=0`,
+`UserEnabledStartupOnce=0`, que dejó la reinstalación) y **con el Administrador
+de tareas cerrado de entrada**:
+
+1. El usuario encendió el toggle en `SettingsPage` → texto
+   *"Meeting Assistant se iniciará cuando entres a Windows."*
+2. Verificación independiente por registro: `State=2` (`Enabled`),
+   `UserEnabledStartupOnce=1`. **El camino de escritura de la UI llega al SO** —
+   esto es lo que el 08-25 no se había podido separar.
+3. Administrador de tareas **abierto de cero** → "Meeting Assistant" listado y
+   **Habilitado**.
+4. Navegar fuera de Configuración y volver (re-dispara `SettingsPage_Loaded` →
+   `GetStateAsync`) → el toggle sigue en **ON**. **El camino de lectura también
+   es correcto.**
+
+Se mantiene la decisión del 08-25 de **no tocar `StartupTaskService`**: no había
+defecto que arreglar, y el fix a ciegas habría inventado una causa. `DisabledByPolicy` /
+`EnabledByPolicy` siguen **no verificables en esta máquina** (sin directiva
+administrada), no verificados.
+
+**H. Desinstalación limpia — EJECUTADA Y PASA, todos los items.** Se
+desinstaló con `Remove-AppxPackage` (la misma API que llama Configuración >
+Aplicaciones), **a propósito con la app corriendo**, porque "no queda proceso de
+bandeja huérfano" es justamente el criterio:
+
+| Item | Resultado |
+|---|---|
+| Paquete removido | ✅ 0 paquetes; el directorio de `WindowsApps` desapareció |
+| Proceso de bandeja huérfano | ✅ ninguno — el proceso murió con la desinstalación |
+| Puerto 5757 | ✅ liberado |
+| StartupTask registrada | ✅ la clave `SystemAppData\...\MeetingAssistantStartup` se borró **entera**, aunque estaba en `State=2` (`Enabled`) al momento de desinstalar |
+| Reserva `urlacl` de 5757 | ✅ ninguna quedó — **el modo de falla de T4.4 no se repite** |
+| Certificado de confianza | ⚠️ **sobrevive**, como predecía el brief |
+| `%LOCALAPPDATA%\MeetingAssistant\` | ⚠️ **sobrevive** — log, `Signing\`, y 4 `.wav` (~130 MB) |
+
+**La limpieza manual del certificado se ejecutó y se verificó, no se asumió.**
+`certutil -delstore TrustedPeople AD5A94D0…` elevado: la cuenta de certificados
+`MeetingAssistant` en `LocalMachine\TrustedPeople` pasó de **1 → 0**. Después
+`certutil -addstore` con el `.cer` de `%LOCALAPPDATA%\MeetingAssistant\Signing\`
+lo restauró: **0 → 1**. O sea, el paso manual que hace verdadera la
+"desinstalación limpia" está probado en ambas direcciones, y el `.cer` exportado
+sirve para rehacer el anclaje sin regenerar nada.
+
+**Decisión explícita sobre `%LOCALAPPDATA%\MeetingAssistant\` — la pedía el
+brief y acá queda tomada: se CONSERVA. La desinstalación no lo toca, y eso es
+intencional**, no un descuido: el log de diagnóstico, el `.cer` exportado y el
+audio de las reuniones son datos del usuario, y se borran a mano si se quiere.
+Consecuencia asumida: `meeting-output\` **crece sin límite** — hoy 4 archivos,
+~130 MB, dos de ellos reuniones reales de ~60 MB. **No hay política de retención
+y eso va al backlog**, no a Fase 3.
+
+**Reinstalación posterior — hecha, la máquina queda usable.** Paquete firmado
+reinstalado, `IsDevelopmentMode=False`, un solo paquete, arrancado por AUMID con
+`Register OK` a las 11:19:12. **Ojo: la desinstalación reseteó el autostart a
+`State=0` (Disabled)** — el toggle que se encendió en el paso G quedó apagado.
+Si se quiere autostart, hay que volver a encenderlo.
+
+#### Lo que NO se verificó en esta máquina — dicho explícitamente
+
+**C (hotkey) y D (los cuatro toasts) no se re-ejercitaron contra este paquete
+Debug.** Siguen validados por confirmación del usuario del 2026-08-25 contra la
+instalación de la otra máquina, y por eso T4/T4.1/T4.2 siguen cerrados; pero
+esta combinación exacta de paquete y código (Debug + `f4ae7d4`) no los ejerció.
+Se intentó y **se descartó por decisión del usuario**, no por falta de tiempo.
+
+Se registra además, porque es el tipo de cosa que este documento existe para no
+perder: **un primer reporte de que la corrida end-to-end había pasado no se
+sostuvo contra la máquina.** Medido en el momento: log sin líneas nuevas (4669
+bytes, sin ningún `Toast mostrado por…` posterior al arranque de las 10:25:51),
+contador de toasts del AUMID sin moverse (9), ningún `.wav` nuevo salvo el del
+test HTTP, y el vault con los mismos 5 reportes — el más nuevo de las 10:08:52,
+**anterior a la reinstalación**, y con `type: functional-spec`, no
+`feature-handoff`. La corrida de las 10:01–10:08 fue bajo el **registro de
+desarrollo viejo**, antes del paquete nuevo. Se anotó como no verificado en vez
+de darlo por bueno.
+
+**Hallazgo colateral: `appsettings.json` real no tiene sección `Hotkey`.** El
+hotkey funciona igual porque `GlobalHotkeyService.ReadHotkey` cae a los defaults
+del código (`"Control+Alt"` / `"F9"`), así que `Ctrl+Alt+F9` es correcto. No es
+un defecto, pero **cambiar el hotkey requiere agregar la sección**, no editar una
+existente.
+
 ### Acceptance criteria
 - A freshly-installed (not `dotnet run`) copy of the app launches from the
   Start Menu, shows the tray icon, responds to the hotkey, serves the local
@@ -1905,7 +2072,7 @@ Obsidian vault.
 **T8 — catalog + pipeline split**
 1. Core `IPromptCatalog` / `PromptDefinition` (id, display name,
    description, version, system prompt, output kind). Two built-in
-   entries:
+   entries (**tres desde 2026-08-26**, ver la nota al final de T8):
    - `assignment-meeting` @ v1 — original structured `MeetingReport`.
    - `functional-spec` @ **v2** — user-supplied technical-analyst
      prompt. Output is Markdown in the **same language as the
@@ -1993,6 +2160,31 @@ Obsidian vault.
 - Settings still has no UI to edit `Storage:VaultPath` / `SubFolder`.
 - T2.1 (stale RecordPage after tray/HTTP start) is unchanged and
   still blocks T3.
+
+### T8.4 — tercer prompt del catalogo (2026-08-26, commit `f4ae7d4`)
+
+Agregado por el usuario fuera del pase de T6b, anotado acá porque el catálogo es
+de T8 y el grafo seguía diciendo "two built-in entries".
+
+- **`feature-handoff` @ v1** — "Handoff de feature (tech lead)". Extrae de la
+  llamada con el tech lead: resumen de la feature, requisitos técnicos con sus
+  restricciones, alcance dentro/fuera, riesgos y preguntas abiertas, pasos de
+  implementación sugeridos y criterios de aceptación. Instruye explícitamente a
+  **no inventar requisitos**: lo ambiguo va a "riesgos abiertos" en vez de
+  adivinarse. `OutputKind` es `FunctionalSpecification`, o sea Markdown directo,
+  no `MeetingReport` estructurado.
+- **`MarkdownReportStorage` dejó de ramificar a dos manos.** Antes decidía el
+  frontmatter con un ternario `PromptId == FunctionalSpecPrompt.Id`, que hubiera
+  etiquetado el prompt nuevo como `meeting-report`. Ahora el `type:` se deriva
+  del `PromptId` (`meeting-report` sólo para el prompt por defecto o si viene
+  vacío), así que **un cuarto prompt ya no requiere tocar el storage**.
+- Verificado el 2026-08-26: compila con 0 warnings / 0 errores y
+  `MeetingAssistant.Core.csproj` **sigue sin una sola referencia a paquetes de
+  proveedor** — la regla de arquitectura de `AGENTS.md` se mantiene.
+- **No ejercitado end-to-end.** El usuario reportó haberlo usado con buen
+  resultado, pero la medición contra el vault no lo respaldó (ver la nota de
+  cierre de T6b): el reporte más nuevo es `type: functional-spec`. **Ningún
+  reporte `feature-handoff` existe todavía en el vault.**
 
 ---
 
