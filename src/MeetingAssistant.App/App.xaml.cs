@@ -110,6 +110,13 @@ public partial class App : Application
             LogStartupFailure("LocalRecordingApiServer.Start", exception);
         }
 
+        // Spike de Fase 5: deja constancia en cada arranque de si el binario
+        // nativo de SQLite cargó bajo esta forma de ejecución. Instalada, la app
+        // corre desde WindowsApps, y un paquete nativo por RID es justo el tipo
+        // de cosa que funciona suelta y falla empaquetada — ya pasó con la ruta
+        // del log y con el directorio de audio. Describe() nunca lanza.
+        LogDiagnostic(MeetingAssistant.Infrastructure.Storage.SqliteEnvironmentProbe.Describe());
+
         try
         {
             _activityNotificationService = Services.GetRequiredService<ActivityNotificationService>();
