@@ -5,23 +5,123 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
-    <Grid Padding="32">
+    <ScrollViewer>
         <StackPanel
-            MaxWidth="560"
+            MaxWidth="640"
+            Margin="32"
             HorizontalAlignment="Left"
             VerticalAlignment="Top"
             Spacing="16">
+
             <TextBlock Text="Configuración" Style="{StaticResource TitleTextBlockStyle}" />
+
+            <!-- Inicio automático (T5) -->
             <ToggleSwitch
                 x:Name="StartupToggle"
                 Header="Iniciar con Windows"
                 Toggled="StartupToggle_Toggled" />
             <TextBlock
                 x:Name="StartupStatusText"
-                MaxWidth="520"
+                MaxWidth="600"
                 Opacity="0.75"
                 Text="Consultando el estado configurado en Windows..."
                 TextWrapping="Wrap" />
+
+            <!-- Vault -->
+            <TextBlock
+                Margin="0,16,0,0"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                Text="Vault de Obsidian" />
+            <TextBox
+                x:Name="VaultPathBox"
+                Header="Carpeta del vault"
+                PlaceholderText="C:\ruta\a\tu\vault"
+                TextChanged="VaultPathBox_TextChanged" />
+            <TextBlock
+                x:Name="VaultPathStatusText"
+                MaxWidth="600"
+                Opacity="0.75"
+                TextWrapping="Wrap" />
+            <TextBox
+                x:Name="SubFolderBox"
+                Header="Subcarpeta para los reportes"
+                PlaceholderText="MeetingReports" />
+
+            <!-- LLM -->
+            <TextBlock
+                Margin="0,16,0,0"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                Text="Modelo de lenguaje" />
+            <ComboBox
+                x:Name="ProviderCombo"
+                Header="Proveedor"
+                SelectionChanged="ProviderCombo_SelectionChanged">
+                <ComboBoxItem Content="Gemini" Tag="Gemini" />
+                <ComboBoxItem Content="Azure AI Foundry" Tag="AzureFoundry" />
+            </ComboBox>
+
+            <TextBlock
+                MaxWidth="600"
+                Opacity="0.6"
+                TextWrapping="Wrap"
+                Text="Si cambias de modelo y no hay un precio para él en la sección Pricing, el coste de cada reporte se registra como 0,00 en vez de fallar. El reporte sale bien; lo que deja de ser fiable es el coste acumulado." />
+
+            <StackPanel x:Name="GeminiPanel" Spacing="16">
+                <TextBox
+                    x:Name="GeminiModelBox"
+                    Header="Modelo"
+                    PlaceholderText="gemini-3.5-flash-lite (por defecto)" />
+                <PasswordBox x:Name="GeminiKeyBox" Header="API key de Gemini" />
+            </StackPanel>
+
+            <StackPanel x:Name="AzurePanel" Spacing="16">
+                <TextBox
+                    x:Name="AzureEndpointBox"
+                    Header="Endpoint"
+                    PlaceholderText="https://&lt;recurso&gt;.openai.azure.com/openai/v1/" />
+                <TextBox
+                    x:Name="AzureDeploymentBox"
+                    Header="Deployment (el modelo)"
+                    PlaceholderText="nombre-del-deployment" />
+                <PasswordBox
+                    x:Name="AzureKeyBox"
+                    Header="API key de Azure (opcional)"
+                    PlaceholderText="vacío = autenticación con Azure.Identity" />
+            </StackPanel>
+
+            <!-- Transcripción -->
+            <TextBlock
+                Margin="0,16,0,0"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                Text="Transcripción" />
+            <PasswordBox x:Name="DeepgramKeyBox" Header="API key de Deepgram" />
+
+            <!-- Guardar -->
+            <Button
+                x:Name="SaveButton"
+                Margin="0,16,0,0"
+                Click="SaveButton_Click"
+                Content="Guardar cambios"
+                Style="{StaticResource AccentButtonStyle}" />
+            <TextBlock
+                x:Name="SaveStatusText"
+                MaxWidth="600"
+                Opacity="0.75"
+                TextWrapping="Wrap" />
+
+            <TextBlock
+                MaxWidth="600"
+                Margin="0,8,0,0"
+                Opacity="0.6"
+                TextWrapping="Wrap"
+                Text="Los cambios se aplican al reiniciar la app: los clientes de audio, transcripción y LLM se construyen una sola vez al arrancar. El inicio automático es la excepción y se aplica al instante." />
+            <TextBlock
+                x:Name="SettingsFilePathText"
+                MaxWidth="600"
+                FontSize="12"
+                IsTextSelectionEnabled="True"
+                Opacity="0.5"
+                TextWrapping="Wrap" />
         </StackPanel>
-    </Grid>
+    </ScrollViewer>
 </Page>

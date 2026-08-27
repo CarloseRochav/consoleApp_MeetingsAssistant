@@ -294,9 +294,22 @@ public partial class App : Application
 
     private static IServiceProvider ConfigureServices()
     {
+        // El orden es la regla: empaquetado (valores de fábrica) -> archivo del
+        // usuario (lo que edita SettingsPage) -> variables de entorno. Cada capa
+        // pisa a la anterior.
+        //
+        // La capa de usuario existe porque instalada la app lee su
+        // appsettings.json desde C:\Program Files\WindowsApps\..., que es de
+        // sólo lectura: sin esto, cambiar el vault o una API key obliga a
+        // reconstruir y reinstalar el .msix. SetBasePath no le afecta —
+        // UserSettingsService.FilePath es una ruta absoluta.
+        //
+        // optional: true a propósito. Es la instalación limpia: el archivo no
+        // existe hasta que alguien guarda algo.
         IConfiguration configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+            .AddJsonFile(UserSettingsService.FilePath, optional: true, reloadOnChange: false)
             .AddEnvironmentVariables()
             .Build();
 
@@ -326,6 +339,7 @@ public partial class App : Application
         services.AddSingleton<TrayIconService>();
         services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<StartupTaskService>();
+        services.AddSingleton<UserSettingsService>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();
@@ -378,7 +392,13 @@ public partial class App : Application
         string provider = ReadSetting(configuration, "Llm", "Provider") ?? "Gemini";
         return provider.ToLowerInvariant() switch
         {
-            "gemini" => new GeminiLlmClient(ReadRequiredSetting(configuration, "Gemini", "ApiKey", "GEMINI_API_KEY")),
+            // Gemini:Model es opcional: sin él manda el default del cliente
+            // (gemini-3.5-flash-lite). Se lee para que SettingsPage pueda
+            // cambiarlo sin tocar código, igual que Deployment hace de "modelo"
+            // del lado de Azure.
+            "gemini" => ReadSetting(configuration, "Gemini", "Model") is { } geminiModel
+                ? new GeminiLlmClient(ReadRequiredSetting(configuration, "Gemini", "ApiKey", "GEMINI_API_KEY"), geminiModel)
+                : new GeminiLlmClient(ReadRequiredSetting(configuration, "Gemini", "ApiKey", "GEMINI_API_KEY")),
             "azurefoundry" => new AzureFoundryLlmClient(
                 ReadRequiredSetting(configuration, "AzureFoundry", "Endpoint"),
                 ReadRequiredSetting(configuration, "AzureFoundry", "Deployment"),

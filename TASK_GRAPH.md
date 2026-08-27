@@ -2293,6 +2293,109 @@ de T8 y el grafo seguía diciendo "two built-in entries".
 
 ---
 
+## T9 — Configuración editable: capa de usuario + SettingsPage (2026-08-26)
+
+**Primera tarea de Fase 2 después de cerrar Fase 3.** No es pulido: es la
+consecuencia directa de haber instalado la app.
+
+### Por qué ahora
+
+Instalada, la app leía su configuración **sólo** desde
+`AppContext.BaseDirectory`, que es `C:\Program Files\WindowsApps\...` y es de
+sólo lectura. Cambiar el vault, el proveedor de LLM o una API key obligaba a
+**reconstruir, refirmar y reinstalar el `.msix`**. La única vía de escape era
+pisar claves con variables de entorno `Seccion__Clave` — que funciona, se
+comprobó al forzar el fallo de Deepgram, pero no es una interfaz.
+
+Mientras el flujo normal fue `dotnet run`, editar el archivo del repo alcanzaba.
+Cerrar Fase 3 lo rompió. Es el mismo problema, y el mismo arreglo, que ya
+tuvieron el log (T7) y `meeting-output` (T6b paso 0): **lo que la app necesita
+escribir no puede vivir dentro del paquete.**
+
+### Qué se implementó
+
+1. **Capa de configuración de usuario.** `App.ConfigureServices` apila ahora
+   empaquetado → `%LOCALAPPDATA%\MeetingAssistant\appsettings.json` → variables
+   de entorno. La capa nueva es `optional: true`: en una instalación limpia el
+   archivo no existe hasta que alguien guarda.
+2. **`UserSettingsService`** (`App/Services`). `LoadEffective()` devuelve la
+   configuración **en efecto** — apilada, no sólo el archivo de usuario — para
+   que un campo vacío en la UI signifique "no hay valor" y nunca "hay uno pero
+   viene de otra capa". `Save()` **edita** el JSON existente en vez de
+   reemplazarlo, así que agregar un campo mañana no borra lo que alguien haya
+   puesto a mano. Un campo vacío **borra** el override y deja volver al valor
+   empaquetado.
+3. **`SettingsPage` real.** Vault (ruta + subcarpeta), proveedor de LLM con sus
+   credenciales, modelo, y la API key de Deepgram. Las claves van en
+   `PasswordBox` y se precargan, para que guardar sin tocarlas no las borre.
+   Sólo se muestran las credenciales del proveedor elegido.
+4. **`Gemini:Model` pasó a ser configurable.** Antes `CreateLlmClient` nunca
+   pasaba modelo y quedaba el default del cliente. Del lado de Azure el "modelo"
+   ya era `Deployment`.
+5. **Validación de la ruta del vault en la UI**, que es media respuesta al hueco
+   de T7: dice si la carpeta **existe**, no sólo si el campo está lleno.
+
+### Decisiones tomadas, con su costo
+
+- **Los cambios se aplican al reiniciar, y la página lo dice.** Los clientes de
+  audio, transcripción y LLM son singletons construidos una vez en el arranque,
+  con `reloadOnChange: false`. Hacerlos recargar en caliente es refactorizar
+  todas las registraciones a factories; se descartó **a propósito** para esta
+  versión. El toggle de inicio automático es la excepción: se aplica al instante
+  porque no pasa por configuración.
+- **Las API keys quedan en texto plano** en el perfil del usuario. Es la misma
+  exposición que ya tenían dentro del `.msix` (T6a), así que no la empeora —
+  pero tampoco la mejora. Cifrarlas con DPAPI es una decisión **diferida a
+  propósito**, no un olvido.
+- **Escritura en dos pasos** (`.tmp` + `File.Move`). Un JSON truncado acá
+  **impide arrancar la app**: `AddJsonFile` lanza al parsear aunque sea
+  `optional`. El temporal convierte ese riesgo en "se perdió el último cambio".
+- **Cambiar de modelo sin precio en `Pricing` reporta coste 0,00**, no falla
+  (`ConfigPricingCostEstimator` devuelve 0 a propósito). El reporte sale bien;
+  lo que deja de ser fiable es el coste acumulado. La página lo advierte, porque
+  un 0,00 silencioso erosiona justo la métrica de Fase 4.
+
+### Verificación — 2026-08-26
+
+- `dotnet build MeetingAssistant.sln`: **0 warnings, 0 errores**.
+- **La capa de usuario se probó end-to-end contra el paquete instalado, no
+  leyendo el código.** Se escribió a mano un
+  `%LOCALAPPDATA%\MeetingAssistant\appsettings.json` con
+  `Storage:SubFolder = "MeetingReports-settingstest"`, se reinstaló el `.msix` y
+  se grabó por hotkey. **El reporte apareció en la subcarpeta pisada** — que la
+  app creó — y la carpeta normal quedó intacta en 8 archivos. Después se borró
+  el override y el artefacto de prueba, y se confirmó que la app vuelve al
+  comportamiento normal.
+- Para conseguir habla real sin hablar, se **reprodujo un `.wav` de reunión por
+  el altavoz** y lo capturó el loopback. Sirve para futuras validaciones del
+  pipeline sin depender de que haya alguien hablando.
+- **`Save()` desde el botón no se ejerció**: requiere un clic. Lo que sí quedó
+  probado es el contrato de lectura, con un archivo escrito exactamente en la
+  forma que `Save()` produce.
+
+### Trampa del ciclo de desarrollo, anotada porque cuesta 10 minutos descubrirla
+
+**Reinstalar el mismo `1.0.0.0` con contenido distinto está bloqueado.**
+`Add-AppxPackage` falla con `0x80073CFB` — *"same identity as an already-installed
+package but the contents are different"*. Hay que `Remove-AppxPackage` primero
+(o subir la versión). Y **cada desinstalación resetea la StartupTask a
+`Disabled`**, así que el autostart hay que volver a encenderlo después de cada
+iteración de paquete.
+
+### Lo que queda de Fase 2 después de T9
+
+- `HistoryPage` sigue siendo el stub de 11 líneas que dice "Próximamente", y
+  **antes que la página hace falta un lado de lectura en `IReportStorage`**, que
+  hoy sólo sabe guardar (`SaveAsync` / `SaveMarkdownAsync`).
+- Vista de detalle de reporte: no existe.
+- Edición del prompt desde Settings: no está. El catálogo sigue siendo de sólo
+  lectura, definido en código.
+- Hotkey y puerto HTTP **quedaron fuera de T9 a propósito**. Recordar que
+  `appsettings.json` real no tiene sección `Hotkey`: corre con los defaults del
+  código.
+
+---
+
 ## Explicitly out of scope for this task graph
 
 - Building out `HistoryPage` / `SettingsPage` beyond the one autostart toggle
