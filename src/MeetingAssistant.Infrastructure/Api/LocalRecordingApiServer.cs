@@ -116,7 +116,7 @@ public sealed class LocalRecordingApiServer : IDisposable
             switch (request.HttpMethod, request.Url?.AbsolutePath)
             {
                 case ("POST", "/recording/start"):
-                    await _pipeline.StartRecordingAsync(cancellationToken);
+                    await _pipeline.StartRecordingAsync(SessionSource.Http, cancellationToken);
                     await WriteJsonAsync(response, 200, new { status = "recording" });
                     break;
 

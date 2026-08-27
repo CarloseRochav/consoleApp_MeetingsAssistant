@@ -242,8 +242,76 @@ las interfaces de Core no cambiarían.
    nadie vuelve a mirar. El autotest lo comprueba de la única forma que vale:
    **lee la fila directamente del archivo y verifica que el texto en claro no
    está ahí**.
-4. El pipeline escribe sesión, transcript y reporte en la base **además** del
-   `.md` del vault.
+4. ~~El pipeline escribe sesión, transcript y reporte en la base~~
+   **✅ HECHO 2026-08-27**, con una salvedad medida que se detalla abajo.
+
+   **Punto de enganche elegido: `MeetingPipeline`, no `RecordingCoordinator`.**
+   Es el único punto por el que pasan **todos** los caminos.
+   `LocalRecordingApiServer` llama a `IMeetingPipeline` directo, sin pasar por el
+   coordinador, así que engancharlo allá habría dejado sin registrar justo las
+   grabaciones por HTTP — las que más se usan sin ventana. Un solo punto, sin
+   filas duplicadas. `MeetingPipeline` vive en Core pero sólo compone
+   abstracciones, e `IMeetingHistoryStore` es una de ellas: la regla de
+   arquitectura se mantiene y `Core.csproj` sigue con 0 referencias a paquetes.
+
+   `StartRecordingAsync` pasó a exigir un `source` **sin valor por defecto**: es
+   un dato que sólo conoce quien llama, y con un default cada llamador nuevo
+   heredaría en silencio una etiqueta equivocada, que es como esa columna dejaría
+   de servir para lo único que existe. El compilador obliga a cada call site a
+   declararse.
+
+   El historial es una dependencia **opcional** del pipeline: el harness corre el
+   pipeline de verdad y no debe ensuciar el historial del usuario con corridas de
+   prueba. Y el log de fallos entra como delegado, porque Core no puede
+   referenciar `App`.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores; `--verify-db-selftest` sigue en 29/29.
+   - **`--verify-pipeline-history <wav>`, nuevo en el harness: 15/15.** Corre el
+     pipeline completo contra una base temporal y comprueba que quedan sesión,
+     transcript y reporte, que el reporte apunta al `.md` del vault, que el
+     markdown guardado coincide con el generado, y que `structured_json` sólo
+     aparece con `assignment-meeting`.
+   - **La resiliencia se probó de verdad, no se dio por hecha**: con la base
+     apuntada a una ruta imposible, la grabación **igual llegó al vault** con su
+     transcript, y los fallos de base se registraron en vez de propagarse.
+   - **Contra el paquete instalado**: tres grabaciones dejaron sus filas de
+     sesión con el `source` correcto y **distinto según el camino** (`hotkey`,
+     `hotkey`, `http`). El harness gana `--verify-db` con listado de sesiones
+     para poder verlo.
+
+   **Un defecto real que encontró el test y que la lectura de código no vio:**
+   el reporte se registraba **sólo** en `ExtractAndSaveAsync` (el flujo de dos
+   pasos de la ventana) y no en `ExtractSessionAsync`, que es por donde pasan
+   hotkey, bandeja, HTTP e importación. O sea: los caminos más usados guardaban
+   sesión y transcript pero **ningún reporte**. Corregido y re-verificado.
+
+   **Lo que NO se verificó, dicho explícitamente:** el camino de éxito completo
+   (filas de transcript y reporte) **contra el MSIX instalado**. Lo bloqueó un
+   problema de plataforma, no del código — ver abajo. Lo que sí quedó medido
+   contra la instalación es que las sesiones se crean y se etiquetan bien.
+
+   > **Hallazgo de plataforma: desinstalar el paquete resetea el consentimiento
+   > de micrófono de Windows a `Deny`.** Después del ciclo de
+   > desinstalar-e-instalar, `WasapiCapture.InitializeCaptureDevice` empezó a
+   > devolver `E_ACCESSDENIED` y **toda grabación falla**. Es especialmente
+   > traicionero por tres razones: el error aparece al **detener**, no al
+   > iniciar (el toast de `RecordingStarted` sale igual, ver T6b paso 0); parece
+   > un fallo de transcripción; y por el camino HTTP **no deja ninguna línea en
+   > el log**, sólo viaja en el cuerpo de la respuesta.
+   >
+   > Comprobado que **no** es el dispositivo ocupado: el harness, que corre sin
+   > empaquetar, graba sin problema con el mismo código de captura. Es el
+   > consentimiento por paquete:
+   > `HKCU:\...\CapabilityAccessManager\ConsentStore\microphone\{PFN}` estaba en
+   > `Deny`.
+   >
+   > **Escribir `Allow` en el registro directamente NO alcanza** — se probó, y la
+   > app siguió recibiendo `E_ACCESSDENIED` tras reiniciarla. Windows cachea el
+   > consentimiento de apps empaquetadas, así que hay que activarlo desde
+   > *Configuración > Privacidad y seguridad > Micrófono*. Queda anotado porque
+   > es exactamente la clase de fallo que este proyecto ya sufrió dos veces:
+   > funciona, se reinstala, y deja de funcionar sin que nada obvio lo explique.
 5. `SqliteConfigurationProvider` + DPAPI. Importar una sola vez el
    `appsettings.json` de usuario que creó T9 y marcarlo como migrado.
    `SettingsPage` no cambia de aspecto: sólo cambia dónde guarda.

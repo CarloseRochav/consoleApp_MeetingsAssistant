@@ -370,7 +370,15 @@ public partial class App : Application
             provider.GetRequiredService<ITranscriptionClient>(),
             provider.GetRequiredService<ILlmReportExtractor>(),
             provider.GetRequiredService<IReportStorage>(),
-            MeetingOutputDirectory));
+            MeetingOutputDirectory,
+            // El historial se engancha en el pipeline y no en RecordingCoordinator
+            // porque el pipeline es el único punto por el que pasan **todos** los
+            // caminos. LocalRecordingApiServer llama a IMeetingPipeline directo,
+            // sin pasar por el coordinador, así que engancharlo allá dejaría sin
+            // registrar justo las grabaciones por HTTP — las que más se usan sin
+            // ventana. Un solo punto, sin filas duplicadas.
+            provider.GetRequiredService<IMeetingHistoryStore>(),
+            LogStartupFailure));
         services.AddSingleton<RecordingCoordinator>();
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();

@@ -1,3 +1,4 @@
+using MeetingAssistant.Core.Models;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
@@ -111,7 +112,7 @@ public sealed class TrayIconService : IDisposable
             if (_coordinator.IsRecording)
                 await _coordinator.StopRecordingAndProcessAsync();
             else
-                await _coordinator.StartRecordingAsync();
+                await _coordinator.StartRecordingAsync(SessionSource.Tray);
         }
         catch (Exception exception)
         {

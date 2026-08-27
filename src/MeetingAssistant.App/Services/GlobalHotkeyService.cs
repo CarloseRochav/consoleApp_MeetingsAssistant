@@ -1,3 +1,4 @@
+using MeetingAssistant.Core.Models;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
@@ -120,7 +121,7 @@ public sealed class GlobalHotkeyService : IDisposable
             if (_coordinator.IsRecording)
                 await _coordinator.StopRecordingAndProcessAsync();
             else
-                await _coordinator.StartRecordingAsync();
+                await _coordinator.StartRecordingAsync(SessionSource.Hotkey);
         }
         catch (Exception exception)
         {

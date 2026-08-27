@@ -12,6 +12,13 @@ public static class SessionSource
     public const string Http = "http";
     public const string Window = "window";
     public const string Import = "import";
+
+    /// <summary>
+    /// El console de pruebas. Sólo aparecería si alguien le pasa un almacén de
+    /// historial al pipeline del harness, cosa que hoy no se hace justamente
+    /// para no ensuciar el historial real con corridas de prueba.
+    /// </summary>
+    public const string Harness = "harness";
 }
 
 /// <summary>Una grabación, con o sin transcript y reportes todavía.</summary>

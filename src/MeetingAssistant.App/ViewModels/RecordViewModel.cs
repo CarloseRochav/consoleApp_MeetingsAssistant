@@ -189,7 +189,7 @@ public partial class RecordViewModel : ObservableObject
         _localOperationDepth++;
         try
         {
-            await _recordingCoordinator.StartRecordingAsync();
+            await _recordingCoordinator.StartRecordingAsync(SessionSource.Window);
             IsRecording = _recordingCoordinator.IsRecording;
             StatusMessage = "Grabando...";
             LastSavedReportPath = null;

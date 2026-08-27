@@ -51,7 +51,7 @@ public sealed class RecordingCoordinator
     /// </summary>
     public event EventHandler<ReportSavedEventArgs>? ReportSaved;
 
-    public async Task StartRecordingAsync(CancellationToken cancellationToken = default)
+    public async Task StartRecordingAsync(string source, CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
         try
@@ -61,7 +61,7 @@ public sealed class RecordingCoordinator
                 throw new InvalidOperationException("Ya hay una grabación en curso.");
             }
 
-            await _pipeline.StartRecordingAsync(cancellationToken);
+            await _pipeline.StartRecordingAsync(source, cancellationToken);
             OnStateChanged();
             RaiseSafely(RecordingStarted, EventArgs.Empty);
         }
