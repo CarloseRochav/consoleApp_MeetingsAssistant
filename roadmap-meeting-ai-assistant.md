@@ -228,7 +228,20 @@ las interfaces de Core no cambiarían.
    borrado en cascada, y la búsqueda sin acentos encontrando texto acentuado
    (`sesion` → `sesión`), que es la razón de elegir el tokenizador
    `unicode61 remove_diacritics 2` para un corpus ES/EN.
-3. Abstracciones en Core + implementación SQLite en Infrastructure.
+3. ~~Abstracciones en Core + implementación SQLite en Infrastructure.~~
+   **✅ HECHO 2026-08-27.** En Core: `IMeetingHistoryStore` — el **lado de
+   lectura que nunca existió**, y que es el trabajo real detrás de
+   `HistoryPage`—, más `ISettingsStore` e `ISecretProtector`, con sus modelos.
+   En Infrastructure: `SqliteMeetingHistoryStore`, `SqliteSettingsStore` y
+   `DpapiSecretProtector`. `Core.csproj` sigue con **0 referencias a paquetes**.
+   **29 de 29 comprobaciones en verde** en `--verify-db-selftest`.
+
+   **DPAPI se adelantó del paso 5 a propósito:** un almacén de ajustes que
+   escribe secretos en claro estaría mal desde el primer día, y dejar un
+   "protector" que no protege como relleno temporal es la clase de cosa que
+   nadie vuelve a mirar. El autotest lo comprueba de la única forma que vale:
+   **lee la fila directamente del archivo y verifica que el texto en claro no
+   está ahí**.
 4. El pipeline escribe sesión, transcript y reporte en la base **además** del
    `.md` del vault.
 5. `SqliteConfigurationProvider` + DPAPI. Importar una sola vez el

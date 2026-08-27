@@ -14,7 +14,7 @@
   <Identity
     Name="962A0BC5-A1BC-432A-8A38-55011BFE3EE0"
     Publisher="CN=MeetingAssistant Local Publisher"
-    Version="1.0.0.0" />
+    Version="1.0.1.0" />
 
   <mp:PhoneIdentity PhoneProductId="962A0BC5-A1BC-432A-8A38-55011BFE3EE0" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

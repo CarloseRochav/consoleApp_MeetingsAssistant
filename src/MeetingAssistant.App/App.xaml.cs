@@ -380,6 +380,9 @@ public partial class App : Application
         services.AddSingleton(_ =>
             new Infrastructure.Storage.Sqlite.SqliteConnectionFactory(MeetingDatabasePath));
         services.AddSingleton<Infrastructure.Storage.Sqlite.SqliteSchemaMigrator>();
+        services.AddSingleton<ISecretProtector, Infrastructure.Storage.Sqlite.DpapiSecretProtector>();
+        services.AddSingleton<IMeetingHistoryStore, Infrastructure.Storage.Sqlite.SqliteMeetingHistoryStore>();
+        services.AddSingleton<ISettingsStore, Infrastructure.Storage.Sqlite.SqliteSettingsStore>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();

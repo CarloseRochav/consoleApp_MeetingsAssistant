@@ -325,6 +325,97 @@ static int VerifyDatabaseSelfTest()
                 Check("el indice FTS5 queda consistente al final", false);
             }
         }
+
+        // --- Ahora lo mismo, pero a traves de las interfaces de Core ---------
+        // El SQL de arriba prueba el esquema; esto prueba los adaptadores, que
+        // es donde viven las conversiones (dinero a micro-dolares, fechas a UTC)
+        // y el saneado de la consulta FTS5.
+        Console.WriteLine($"{Environment.NewLine}--- Store, via IMeetingHistoryStore ---");
+
+        IMeetingHistoryStore store = new SqliteMeetingHistoryStore(factory);
+        var startedAt = new DateTimeOffset(2026, 8, 27, 14, 30, 0, TimeSpan.FromHours(-7));
+
+        long sessionId = store.CreateSessionAsync(startedAt, SessionSource.Hotkey).GetAwaiter().GetResult();
+        store.CompleteSessionAsync(sessionId, startedAt.AddMinutes(12), @"C:\audio\x.wav", TimeSpan.FromMinutes(12))
+            .GetAwaiter().GetResult();
+        store.SaveTranscriptAsync(new TranscriptRecord(
+            sessionId, "Revisamos la integracion con el módulo de facturación.",
+            "Deepgram", "nova-3", 0.001234m, startedAt.AddMinutes(13))).GetAwaiter().GetResult();
+        store.SaveReportAsync(new NewReport(
+            sessionId, "assignment-meeting", "v1", "# Reporte", null,
+            "Azure AI Foundry", "DeepSeek-V4-Flash", 890, 520, 0.000434m,
+            @"C:\vault\r.md", startedAt.AddMinutes(14))).GetAwaiter().GetResult();
+
+        SessionRecord? roundTripped = store.GetSessionAsync(sessionId).GetAwaiter().GetResult();
+        Check("la sesion vuelve con su id", roundTripped?.Id == sessionId);
+        // El instante tiene que ser el mismo aunque se haya guardado en UTC y el
+        // original viniera con offset -07:00. Es la garantia que hace que
+        // ordenar por fecha no dependa del huso de quien grabo.
+        Check("el instante sobrevive la ida y vuelta a UTC", roundTripped?.StartedAtUtc == startedAt);
+        Check("la duracion sobrevive", roundTripped?.Duration == TimeSpan.FromMinutes(12));
+
+        TranscriptRecord? storedTranscript = store.GetTranscriptAsync(sessionId).GetAwaiter().GetResult();
+        Check("el costo decimal del transcript vuelve exacto", storedTranscript?.CostUsd == 0.001234m);
+
+        IReadOnlyList<ReportRecord> storedReports = store.GetReportsAsync(sessionId).GetAwaiter().GetResult();
+        Check("el costo decimal del reporte vuelve exacto", storedReports.Count == 1 && storedReports[0].CostUsd == 0.000434m);
+        Check("los tokens vuelven", storedReports.Count == 1 && storedReports[0].InputTokens == 890);
+
+        IReadOnlyList<SessionSummary> listed = store.ListSessionsAsync(10).GetAwaiter().GetResult();
+        Check("el listado trae la sesion con su conteo de reportes",
+            listed.Count == 1 && listed[0].ReportCount == 1);
+        Check("el costo de la sesion suma transcripcion y reporte",
+            listed.Count == 1 && listed[0].TotalCostUsd == 0.001668m);
+
+        IReadOnlyList<TranscriptSearchHit> hits =
+            store.SearchTranscriptsAsync("facturacion").GetAwaiter().GetResult();
+        Check("la busqueda por interfaz encuentra sin acentos", hits.Count == 1);
+        Check("el resultado trae un fragmento, no solo la fecha",
+            hits.Count == 1 && hits[0].Snippet.Length > 0);
+
+        // Lo que mas importa de todo el saneado: escribiendo en una caja de
+        // busqueda uno pasa por estados invalidos de sintaxis FTS5, y ninguno
+        // puede llegar al usuario como un error de SQL.
+        bool survivedGarbage = true;
+        foreach (string hostile in new[] { "\"", "AND", "NEAR(", "*", "a OR", "(((", "'" })
+        {
+            try { store.SearchTranscriptsAsync(hostile).GetAwaiter().GetResult(); }
+            catch (Exception) { survivedGarbage = false; }
+        }
+        Check("una consulta a medias o con operadores sueltos no lanza", survivedGarbage);
+
+        CostSummary costs = store.GetCostSummaryAsync().GetAwaiter().GetResult();
+        Check("el resumen de costo acumulado cuadra", costs.TotalCostUsd == 0.001668m && costs.ReportCount == 1);
+
+        IReadOnlyList<PromptUsageSummary> usage = store.GetPromptUsageAsync().GetAwaiter().GetResult();
+        Check("el uso por prompt agrupa por id y version",
+            usage.Count == 1 && usage[0].PromptId == "assignment-meeting" && usage[0].ReportCount == 1);
+
+        // --- Ajustes y cifrado ---------------------------------------------
+        Console.WriteLine($"{Environment.NewLine}--- Ajustes, via ISettingsStore ---");
+
+        ISettingsStore settings = new SqliteSettingsStore(factory, new DpapiSecretProtector());
+        settings.SetAsync("Storage:VaultPath", @"C:\vault").GetAwaiter().GetResult();
+        settings.SetAsync("Deepgram:ApiKey", "clave-secreta-de-prueba", isSecret: true).GetAwaiter().GetResult();
+
+        Check("un ajuste normal vuelve tal cual",
+            settings.GetAsync("Storage:VaultPath").GetAwaiter().GetResult() == @"C:\vault");
+        Check("un secreto vuelve descifrado",
+            settings.GetAsync("Deepgram:ApiKey").GetAwaiter().GetResult() == "clave-secreta-de-prueba");
+
+        // La comprobacion que hace que valga la pena: en disco NO puede estar en
+        // claro. Sin esto, mover las claves a la base no habria mejorado nada.
+        using (Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "select value from setting where key = 'Deepgram:ApiKey';";
+            string onDisk = command.ExecuteScalar()?.ToString() ?? string.Empty;
+            Check("el secreto esta cifrado en disco, no en claro",
+                onDisk.Length > 0 && !onDisk.Contains("clave-secreta-de-prueba", StringComparison.Ordinal));
+        }
+
+        settings.SetAsync("Deepgram:ApiKey", "   ").GetAwaiter().GetResult();
+        Check("guardar vacio borra el override (se vuelve al valor empaquetado)",
+            settings.GetAsync("Deepgram:ApiKey").GetAwaiter().GetResult() is null);
     }
     catch (Exception exception)
     {

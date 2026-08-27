@@ -2382,6 +2382,15 @@ package but the contents are different"*. Hay que `Remove-AppxPackage` primero
 `Disabled`**, así que el autostart hay que volver a encenderlo después de cada
 iteración de paquete.
 
+> **Resuelto el 2026-08-27: subir la versión, no desinstalar.** Medido al pasar
+> de `1.0.0.0` a `1.0.1.0`: `Add-AppxPackage` hace la **actualización en sitio**
+> sin desinstalar nada, queda un solo paquete, y **el autostart sobrevive**
+> (`State=2` antes y después), igual que `meetings.db` y el resto de
+> `%LOCALAPPDATA%`. El ciclo de desinstalar-e-instalar costó cuatro reseteos del
+> autostart en un solo día antes de que esto se probara. **Para iterar sobre el
+> paquete, subir el `Version` del `Package.appxmanifest` es el camino**; la
+> desinstalación queda para cuando se quiera probar la limpieza (H) a propósito.
+
 ### Lo que queda de Fase 2 después de T9
 
 - `HistoryPage` sigue siendo el stub de 11 líneas que dice "Próximamente", y
