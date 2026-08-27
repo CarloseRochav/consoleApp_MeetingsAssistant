@@ -213,9 +213,21 @@ las interfaces de Core no cambiarían.
    supuesta, y **el riesgo número uno de la fase está retirado**. Falta el mismo
    chequeo si alguna vez se empaqueta en Release, donde el trimming sigue sin
    ejercerse; el probe queda permanente justamente para eso.
-2. Esquema y runner de migraciones (`PRAGMA user_version`), más la fábrica de
-   conexiones. Archivo en `%LOCALAPPDATA%\MeetingAssistant\meetings.db`, mismo
-   precedente que el log, el audio y la configuración.
+2. ~~Esquema y runner de migraciones~~ **✅ HECHO 2026-08-27.**
+   `SqliteConnectionFactory` (PRAGMA por conexión: WAL, `foreign_keys`,
+   `busy_timeout`) y `SqliteSchemaMigrator` sobre `PRAGMA user_version` — cada
+   paso en su propia transacción junto con su bump de versión, así que un fallo
+   a mitad deja la base en la versión anterior, entera. Esquema v1 con `session`,
+   `transcript`, `report`, `setting`, la tabla FTS5 y sus tres triggers.
+   Migración corrida **bajo el paquete instalado**: `v0 -> v1`, base creada en
+   `%LOCALAPPDATA%\MeetingAssistant\meetings.db`. Dos comandos nuevos en el
+   harness, en la línea de `--verify-render`: `--verify-db` inspecciona la base
+   real y `--verify-db-selftest` prueba el esquema sobre una base temporal.
+   **12 de 12 comprobaciones en verde**, incluidas las que importan y se rompen
+   en silencio: los triggers de insert/update/delete manteniendo el índice, el
+   borrado en cascada, y la búsqueda sin acentos encontrando texto acentuado
+   (`sesion` → `sesión`), que es la razón de elegir el tokenizador
+   `unicode61 remove_diacritics 2` para un corpus ES/EN.
 3. Abstracciones en Core + implementación SQLite en Infrastructure.
 4. El pipeline escribe sesión, transcript y reporte en la base **además** del
    `.md` del vault.
@@ -255,6 +267,11 @@ setting   key, value, is_secret, updated_at_utc
 Dos detalles que no son accidentales: `structured_json` es una columna y no un
 juego de tablas (regla de diseño 2), y `vault_path` deja el `.md` del vault como
 lo que es — una exportación, no el registro (regla 1).
+
+**El costo va en micro-dólares enteros** (`cost_micro_usd`), no en `REAL`.
+Guardar dinero en punto flotante es pedir deriva justo en la métrica que Fase 4
+quiere **sumar**. La granularidad de 1e-6 no pierde nada: es exactamente la que
+ya muestra el frontmatter, que renderiza `cost-usd` con F6.
 
 **Las fechas se guardan en UTC.** Vale anotarlo porque hoy hay un desajuste
 conocido: el `.wav` se nombra en hora local y el reporte en UTC, así que una

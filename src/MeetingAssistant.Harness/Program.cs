@@ -4,6 +4,7 @@ using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Cost;
 using MeetingAssistant.Infrastructure.Llm;
 using MeetingAssistant.Infrastructure.Storage;
+using MeetingAssistant.Infrastructure.Storage.Sqlite;
 using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 
@@ -52,6 +53,16 @@ if (existingTranscriptPath is not null && !File.Exists(existingTranscriptPath))
 if (positional.Count == 1 && string.Equals(positional[0], "--verify-render", StringComparison.OrdinalIgnoreCase))
 {
     return VerifyCatalogAndRender();
+}
+
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-db", StringComparison.OrdinalIgnoreCase))
+{
+    return VerifyDatabase();
+}
+
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-db-selftest", StringComparison.OrdinalIgnoreCase))
+{
+    return VerifyDatabaseSelfTest();
 }
 
 try
@@ -218,6 +229,201 @@ static void PrintList(string title, IReadOnlyList<string> values)
 {
     Console.WriteLine($"{title}:");
     foreach (string value in values) Console.WriteLine($"- {value}");
+}
+
+/// <summary>
+/// Prueba funcional del esquema sobre una base <b>temporal</b>, que se borra al
+/// terminar. Nunca toca la base real.
+///
+/// Que las tablas existan no prueba que el esquema funcione. Lo que se ejercita
+/// acá es justo lo que se rompe en silencio: los triggers que mantienen el
+/// índice FTS5, el borrado en cascada de las foreign keys, y el tokenizador con
+/// <c>remove_diacritics</c> — que importa porque el corpus es español mezclado
+/// con inglés y nadie escribe los acentos al buscar.
+/// </summary>
+static int VerifyDatabaseSelfTest()
+{
+    string temporaryPath = Path.Combine(Path.GetTempPath(), $"ma-selftest-{Guid.NewGuid():N}.db");
+    Console.WriteLine($"=== Autotest de esquema ==={Environment.NewLine}{temporaryPath}");
+
+    int failures = 0;
+    void Check(string description, bool passed)
+    {
+        Console.WriteLine($"  [{(passed ? "OK " : "MAL")}] {description}");
+        if (!passed) failures++;
+    }
+
+    try
+    {
+        var factory = new SqliteConnectionFactory(temporaryPath);
+        string migrationResult = new SqliteSchemaMigrator(factory).Migrate();
+        Console.WriteLine($"Migracion: {migrationResult}{Environment.NewLine}");
+
+        using Microsoft.Data.Sqlite.SqliteConnection connection = factory.Open();
+
+        long Scalar(string sql)
+        {
+            using Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            return Convert.ToInt64(command.ExecuteScalar() ?? 0L);
+        }
+
+        void Execute(string sql)
+        {
+            using Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.ExecuteNonQuery();
+        }
+
+        Execute(
+            """
+            insert into session(id, started_at_utc, source) values (1, '2026-08-27T09:00:00Z', 'hotkey');
+            insert into transcript(session_id, text, provider, model, cost_micro_usd, created_at_utc)
+                values (1, 'Hablamos de la migracion del stored procedure y la validacion de sesión.',
+                        'Deepgram', 'nova-3', 434, '2026-08-27T09:05:00Z');
+            insert into report(session_id, prompt_id, prompt_version, markdown, cost_micro_usd, created_at_utc)
+                values (1, 'assignment-meeting', 'v1', '# Reporte', 762, '2026-08-27T09:06:00Z');
+            insert into report(session_id, prompt_id, prompt_version, markdown, cost_micro_usd, created_at_utc)
+                values (1, 'feature-handoff', 'v1', '# Handoff', 900, '2026-08-27T09:07:00Z');
+            """);
+
+        Check("una sesion admite varios reportes", Scalar("select count(*) from report where session_id = 1;") == 2);
+        Check("el trigger de insert alimento el indice FTS5",
+            Scalar("select count(*) from transcript_fts where transcript_fts match 'stored';") == 1);
+        Check("busqueda sin acento encuentra texto acentuado ('sesion' -> 'sesión')",
+            Scalar("select count(*) from transcript_fts where transcript_fts match 'sesion';") == 1);
+        Check("busqueda con acento tambien encuentra ('sesión')",
+            Scalar("select count(*) from transcript_fts where transcript_fts match 'sesión';") == 1);
+        Check("una palabra ausente no da falsos positivos",
+            Scalar("select count(*) from transcript_fts where transcript_fts match 'zanahoria';") == 0);
+
+        Execute("update transcript set text = 'Ahora hablamos de facturacion electronica.' where session_id = 1;");
+        Check("el trigger de update reindexo (lo viejo ya no aparece)",
+            Scalar("select count(*) from transcript_fts where transcript_fts match 'stored';") == 0);
+        Check("el trigger de update reindexo (lo nuevo si aparece)",
+            Scalar("select count(*) from transcript_fts where transcript_fts match 'facturacion';") == 1);
+
+        Check("el costo entero sobrevive el viaje sin deriva",
+            Scalar("select sum(cost_micro_usd) from report;") == 1662L);
+
+        Execute("delete from session where id = 1;");
+        Check("borrar la sesion arrastra el transcript (cascade)", Scalar("select count(*) from transcript;") == 0);
+        Check("borrar la sesion arrastra los reportes (cascade)", Scalar("select count(*) from report;") == 0);
+        Check("el trigger de delete limpio el indice FTS5",
+            Scalar("select count(*) from transcript_fts where transcript_fts match 'facturacion';") == 0);
+
+        using (Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "insert into transcript_fts(transcript_fts) values('integrity-check');";
+            try
+            {
+                command.ExecuteNonQuery();
+                Check("el indice FTS5 queda consistente al final", true);
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException)
+            {
+                Check("el indice FTS5 queda consistente al final", false);
+            }
+        }
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"El autotest reviento: {exception}");
+        failures++;
+    }
+    finally
+    {
+        // El pool mantiene el archivo abierto; sin esto el borrado falla en
+        // Windows y quedan bases de prueba tiradas en %TEMP%.
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        foreach (string leftover in new[] { temporaryPath, temporaryPath + "-wal", temporaryPath + "-shm" })
+        {
+            try { if (File.Exists(leftover)) File.Delete(leftover); } catch { /* best effort */ }
+        }
+    }
+
+    Console.WriteLine($"{Environment.NewLine}{(failures == 0 ? "Todo OK." : $"{failures} comprobacion(es) fallaron.")}");
+    return failures == 0 ? 0 : 1;
+}
+
+/// <summary>
+/// Inspecciona la base local de reuniones: versión de esquema, objetos creados y
+/// filas por tabla. Existe para poder comprobar contra la máquina lo que una
+/// migración dice haber hecho, sin depender de tener instalado un cliente de
+/// SQLite. Mismo criterio que --verify-render.
+///
+/// Apunta a la misma ruta que usa la app instalada
+/// (%LOCALAPPDATA%\MeetingAssistant\meetings.db), así que lee la base de verdad,
+/// no una copia.
+/// </summary>
+static int VerifyDatabase()
+{
+    string databasePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MeetingAssistant",
+        "meetings.db");
+
+    Console.WriteLine($"=== Base de reuniones ==={Environment.NewLine}{databasePath}");
+    if (!File.Exists(databasePath))
+    {
+        Console.Error.WriteLine("No existe todavia. La crea el primer arranque de la app.");
+        return 1;
+    }
+
+    Console.WriteLine($"Tamano: {new FileInfo(databasePath).Length:N0} bytes");
+
+    var factory = new SqliteConnectionFactory(databasePath);
+    using Microsoft.Data.Sqlite.SqliteConnection connection = factory.Open();
+
+    using (Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand())
+    {
+        command.CommandText = "pragma user_version;";
+        Console.WriteLine($"Version de esquema: v{command.ExecuteScalar()} (el codigo espera v{SqliteSchemaMigrator.LatestVersion})");
+    }
+
+    using (Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand())
+    {
+        command.CommandText =
+            "select type, name from sqlite_master where name not like 'sqlite_%' order by type, name;";
+        using Microsoft.Data.Sqlite.SqliteDataReader reader = command.ExecuteReader();
+        Console.WriteLine($"{Environment.NewLine}=== Objetos ===");
+        while (reader.Read()) Console.WriteLine($"  {reader.GetString(0),-7} {reader.GetString(1)}");
+    }
+
+    Console.WriteLine($"{Environment.NewLine}=== Filas ===");
+    foreach (string table in new[] { "session", "transcript", "report", "setting" })
+    {
+        using Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"select count(*) from {table};";
+        Console.WriteLine($"  {table,-12} {command.ExecuteScalar()}");
+    }
+
+    // La integridad referencial y el indice FTS son justo lo que se rompe en
+    // silencio: comprobarlos a mano es la unica forma de saber que los triggers
+    // y las foreign keys quedaron como se creian.
+    using (Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand())
+    {
+        command.CommandText = "pragma foreign_key_check;";
+        using Microsoft.Data.Sqlite.SqliteDataReader reader = command.ExecuteReader();
+        Console.WriteLine($"{Environment.NewLine}Integridad referencial: {(reader.Read() ? "FALLOS" : "sin violaciones")}");
+    }
+
+    using (Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand())
+    {
+        command.CommandText = "insert into transcript_fts(transcript_fts) values('integrity-check');";
+        try
+        {
+            command.ExecuteNonQuery();
+            Console.WriteLine("Indice FTS5: consistente");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException exception)
+        {
+            Console.WriteLine($"Indice FTS5: INCONSISTENTE — {exception.Message}");
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 static int VerifyCatalogAndRender()

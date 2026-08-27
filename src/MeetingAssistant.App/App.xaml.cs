@@ -119,6 +119,21 @@ public partial class App : Application
 
         try
         {
+            LogDiagnostic("Base de reuniones: " +
+                Services.GetRequiredService<Infrastructure.Storage.Sqlite.SqliteSchemaMigrator>().Migrate());
+        }
+        catch (Exception exception)
+        {
+            // Regla escrita al planificar Fase 5: una base rota **no puede**
+            // impedir arrancar. El precedente es T4.4, donde una excepción de
+            // arranque se llevó puesta la app entera y costó nueve días
+            // encontrarla. Grabar, transcribir y guardar en el vault no dependen
+            // de esto; lo que se pierde es el historial.
+            LogStartupFailure("SqliteSchemaMigrator.Migrate", exception);
+        }
+
+        try
+        {
             _activityNotificationService = Services.GetRequiredService<ActivityNotificationService>();
             AppNotificationManager.Default.Register();
             _appNotificationsRegistered = true;
@@ -196,6 +211,21 @@ public partial class App : Application
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "MeetingAssistant",
         "meeting-output");
+
+    /// <summary>
+    /// Base local de reuniones (Fase 5). Mismo destino y mismo criterio que el
+    /// log, el audio y la configuración de usuario: lo que la app necesita
+    /// escribir no puede vivir dentro del paquete instalado, que es de sólo
+    /// lectura.
+    ///
+    /// Ojo: <b>sobrevive a la desinstalación</b>, igual que el resto de la
+    /// carpeta. Esa decisión se tomó cuando ahí sólo había un log y unos .wav;
+    /// con la base pasa a haber además todos los transcripts.
+    /// </summary>
+    public static string MeetingDatabasePath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MeetingAssistant",
+        "meetings.db");
 
     private void RegisterGlobalExceptionHandlers()
     {
@@ -347,6 +377,9 @@ public partial class App : Application
         services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<StartupTaskService>();
         services.AddSingleton<UserSettingsService>();
+        services.AddSingleton(_ =>
+            new Infrastructure.Storage.Sqlite.SqliteConnectionFactory(MeetingDatabasePath));
+        services.AddSingleton<Infrastructure.Storage.Sqlite.SqliteSchemaMigrator>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();
