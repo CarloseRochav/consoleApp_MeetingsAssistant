@@ -493,9 +493,17 @@ las interfaces de Core no cambiarían.
    en la sesión correcta y el `.md` en el vault sin pisar el anterior. Sigue
    pendiente, de paso, el **botón Guardar de `SettingsPage`** del paso 5, por la
    misma razón (requiere GUI).
-7. Búsqueda full-text sobre transcripts (FTS5).
+7. Búsqueda full-text sobre transcripts (FTS5). **Brief escrito:**
+   `codex-brief-F5-paso7.md`. El motor ya está hecho y probado — el trabajo es la
+   interfaz, y la trampa es que `TranscriptSearchHit` no tiene la misma forma que
+   la fila de la lista.
 8. Vista de costo acumulado y comparación entre versiones de prompt. Es el
-   primer entregable que le paga a Fase 4.
+   primer entregable que le paga a Fase 4, y **cierra la fase**. **Brief
+   escrito:** `codex-brief-F5-paso8.md`, que documenta dos huecos medidos en el
+   código y que hay que resolver o declarar: el costo de transcripción es
+   siempre `null` (nadie calcula lo de Deepgram), y un precio que falta en
+   configuración produce un **cero silencioso** indistinguible de un costo real
+   de cero.
 
 ### Pendiente de confirmación manual — sólo lo puede cerrar el usuario
 
