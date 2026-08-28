@@ -312,9 +312,98 @@ las interfaces de Core no cambiarían.
    > *Configuración > Privacidad y seguridad > Micrófono*. Queda anotado porque
    > es exactamente la clase de fallo que este proyecto ya sufrió dos veces:
    > funciona, se reinstala, y deja de funcionar sin que nada obvio lo explique.
-5. `SqliteConfigurationProvider` + DPAPI. Importar una sola vez el
+5. ~~`SqliteConfigurationProvider` + DPAPI. Importar una sola vez el
    `appsettings.json` de usuario que creó T9 y marcarlo como migrado.
-   `SettingsPage` no cambia de aspecto: sólo cambia dónde guarda.
+   `SettingsPage` no cambia de aspecto: sólo cambia dónde guarda.~~
+   **✅ HECHO 2026-08-28.**
+
+   `SqliteConfigurationSource`/`SqliteConfigurationProvider` en Infrastructure,
+   `UserSettingsImporter` para la migración de una sola vez, y
+   `SettingKeyPolicy` en Core — que es quien decide qué se cifra. Ese detalle no
+   es organizativo: la UI, el importador y el comando del harness escriben
+   secretos por caminos distintos, y **si discreparan la credencial entraría en
+   claro por uno de ellos sin que nada se rompa**. Una sola respuesta, en Core.
+
+   **La pila quedó, de menor a mayor precedencia:** empaquetado → archivo de
+   usuario (legado de T9) → **SQLite** → entorno. El archivo de T9 se conserva
+   como capa aunque el importador se lo lleve en el primer arranque, y esa no es
+   una capa de más: es el caso en que **la base no abrió** — el import no
+   ocurrió, el archivo sigue ahí, y la app arranca con la configuración del
+   usuario igual que antes. Sin esa capa, una base rota dejaría a la app sin
+   vault y sin claves.
+
+   `ReadRequiredSetting`, `StartupConfigurationValidator` y
+   `ConfigPricingCostEstimator` **no se tocaron**: ninguno se enteró de que la
+   base existe. Es lo que compra apilarse dentro de `IConfiguration` en vez de
+   reemplazarlo.
+
+   **El importador no borra el archivo del usuario: lo reemplaza por una copia
+   redactada** (`appsettings.pre-sqlite.json`), y sólo después de **releer cada
+   clave y comprobar que coincide** — o sea, después de verificar que el ciclo
+   completo de cifrado y descifrado funciona en ESE perfil, no que la escritura
+   no dio error. Si algo falla, el original queda intacto y la app sigue leyendo
+   de él. Se importa **todo** el archivo, no las nueve claves que sabe editar
+   `SettingsPage`: `Hotkey` y `Api` quedaron fuera de la UI a propósito y una
+   lista blanca las habría dejado atrás en silencio.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores; los autotests anteriores siguen en verde
+     (`--verify-db-selftest` 29/29, `--verify-render` OK).
+   - **`--verify-settings-config`, nuevo en el harness: 33/33.** Precedencia
+     entre las cuatro capas, secretos legibles a través de `IConfiguration` y
+     cifrados en disco, un secreto indescifrable que **no lanza** y deja ver la
+     capa de abajo, una base en ruta imposible que no impide construir la
+     configuración, `Reload()`, y el importador entero: anidamiento de tres
+     niveles con `:` en el nombre de la propiedad, marcadores omitidos,
+     idempotencia, y **un import contra una base rota que deja el archivo del
+     usuario intacto**.
+   - **Contra la app real, con el archivo real del usuario:** las 8 claves
+     migraron, las 3 API keys quedaron cifradas y **descifrables en este perfil**
+     (40/53/84 caracteres, idénticos al origen), el `appsettings.json` ya no está
+     en la ruta que lee `IConfiguration`, y el segundo arranque reportó "ya
+     migrados" sin volver a tocar nada.
+   - **La precedencia se midió en la app real, no se dedujo del código.** Con
+     `Api:Port` — el empaquetado dice 5757 — la app escuchó en **5758** con la
+     fila en la base, y en **5759** con la variable de entorno puesta encima. Las
+     dos sondas se deshicieron y volvió a 5757. Vale haberlo medido: el
+     empaquetado tiene valores reales para las mismas claves, así que *la app
+     arrancando bien no probaba nada* — la capa nueva podría no haber estado
+     haciendo nada.
+
+   **Dos hallazgos de plataforma, anotados porque cuestan tiempo:**
+
+   > **`dotnet build` NO refresca el layout `AppX\` que ejecuta el paquete
+   > registrado.** El registro de desarrollo apunta a
+   > `bin\x64\Debug\...\win-x64\AppX`, y `dotnet build` deja los ensamblados
+   > nuevos un directorio más arriba (`win-x64\`). Lanzar por AUMID después de
+   > compilar **corre el binario viejo** sin ningún aviso: el primer intento de
+   > verificar esto pareció "el import no se ejecuta" cuando en realidad era
+   > código de dos horas antes. Para probar cambios hay que usar
+   > `dotnet run --project src/MeetingAssistant.App`, que sí re-registra el
+   > layout.
+   >
+   > **Una app empaquetada no hereda las variables de entorno de la consola.** Se
+   > activa por el broker del shell, no como hijo del proceso que la lanza:
+   > `Api__Port=5759 dotnet run ...` no tuvo ningún efecto. La vía de escape
+   > funciona con la variable a **nivel de usuario**
+   > (`[Environment]::SetEnvironmentVariable('Api__Port','5759','User')`), que es
+   > como se usó la vez que salvó una validación. Importa dejarlo escrito: la
+   > regla de diseño 4 apuesta a esa vía de escape para el caso en que un ajuste
+   > malo impida arrancar, y el modo obvio de invocarla no sirve.
+
+   **Lo que NO se verificó, dicho explícitamente:** el botón Guardar de
+   `SettingsPage` no se pulsó — requiere GUI y no hay forma de ejercitarlo desde
+   el harness, porque `UserSettingsService` vive en el proyecto `App`. Lo que sí
+   está comprobado es que las claves que escribe `SaveAsync` son exactamente las
+   que lee `LoadEffective`, y que el `ISettingsStore.SetAsync` que usa por debajo
+   —con el mismo `SettingKeyPolicy`— cifra y borra como debe. Queda como el
+   primer chequeo de GUI del paso 6.
+
+   **Y una consecuencia que el criterio de salida de la fase no cubre:** el
+   `appsettings.json` **empaquetado** sigue teniendo credenciales en claro
+   (dentro del `.msix`, de sólo lectura, documentado en T6a). Este paso saca las
+   claves del archivo de usuario, que es el editable; el empaquetado es la capa
+   de fábrica y vaciarlo es una decisión aparte.
 6. `HistoryPage` de verdad: lista, detalle, y **re-generar un reporte desde un
    transcript viejo con otro prompt** — que hoy es imposible porque el
    transcript no se guarda.
@@ -364,13 +453,20 @@ mostrar.
 
 - ~~**El binario nativo.**~~ **Retirado el 2026-08-27**: medido contra el
   paquete instalado, carga y trae FTS5. Ver paso 1.
-- **Una base corrupta no puede impedir arrancar la app.** Mismo tipo de fallo
-  que un JSON truncado, y con peor precedente: en T4.4 una excepción de arranque
-  se llevó puesta la app entera. Si la base no abre, hay que caer a la
-  configuración empaquetada más entorno y avisar, no morir.
-- **DPAPI es por usuario y por máquina.** Copiar el `.db` a otro perfil deja los
-  secretos indescifrables. Es lo deseable, pero tiene que fallar con un mensaje
-  claro, no con una excepción en el arranque.
+- ~~**Una base corrupta no puede impedir arrancar la app.**~~ **Cubierto en el
+  paso 5, y medido.** Era el riesgo que más creció ahí: hasta el paso 4 una base
+  rota sólo costaba el historial; desde el paso 5 está en el camino crítico de la
+  configuración. `SqliteConfigurationProvider.Load()` **nunca lanza** — si falla,
+  la capa queda vacía, el fallo se registra y la app cae a empaquetado + archivo
+  de usuario + entorno. Comprobado en el autotest con la base apuntada a una ruta
+  imposible: la configuración se construye igual y el empaquetado sigue visible.
+- ~~**DPAPI es por usuario y por máquina.**~~ **Cubierto en el paso 5.** Un
+  secreto que no se puede descifrar vuelve como `null` y la clave simplemente no
+  se publica en la capa: se ve la de abajo y, si tampoco la tiene,
+  `StartupConfigurationValidator` la reporta como faltante con un mensaje que se
+  entiende. Nunca una excepción de criptografía en el arranque. `--verify-db`
+  ahora dice de cada secreto si es **descifrable en este perfil**, que es lo
+  único que hay que poder ver de un valor cifrado.
 - **Contenido de reuniones en reposo, en claro, para siempre.** Es la
   consecuencia asumida de guardar transcripts indefinidamente. Los secretos se
   cifran; **los transcripts no**, porque cifrarlos mata la búsqueda FTS5. Queda
@@ -390,7 +486,12 @@ mostrar.
 - Puedes buscar una palabra que se dijo en una reunión y encontrarla.
 - Puedes tomar un transcript viejo y volver a extraerlo con otro prompt.
 - Puedes ver cuánto llevas gastado, real y acumulado.
-- Las API keys ya no están en texto plano en ningún lado.
+- ~~Las API keys ya no están en texto plano en ningún lado.~~ **Cumplido para el
+  archivo editable (paso 5, 2026-08-28):** las tres claves del usuario están
+  cifradas con DPAPI en `meetings.db` y el `appsettings.json` de su perfil ya no
+  existe. Queda **una salvedad, no un pendiente del paso**: el `appsettings.json`
+  *empaquetado* sigue con credenciales en claro dentro del `.msix` de sólo
+  lectura — es la capa de fábrica, y vaciarla es una decisión aparte.
 
 ---
 

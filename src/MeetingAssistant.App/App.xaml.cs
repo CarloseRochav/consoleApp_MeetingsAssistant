@@ -7,6 +7,7 @@ using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Cost;
 using MeetingAssistant.Infrastructure.Llm;
 using MeetingAssistant.Infrastructure.Storage;
+using MeetingAssistant.Infrastructure.Storage.Sqlite;
 using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,12 @@ public partial class App : Application
     private StartupErrorWindow? _errorWindow;
     private Exception? _configurationFailure;
     private bool _isExiting;
+
+    // Estáticos porque los escribe ConfigureServices, que es estático y corre
+    // antes de que haya log donde escribir de forma ordenada. Se vuelcan en
+    // LaunchCore.
+    private static string? _databaseDiagnostic;
+    private static string? _settingsImportDiagnostic;
 
     public App()
     {
@@ -117,20 +124,12 @@ public partial class App : Application
         // del log y con el directorio de audio. Describe() nunca lanza.
         LogDiagnostic(MeetingAssistant.Infrastructure.Storage.SqliteEnvironmentProbe.Describe());
 
-        try
-        {
-            LogDiagnostic("Base de reuniones: " +
-                Services.GetRequiredService<Infrastructure.Storage.Sqlite.SqliteSchemaMigrator>().Migrate());
-        }
-        catch (Exception exception)
-        {
-            // Regla escrita al planificar Fase 5: una base rota **no puede**
-            // impedir arrancar. El precedente es T4.4, donde una excepción de
-            // arranque se llevó puesta la app entera y costó nueve días
-            // encontrarla. Grabar, transcribir y guardar en el vault no dependen
-            // de esto; lo que se pierde es el historial.
-            LogStartupFailure("SqliteSchemaMigrator.Migrate", exception);
-        }
+        // La migración y el import de ajustes ya corrieron en ConfigureServices:
+        // desde el paso 5 de Fase 5 la configuración se lee en parte de la base,
+        // así que no pueden esperar hasta acá. Lo que queda es dejarlo en el log,
+        // que es donde se revisa qué hizo un arranque.
+        if (_databaseDiagnostic is not null) LogDiagnostic($"Base de reuniones: {_databaseDiagnostic}");
+        if (_settingsImportDiagnostic is not null) LogDiagnostic(_settingsImportDiagnostic);
 
         try
         {
@@ -331,22 +330,65 @@ public partial class App : Application
 
     private static IServiceProvider ConfigureServices()
     {
-        // El orden es la regla: empaquetado (valores de fábrica) -> archivo del
-        // usuario (lo que edita SettingsPage) -> variables de entorno. Cada capa
+        // La base tiene que estar migrada ANTES de construir la configuración,
+        // porque desde el paso 5 la configuración se lee en parte de ella. Estos
+        // tres no dependen de IConfiguration — la ruta la impone
+        // MeetingDatabasePath —, así que se construyen a mano y después se
+        // registran como instancias: no hay forma de resolverlos por DI si el
+        // contenedor todavía no existe.
+        var connectionFactory = new Infrastructure.Storage.Sqlite.SqliteConnectionFactory(MeetingDatabasePath);
+        ISecretProtector secretProtector = new Infrastructure.Storage.Sqlite.DpapiSecretProtector();
+        var schemaMigrator = new Infrastructure.Storage.Sqlite.SqliteSchemaMigrator(connectionFactory);
+        ISettingsStore settingsStore =
+            new Infrastructure.Storage.Sqlite.SqliteSettingsStore(connectionFactory, secretProtector);
+
+        // Ninguno de los dos try/catch es decorativo. Regla escrita al planificar
+        // Fase 5: **una base rota no puede impedir arrancar la app**, y ahora la
+        // base está en el camino crítico de la configuración, no sólo en el del
+        // historial. El precedente es T4.4, donde una excepción de arranque se
+        // llevó puesta la app entera y costó nueve días encontrarla. Si esto
+        // falla, se cae a empaquetado + archivo de usuario + entorno.
+        try
+        {
+            _databaseDiagnostic = schemaMigrator.Migrate();
+        }
+        catch (Exception exception)
+        {
+            LogStartupFailure("SqliteSchemaMigrator.Migrate", exception);
+            _databaseDiagnostic = $"NO se pudo migrar ni leer: {exception.Message}";
+        }
+
+        // Migración de una sola vez del appsettings.json de usuario que creó T9.
+        // Nunca lanza: devuelve el resultado, y si falló deja el archivo original
+        // intacto — que es lo que hace que un fallo acá no pierda nada, porque
+        // mientras ese archivo exista su capa sigue alimentando a la app.
+        _settingsImportDiagnostic = new Infrastructure.Storage.Sqlite.UserSettingsImporter(settingsStore)
+            .ImportOnceAsync(UserSettingsService.LegacyFilePath)
+            .GetAwaiter()
+            .GetResult()
+            .Describe();
+
+        // El orden es la regla (regla de diseño 4 de Fase 5): empaquetado
+        // (valores de fábrica) -> archivo del usuario (legado de T9) -> base
+        // SQLite (lo que edita SettingsPage) -> variables de entorno. Cada capa
         // pisa a la anterior.
         //
-        // La capa de usuario existe porque instalada la app lee su
-        // appsettings.json desde C:\Program Files\WindowsApps\..., que es de
-        // sólo lectura: sin esto, cambiar el vault o una API key obliga a
-        // reconstruir y reinstalar el .msix. SetBasePath no le afecta —
-        // UserSettingsService.FilePath es una ruta absoluta.
+        // Las variables de entorno **siguen arriba de todo**, y eso no es un
+        // detalle: es la vía de escape que queda cuando un ajuste guardado mal
+        // impide arrancar. Ya salvó una validación una vez (se usó para forzar el
+        // fallo de Deepgram). Si la base pisara al entorno, un valor malo en la
+        // base sería irreparable desde afuera de la app.
         //
-        // optional: true a propósito. Es la instalación limpia: el archivo no
-        // existe hasta que alguien guarda algo.
+        // La capa de usuario se conserva por debajo de SQLite, aunque el
+        // importador se lleve el archivo en el primer arranque: es lo que sostiene
+        // el caso en que la base NO abrió — el import no ocurrió, el archivo sigue
+        // ahí, y la app arranca con la configuración del usuario igual que antes.
+        // SetBasePath no le afecta: LegacyFilePath es una ruta absoluta.
         IConfiguration configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
-            .AddJsonFile(UserSettingsService.FilePath, optional: true, reloadOnChange: false)
+            .AddJsonFile(UserSettingsService.LegacyFilePath, optional: true, reloadOnChange: false)
+            .AddSqliteSettings(settingsStore, LogStartupFailure)
             .AddEnvironmentVariables()
             .Build();
 
@@ -385,12 +427,15 @@ public partial class App : Application
         services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<StartupTaskService>();
         services.AddSingleton<UserSettingsService>();
-        services.AddSingleton(_ =>
-            new Infrastructure.Storage.Sqlite.SqliteConnectionFactory(MeetingDatabasePath));
-        services.AddSingleton<Infrastructure.Storage.Sqlite.SqliteSchemaMigrator>();
-        services.AddSingleton<ISecretProtector, Infrastructure.Storage.Sqlite.DpapiSecretProtector>();
+        // Las mismas instancias que ya se usaron para migrar el esquema y para
+        // alimentar la capa de configuración. Registrarlas, en vez de dejar que
+        // el contenedor construya unas segundas, es lo que garantiza que la
+        // configuración y la UI hablen con la misma base.
+        services.AddSingleton(connectionFactory);
+        services.AddSingleton(schemaMigrator);
+        services.AddSingleton(secretProtector);
+        services.AddSingleton(settingsStore);
         services.AddSingleton<IMeetingHistoryStore, Infrastructure.Storage.Sqlite.SqliteMeetingHistoryStore>();
-        services.AddSingleton<ISettingsStore, Infrastructure.Storage.Sqlite.SqliteSettingsStore>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         services.AddSingleton<MainWindow>();

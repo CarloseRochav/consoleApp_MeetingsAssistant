@@ -1,13 +1,12 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
+using MeetingAssistant.Core.Abstractions;
 using Microsoft.Extensions.Configuration;
 
 namespace MeetingAssistant.App.Services;
 
 /// <summary>
 /// Valores que la app deja editar desde <c>SettingsPage</c>. Un <c>null</c> o
-/// vacío significa "sin override": se borra la clave del archivo de usuario y
-/// vuelve a mandar lo que traiga el <c>appsettings.json</c> empaquetado.
+/// vacío significa "sin override": se borra la clave y vuelve a mandar lo que
+/// traiga el <c>appsettings.json</c> empaquetado.
 /// </summary>
 public sealed record UserSettings
 {
@@ -23,44 +22,50 @@ public sealed record UserSettings
 }
 
 /// <summary>
-/// Lee y escribe <c>%LOCALAPPDATA%\MeetingAssistant\appsettings.json</c>, la
-/// capa de configuración del usuario que se superpone a la empaquetada.
+/// Lee la configuración efectiva y escribe los overrides del usuario en la base
+/// local (<c>meetings.db</c>, tabla <c>setting</c>), con las credenciales
+/// cifradas con DPAPI.
 ///
-/// Existe por un problema que sólo apareció al cerrar Fase 3: instalada, la app
-/// lee su <c>appsettings.json</c> desde <c>C:\Program Files\WindowsApps\...</c>,
-/// que es de sólo lectura. Cambiar el vault, el proveedor de LLM o una API key
-/// obligaba a reconstruir, refirmar y reinstalar el <c>.msix</c>. La única vía
-/// de escape era pisar claves con variables de entorno <c>Seccion__Clave</c>,
-/// que funciona pero no es una interfaz.
+/// **Antes escribía un JSON en claro.** La capa de usuario nació en T9 para
+/// resolver un problema real: instalada, la app lee su <c>appsettings.json</c>
+/// desde <c>C:\Program Files\WindowsApps\...</c>, que es de sólo lectura, así que
+/// cambiar el vault o una API key obligaba a reconstruir, refirmar y reinstalar
+/// el <c>.msix</c>. Eso lo resolvió, pero dejó las claves en texto plano en el
+/// perfil del usuario — anotado entonces como decisión diferida, no como olvido.
+/// Fase 5 paso 5 la cobra: mismo lugar en la pila de configuración, mismo
+/// aspecto en la UI, pero el destino es la base y los secretos se cifran.
 ///
-/// Es el mismo criterio, y el mismo destino, que ya resolvieron
-/// <see cref="App.StartupErrorLogPath"/> y <see cref="App.MeetingOutputDirectory"/>:
-/// lo que la app necesita escribir no puede vivir dentro del paquete.
-///
-/// **No guarda las claves cifradas.** Quedan en texto plano en el perfil del
-/// usuario, que es la misma exposición que ya tenían dentro del <c>.msix</c>
-/// (documentado en T6a) — no la empeora, pero tampoco la mejora. Cifrarlas con
-/// DPAPI es una decisión tomada y diferida a propósito, no un olvido.
+/// El archivo de T9 lo migra una sola vez <c>UserSettingsImporter</c> en el
+/// arranque. <see cref="LegacyFilePath"/> sigue existiendo por dos razones:
+/// el importador necesita saber dónde mirar, y la capa <c>AddJsonFile</c> se
+/// mantiene en la pila (por debajo de SQLite) para que un archivo puesto a mano
+/// siga siendo una vía de escape si la base no abre.
 /// </summary>
 public sealed class UserSettingsService
 {
     private readonly IConfiguration _configuration;
+    private readonly ISettingsStore _settingsStore;
 
-    public UserSettingsService(IConfiguration configuration) => _configuration = configuration;
+    public UserSettingsService(IConfiguration configuration, ISettingsStore settingsStore)
+    {
+        _configuration = configuration;
+        _settingsStore = settingsStore;
+    }
 
     /// <summary>
-    /// Ruta del archivo de overrides. Puede no existir: el primer
-    /// <see cref="Save"/> lo crea.
+    /// Ruta del archivo de overrides de T9. Puede no existir — de hecho, tras el
+    /// primer arranque con la base ya no existe: queda una copia redactada al
+    /// lado (<c>appsettings.pre-sqlite.json</c>).
     /// </summary>
-    public static string FilePath { get; } = Path.Combine(
+    public static string LegacyFilePath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "MeetingAssistant",
         "appsettings.json");
 
     /// <summary>
     /// Devuelve lo que la app está usando ahora mismo — o sea el resultado de
-    /// apilar empaquetado + usuario + variables de entorno, no sólo el archivo
-    /// de usuario. Es lo que hay que mostrar en la UI: si una clave viene de una
+    /// apilar empaquetado + archivo de usuario + base + variables de entorno, no
+    /// sólo la base. Es lo que hay que mostrar en la UI: si una clave viene de una
     /// variable de entorno, el usuario tiene que verla tal como está en efecto,
     /// no un campo vacío que le haga creer que falta.
     /// </summary>
@@ -78,73 +83,39 @@ public sealed class UserSettingsService
     };
 
     /// <summary>
-    /// Escribe los overrides preservando cualquier otra clave que ya hubiera en
-    /// el archivo: se edita el JSON existente, no se reemplaza. Así, agregar
-    /// aquí un campo nuevo mañana no borra lo que alguien haya puesto a mano.
+    /// Escribe los overrides en la base. Cada clave se guarda por separado y las
+    /// credenciales van marcadas como secretas — el flag no se decide acá sino en
+    /// <see cref="SettingKeyPolicy"/>, para que la UI y el importador no puedan
+    /// discrepar sobre qué se cifra.
+    ///
+    /// Un valor vacío <b>borra</b> la clave, que es como se vuelve al valor
+    /// empaquetado. Es el mismo criterio que ya tenía el archivo de T9: si
+    /// guardar un vacío dejara una cadena vacía, no habría forma de volver atrás
+    /// desde la UI.
     /// </summary>
-    public void Save(UserSettings settings)
+    public async Task SaveAsync(UserSettings settings, CancellationToken cancellationToken = default)
     {
-        JsonObject root = ReadExistingDocument();
+        (string Key, string? Value)[] values =
+        [
+            ("Storage:VaultPath", settings.VaultPath),
+            ("Storage:SubFolder", settings.SubFolder),
+            ("Llm:Provider", settings.LlmProvider),
+            ("Deepgram:ApiKey", settings.DeepgramApiKey),
+            ("Gemini:ApiKey", settings.GeminiApiKey),
+            ("Gemini:Model", settings.GeminiModel),
+            ("AzureFoundry:Endpoint", settings.AzureEndpoint),
+            ("AzureFoundry:Deployment", settings.AzureDeployment),
+            ("AzureFoundry:ApiKey", settings.AzureApiKey)
+        ];
 
-        SetOrRemove(root, "Storage", "VaultPath", settings.VaultPath);
-        SetOrRemove(root, "Storage", "SubFolder", settings.SubFolder);
-        SetOrRemove(root, "Llm", "Provider", settings.LlmProvider);
-        SetOrRemove(root, "Deepgram", "ApiKey", settings.DeepgramApiKey);
-        SetOrRemove(root, "Gemini", "ApiKey", settings.GeminiApiKey);
-        SetOrRemove(root, "Gemini", "Model", settings.GeminiModel);
-        SetOrRemove(root, "AzureFoundry", "Endpoint", settings.AzureEndpoint);
-        SetOrRemove(root, "AzureFoundry", "Deployment", settings.AzureDeployment);
-        SetOrRemove(root, "AzureFoundry", "ApiKey", settings.AzureApiKey);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-
-        // Escritura en dos pasos: un corte de luz a mitad de un File.WriteAllText
-        // deja un JSON truncado, y un JSON inválido acá **impide arrancar la
-        // app** (AddJsonFile lanza al parsear aunque sea optional). El archivo
-        // temporal convierte ese riesgo en "se perdió el último cambio".
-        string temporaryPath = FilePath + ".tmp";
-        File.WriteAllText(temporaryPath, json);
-        File.Move(temporaryPath, FilePath, overwrite: true);
-    }
-
-    private JsonObject ReadExistingDocument()
-    {
-        if (!File.Exists(FilePath)) return [];
-
-        try
+        foreach ((string key, string? value) in values)
         {
-            return JsonNode.Parse(File.ReadAllText(FilePath)) as JsonObject ?? [];
+            await _settingsStore.SetAsync(
+                key,
+                value?.Trim(),
+                SettingKeyPolicy.IsSecret(key),
+                cancellationToken);
         }
-        catch (JsonException exception)
-        {
-            // Si el archivo quedó corrupto, se parte de cero en vez de arrastrar
-            // el error: la alternativa es que guardar falle para siempre y el
-            // usuario no tenga forma de arreglarlo desde la propia UI.
-            App.LogStartupFailure($"UserSettingsService.Read({FilePath})", exception);
-            return [];
-        }
-    }
-
-    private static void SetOrRemove(JsonObject root, string section, string property, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            if (root[section] is not JsonObject existing) return;
-
-            existing.Remove(property);
-            // Una sección vacía no aporta nada y ensucia el archivo.
-            if (existing.Count == 0) root.Remove(section);
-            return;
-        }
-
-        if (root[section] is not JsonObject target)
-        {
-            target = [];
-            root[section] = target;
-        }
-
-        target[property] = value.Trim();
     }
 
     /// <summary>

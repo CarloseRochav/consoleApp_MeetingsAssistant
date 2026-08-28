@@ -47,9 +47,35 @@ the other way around.
   `dotnet run --project src/MeetingAssistant.Harness -- 15`
 - Real app: `dotnet run --project src/MeetingAssistant.App` (requires
   Developer Mode enabled on Windows)
+- Self-tests, all in the harness, all safe to run (temp DBs, never the real
+  one): `--verify-render`, `--verify-db-selftest`, `--verify-settings-config`,
+  `--verify-pipeline-history <wav>`. `--verify-db` inspects the REAL database
+  read-only; `--set-setting <key> [value]` writes one setting into it (omit the
+  value to delete the key).
+
+**Use `dotnet run` — not `dotnet build` — to test a change in the real app.**
+The dev-registered package executes the `AppX\` layout under
+`bin\x64\Debug\...\win-x64\AppX`, and `dotnet build` refreshes only the
+directory above it. Launching by AUMID after a plain build silently runs the
+OLD binary. This already cost a debugging round on 2026-08-28.
+
+Related: a packaged app does **not** inherit environment variables from the
+console that launches it (the shell broker activates it). The
+`Seccion__Clave` escape hatch works only as a user-level variable:
+`[Environment]::SetEnvironmentVariable('Api__Port','5759','User')`.
 
 ## Non-negotiable conventions
 
+- Configuration is four stacked `IConfiguration` layers, in this order:
+  packaged `appsettings.json` → legacy per-user JSON (T9; migrated into the
+  database on first run and replaced by a redacted copy) → SQLite `setting`
+  table → environment variables. **Environment variables stay on top**: they
+  are the escape hatch when a bad stored value prevents startup. Don't reorder
+  it, and don't replace `IConfiguration` with the database — the whole point is
+  that `ReadRequiredSetting`, `StartupConfigurationValidator` and
+  `ConfigPricingCostEstimator` never learn the database exists. Whether a key is
+  a secret (and therefore DPAPI-encrypted) is decided in ONE place,
+  `Core/Abstractions/SettingKeyPolicy.cs` — never inline at a call site.
 - The real `appsettings.json` is NEVER committed — only
   `appsettings.example.json` with placeholders. Any new
   `appsettings.json` (new project, new path) must be explicitly checked

@@ -58,7 +58,13 @@ public sealed partial class SettingsPage : Page
             UpdateProviderPanels();
             ValidateVaultPath();
 
-            SettingsFilePathText.Text = $"Se guarda en: {UserSettingsService.FilePath}";
+            // Cambió el destino, no la página: desde Fase 5 paso 5 esto se guarda
+            // en la base local y las API keys se cifran con DPAPI, atadas a este
+            // usuario de Windows. Vale decirlo acá porque es la diferencia que el
+            // usuario tiene que conocer: copiar la base a otro perfil deja las
+            // claves ilegibles y hay que volver a escribirlas.
+            SettingsFilePathText.Text =
+                $"Se guarda en: {App.MeetingDatabasePath} (las API keys, cifradas para este usuario de Windows)";
         }
         finally
         {
@@ -139,7 +145,7 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void SaveButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         SaveButton.IsEnabled = false;
         try
@@ -157,7 +163,7 @@ public sealed partial class SettingsPage : Page
                 AzureApiKey = AzureKeyBox.Password
             };
 
-            _userSettingsService.Save(settings);
+            await _userSettingsService.SaveAsync(settings);
             SaveStatusText.Text =
                 $"Guardado {DateTime.Now:HH:mm:ss}. Reinicia la app para que los cambios tengan efecto.";
         }

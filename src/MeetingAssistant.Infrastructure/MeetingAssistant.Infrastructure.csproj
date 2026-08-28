@@ -9,7 +9,13 @@
     <PackageReference Include="Deepgram" Version="6.9.0" />
     <PackageReference Include="Google.GenAI" Version="1.16.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!-- Configuration (no sólo .Abstractions) por SqliteConfigurationProvider:
+         la clase base ConfigurationProvider vive en este paquete. Y .Json porque
+         UserSettingsImporter aplana el archivo de T9 con el mismo lector que la
+         capa que sustituye, en vez de recorrer el JSON a mano. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
     <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="OpenAI" Version="2.12.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
