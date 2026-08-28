@@ -497,6 +497,47 @@ las interfaces de Core no cambiarían.
 8. Vista de costo acumulado y comparación entre versiones de prompt. Es el
    primer entregable que le paga a Fase 4.
 
+### Pendiente de confirmación manual — sólo lo puede cerrar el usuario
+
+Anotado el 2026-08-28. **No hay trabajo de código pendiente aquí**: las dos
+cosas están construidas y probadas por debajo, pero el último clic requiere GUI
+y no hay forma de dispararlo desde el harness. Quedan explícitamente **del lado
+del usuario**, que es quien tiene contacto con la interfaz para confirmarlas.
+
+| Qué | De qué paso | Por qué no se automatizó |
+|---|---|---|
+| Botón **"Generar reporte nuevo"** en `HistoryPage` | Paso 6 | Es una llamada real al LLM: **cobra** y escribe un `.md` en el vault real del usuario. Gastar su dinero y tocar su vault sin pedirlo no es del agente. |
+| Botón **Guardar** de `SettingsPage` | Paso 5 | `UserSettingsService` vive en el proyecto `App`; el harness no lo alcanza. Requiere la ventana abierta. |
+
+Lo que **sí** está verificado en ambos casos, para que la confirmación sea un
+chequeo y no una investigación:
+
+- **Re-extracción:** `--verify-reextraction` en 18/18 cubre todo lo que hay
+  debajo del botón —el comando del coordinador, el `sessionId` explícito, la
+  fila nueva de reporte colgando de la sesión correcta y el `.md` en el vault
+  sin pisar el anterior—, y el test se comprobó contra el defecto real: con la
+  corrección revertida, 6 comprobaciones se ponen en rojo.
+- **Guardar ajustes:** las claves que escribe `SaveAsync` son exactamente las
+  que lee `LoadEffective`, y el `ISettingsStore.SetAsync` de abajo —con el mismo
+  `SettingKeyPolicy`— cifra y borra como debe (33/33 en
+  `--verify-settings-config`).
+
+Dos cosas que conviene tener a mano al ir a confirmarlas, porque ya costaron
+tiempo antes:
+
+- Lanzar con `dotnet run --project src/MeetingAssistant.App`, **no** con
+  `dotnet build` + AUMID: el layout `AppX\` no se refresca y se corre el binario
+  viejo sin ningún aviso.
+- Si el paquete se reinstaló, revisar el consentimiento de micrófono en
+  *Configuración > Privacidad y seguridad > Micrófono*. Escribirlo en el
+  registro no alcanza.
+
+**Efecto secundario útil:** pulsar "Generar reporte nuevo" una vez deja el
+primer reporte en la base real, que hoy tiene 6 sesiones, 1 transcript y **0
+reportes**. Eso desbloquea de paso el renderizado de reporte del paso 6, que no
+se pudo ver en pantalla por no haber ninguno, y le da algo más que un solo
+transcript a la búsqueda del paso 7.
+
 ### Esquema, en borrador
 
 Una sesión tiene un transcript y **puede tener varios reportes**: el catálogo ya
@@ -576,7 +617,8 @@ mostrar.
 - ~~Puedes tomar un transcript viejo y volver a extraerlo con otro prompt.~~
   **Construido y probado en el paso 6**, con 18/18 en `--verify-reextraction`,
   incluida la atribucion de sesion. Falta el clic real: es una llamada al LLM
-  que cobra y escribe en el vault, y se dejo para el usuario.
+  que cobra y escribe en el vault, y se dejo para el usuario. Ver
+  *Pendiente de confirmacion manual*, arriba.
 - Puedes ver cuánto llevas gastado, real y acumulado.
 - ~~Las API keys ya no están en texto plano en ningún lado.~~ **Cumplido para el
   archivo editable (paso 5, 2026-08-28):** las tres claves del usuario están
