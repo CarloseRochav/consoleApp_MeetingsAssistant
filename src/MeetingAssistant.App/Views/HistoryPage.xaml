@@ -4,8 +4,232 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:MeetingAssistant.App.ViewModels"
     mc:Ignorable="d">
-    <Grid Padding="32">
-        <TextBlock Text="Próximamente" Style="{StaticResource TitleTextBlockStyle}" />
+
+    <!--
+        Maestro-detalle en una sola página, no una página de detalle aparte. El
+        NavigationView de MainWindow tiene IsBackButtonVisible="Collapsed", así
+        que una página aparte obligaría a resolver la navegación de vuelta a
+        mano; y el Frame navega con typeof(...) sin parámetro, así que habría que
+        inventar cómo pasarle el id de la sesión. Nada de eso compra algo aquí.
+    -->
+    <Grid Padding="24" ColumnSpacing="24">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="340" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ============================ Lista de reuniones ============================ -->
+        <Grid Grid.Column="0" RowSpacing="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="Historial"
+                       Style="{StaticResource TitleTextBlockStyle}" />
+
+            <StackPanel Grid.Row="1" Spacing="8">
+                <Button Content="Actualizar"
+                        Command="{Binding RefreshCommand}"
+                        HorizontalAlignment="Left"
+                        MinWidth="140" />
+                <TextBlock Text="{Binding StatusMessage}"
+                           TextWrapping="Wrap"
+                           Opacity="0.8" />
+                <ProgressBar x:Name="LoadingBar"
+                             IsIndeterminate="True"
+                             Visibility="Collapsed" />
+            </StackPanel>
+
+            <!--
+                Virtualizado: ListView lo hace solo mientras el contenedor no lo
+                impida. Las filas no traen transcripts completos — SessionSummary
+                es una proyección con una previsualización corta.
+            -->
+            <ListView Grid.Row="2"
+                      ItemsSource="{Binding Sessions}"
+                      SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                      SelectionMode="Single">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SessionListItem">
+                        <StackPanel Padding="0,8" Spacing="2">
+                            <TextBlock Text="{x:Bind Title}"
+                                       TextWrapping="Wrap"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="{x:Bind Subtitle}"
+                                       TextWrapping="Wrap"
+                                       Opacity="0.75"
+                                       FontSize="12" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!--
+                Una instalación nueva no tiene reuniones. Una tabla vacía sin
+                explicación es peor que el stub que decía "Próximamente": al
+                menos aquél no hacía creer que algo se perdió.
+            -->
+            <StackPanel x:Name="EmptyStatePanel"
+                        Grid.Row="2"
+                        Spacing="8"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed">
+                <TextBlock Text="Todavía no hay reuniones"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="Graba una reunión desde la pestaña Grabar, con el atajo Ctrl+Alt+F9, o desde la bandeja. Aparecerá acá en cuanto termine."
+                           TextWrapping="Wrap"
+                           Opacity="0.8" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ================================= Detalle =================================
+            Dos filas: arriba lo que se lee (con scroll propio), abajo la acción,
+            fija. La re-extracción es la acción principal de esta página y no
+            debería quedar al final de un scroll; y el visor del reporte, que es
+            lo que quiere crecer, tiene altura acotada para no competir con ella.
+
+            Nota para quien lea el historial de este archivo: esta forma se
+            alcanzó persiguiendo un fantasma. La automatización de interfaz
+            (UIA) no expone esta sección — ni el ComboBox ni el botón aparecen en
+            el árbol, con cualquiera de las tres estructuras que se probaron —, y
+            eso se leyó como "no se está construyendo". **Medido desde dentro de
+            la app, sí se construye**: con una sesión seleccionada, el botón mide
+            220x32 y es visible, y el panel 663 de alto. O sea que era un límite
+            de la herramienta de medición, no un defecto del layout. Queda dicho
+            para que nadie vuelva a reestructurar esta página por la misma señal
+            falsa: si algo "no aparece" en UIA, medí ActualWidth/ActualHeight
+            antes de tocar el XAML.
+        -->
+        <Grid x:Name="DetailPanel" Grid.Column="1" RowSpacing="12" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <!--
+                    Fila estrella: lo que crece y, si no cabe, hace scroll.
+                    Fila Auto: la sección de re-extracción, fija abajo.
+                -->
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="12">
+
+                <!-- Cabecera -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding SelectedSession.Title}"
+                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding SelectedSession.Subtitle}"
+                               TextWrapping="Wrap"
+                               Opacity="0.8" />
+                    <TextBlock Text="{Binding ErrorDetails}"
+                               TextWrapping="Wrap"
+                               Foreground="DarkRed" />
+                </StackPanel>
+
+                <!-- Transcripción: acotada, con su propio scroll -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding TranscriptDetails}"
+                               TextWrapping="Wrap"
+                               Opacity="0.8" />
+                    <TextBox Text="{Binding Transcript, Mode=OneWay}"
+                             AcceptsReturn="True"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             Height="120" />
+                </StackPanel>
+
+                <!-- Reportes de la sesión. Varios por sesión: es el sentido del esquema. -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Reportes de esta reunión"
+                               Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <ListView ItemsSource="{Binding Reports}"
+                              SelectedItem="{Binding SelectedReport, Mode=TwoWay}"
+                              SelectionMode="Single"
+                              Height="110">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ReportListItem">
+                                <StackPanel Padding="0,6" Spacing="2">
+                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{x:Bind Subtitle}"
+                                               Opacity="0.75"
+                                               FontSize="12" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <Button Content="Mostrar el .md en el Explorador"
+                            Command="{Binding OpenInVaultCommand}"
+                            HorizontalAlignment="Left"
+                            MinWidth="220" />
+                </StackPanel>
+
+                <!-- El reporte, renderizado desde la base (no desde el archivo del vault) -->
+                <TabView x:Name="ReportViewer"
+                         IsAddTabButtonVisible="False"
+                         TabWidthMode="SizeToContent"
+                         Height="420"
+                         SelectionChanged="ReportViewer_SelectionChanged">
+                    <TabViewItem Header="Vista previa" IsClosable="False">
+                        <WebView2 x:Name="ReportPreview"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch" />
+                    </TabViewItem>
+                    <TabViewItem Header="Markdown" IsClosable="False">
+                        <TextBox Text="{Binding SelectedReportMarkdown, Mode=OneWay}"
+                                 AcceptsReturn="True"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas" />
+                    </TabViewItem>
+                </TabView>
+
+                <!--
+                    Re-extracción. El texto del prompt va en un Expander cerrado: es
+                    útil poder revisarlo, pero no vale ocupar media pantalla de forma
+                    permanente en la fila que no crece.
+                -->
+                    </StackPanel>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="1" Spacing="8">
+                <TextBlock Text="Volver a extraer con otro prompt"
+                           Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock Text="{Binding RegenerateHint}"
+                           TextWrapping="Wrap"
+                           Opacity="0.8" />
+                <ComboBox Header="Catálogo"
+                          ItemsSource="{Binding Prompts}"
+                          SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
+                          DisplayMemberPath="DisplayName"
+                          HorizontalAlignment="Stretch" />
+                <TextBlock Text="{Binding SelectedPrompt.Description}"
+                           TextWrapping="Wrap"
+                           Opacity="0.8" />
+                <Expander Header="Ver el texto del prompt" HorizontalAlignment="Stretch">
+                    <TextBox Text="{Binding SelectedPromptText, Mode=OneWay}"
+                             AcceptsReturn="True"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             Height="160"
+                             FontFamily="Consolas" />
+                </Expander>
+                <Button Content="Generar reporte nuevo"
+                        Command="{Binding RegenerateReportCommand}"
+                        HorizontalAlignment="Left"
+                        MinWidth="220" />
+                <ProgressBar x:Name="BusyBar"
+                             IsIndeterminate="True"
+                             Visibility="Collapsed" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Page>

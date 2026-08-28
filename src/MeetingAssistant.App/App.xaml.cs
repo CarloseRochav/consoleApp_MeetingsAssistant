@@ -438,6 +438,10 @@ public partial class App : Application
         services.AddSingleton<IMeetingHistoryStore, Infrastructure.Storage.Sqlite.SqliteMeetingHistoryStore>();
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
+        // Transient, igual que RecordViewModel y por el mismo motivo: el Frame
+        // reconstruye la página en cada navegación, así que un singleton acá sólo
+        // conservaría estado que la página ya no puede mostrar.
+        services.AddTransient<HistoryViewModel>();
         services.AddSingleton<MainWindow>();
 
         return services.BuildServiceProvider();

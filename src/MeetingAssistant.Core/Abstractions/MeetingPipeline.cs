@@ -28,6 +28,32 @@ public interface IMeetingPipeline
         string transcript,
         string promptId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Extrae un reporte para una sesión <b>ya existente</b>, identificada
+    /// explícitamente. Es lo que permite re-generar un reporte desde un
+    /// transcript viejo del historial con otro prompt.
+    ///
+    /// Existe como método aparte, y no como un parámetro opcional de
+    /// <see cref="ExtractAndSaveAsync"/>, porque la diferencia no es cosmética:
+    /// <c>ExtractAndSaveAsync</c> deduce la sesión del estado mutable de la
+    /// última grabación, y para el historial <b>eso está mal de dos formas
+    /// distintas y silenciosas</b> — si hubo una grabación en esta sesión de la
+    /// app, el reporte queda colgado de la reunión equivocada; si no hubo,
+    /// se abre una sesión fantasma marcada como importación. En los dos casos la
+    /// base queda consistente, el <c>.md</c> llega al vault, y el historial
+    /// miente.
+    ///
+    /// Este método <b>no lee ni escribe</b> la sesión en curso. Es lo que lo
+    /// hace seguro frente a una grabación simultánea por HTTP, que sí puede
+    /// pasar: el endpoint llama al pipeline directo, sin pasar por
+    /// <c>RecordingCoordinator</c>.
+    /// </summary>
+    Task<ExtractionSaveResult> ExtractForSessionAsync(
+        long sessionId,
+        string transcript,
+        string promptId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record MeetingPipelineResult(
@@ -193,11 +219,42 @@ public sealed class MeetingPipeline : IMeetingPipeline
                 });
         }
 
+        return await ExtractAndRecordAsync(_currentSessionId, transcript, promptId, cancellationToken);
+    }
+
+    public async Task<ExtractionSaveResult> ExtractForSessionAsync(
+        long sessionId,
+        string transcript,
+        string promptId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(transcript);
+        ArgumentException.ThrowIfNullOrWhiteSpace(promptId);
+
+        // Ni una línea que toque _currentSessionId. Ver el comentario de la
+        // interfaz: es justo lo que hace correcto a este camino.
+        return await ExtractAndRecordAsync(sessionId, transcript, promptId, cancellationToken);
+    }
+
+    /// <summary>
+    /// El tramo común de las dos extracciones: extraer, escribir el
+    /// <c>.md</c> en el vault y registrar el reporte contra la sesión que le
+    /// corresponda. La sesión entra <b>por parámetro</b>, y ese es todo el
+    /// punto: quien llama declara a qué reunión pertenece el reporte, en vez de
+    /// heredarlo de un campo.
+    /// </summary>
+    private async Task<ExtractionSaveResult> ExtractAndRecordAsync(
+        long? sessionId,
+        string transcript,
+        string promptId,
+        CancellationToken cancellationToken)
+    {
         ExtractionResult extraction = await _reportExtractor.ExtractAsync(transcript, promptId, cancellationToken);
         string savedPath = await _reportStorage.SaveMarkdownAsync(
             extraction.MarkdownBody, extraction.Metadata, cancellationToken);
 
-        await RecordReportAsync(extraction, savedPath, cancellationToken);
+        await RecordReportAsync(sessionId, extraction, savedPath, cancellationToken);
 
         return new ExtractionSaveResult(
             savedPath,
@@ -246,16 +303,27 @@ public sealed class MeetingPipeline : IMeetingPipeline
         return new TranscriptionSession(audio with { Duration = transcription.AudioDuration }, transcription);
     }
 
+    /// <summary>
+    /// <paramref name="sessionId"/> nulo significa que la sesión nunca llegó a
+    /// crearse porque la base falló antes. Se sale sin hacer nada: el registro
+    /// de esa reunión ya estaba perdido y encadenar un segundo error sólo
+    /// ensucia el log. Es el mismo criterio que <c>requiresSession</c> en
+    /// <see cref="RecordHistoryAsync"/>, pero decidido acá porque ahora la
+    /// sesión es un parámetro y no un campo.
+    /// </summary>
     private async Task RecordReportAsync(
+        long? sessionId,
         ExtractionResult extraction,
         string savedVaultPath,
         CancellationToken cancellationToken)
     {
+        if (sessionId is null) return;
+
         await RecordHistoryAsync(
             "SaveReport",
             store => store.SaveReportAsync(
                 new NewReport(
-                    SessionId: _currentSessionId!.Value,
+                    SessionId: sessionId.Value,
                     PromptId: extraction.Prompt.Id,
                     PromptVersion: extraction.Prompt.Version,
                     Markdown: extraction.MarkdownBody,
@@ -275,8 +343,12 @@ public sealed class MeetingPipeline : IMeetingPipeline
                     // apunta a dónde quedó.
                     VaultPath: savedVaultPath,
                     CreatedAtUtc: extraction.Metadata.GeneratedAtUtc),
-                cancellationToken),
-            requiresSession: true);
+                cancellationToken));
+        // Sin requiresSession a propósito: ese flag consulta _currentSessionId, y
+        // en la re-extracción desde el historial ese campo puede estar en null
+        // con un sessionId perfectamente válido en el parámetro. Dejarlo habría
+        // hecho que el reporte NO se registrara, en silencio y sólo por el camino
+        // nuevo. El guard equivalente es el `if (sessionId is null)` de arriba.
     }
 
     /// <summary>
@@ -326,7 +398,7 @@ public sealed class MeetingPipeline : IMeetingPipeline
         // importación —, distinto del de dos pasos de la ventana que pasa por
         // ExtractAndSaveAsync. Los dos tienen que registrar el reporte: olvidar
         // éste dejaba sin fila justo a los caminos que más se usan.
-        await RecordReportAsync(extraction, savedPath, cancellationToken);
+        await RecordReportAsync(_currentSessionId, extraction, savedPath, cancellationToken);
 
         return new MeetingPipelineResult(
             extraction.StructuredReport,

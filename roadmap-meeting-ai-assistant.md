@@ -80,6 +80,12 @@ criterios de aceptación). En RecordPage, después de la transcripción se elige
 prompt, se ve el texto, se genera el reporte y se muestra el Markdown.
 Tray/HTTP siguen auto-extrayendo con el prompt por defecto.
 
+**Pasos 4 y 5 cerrados desde Fase 5 (2026-08-28).** `HistoryPage` con lista y
+detalle existe, leyendo de la base en vez de escanear un directorio — que es por
+lo que se absorbieron a Fase 5 en vez de construirlos dos veces. Lo único que
+sigue abierto de esta fase es **editar el system prompt desde Configuración**
+(paso 6): el catálogo sigue siendo de sólo lectura, definido en código.
+
 ### Criterio de salida
 - Puedes grabar una reunión completa desde la UI, sin tocar consola, y ver el reporte generado en pantalla
 
@@ -404,9 +410,89 @@ las interfaces de Core no cambiarían.
    (dentro del `.msix`, de sólo lectura, documentado en T6a). Este paso saca las
    claves del archivo de usuario, que es el editable; el empaquetado es la capa
    de fábrica y vaciarlo es una decisión aparte.
-6. `HistoryPage` de verdad: lista, detalle, y **re-generar un reporte desde un
+6. ~~`HistoryPage` de verdad: lista, detalle, y **re-generar un reporte desde un
    transcript viejo con otro prompt** — que hoy es imposible porque el
-   transcript no se guarda.
+   transcript no se guarda.~~ **✅ HECHO 2026-08-28**, con un pendiente de GUI
+   que se detalla abajo.
+
+   `HistoryViewModel` + `HistoryPage` como maestro-detalle en una sola página
+   (el `NavigationView` tiene el botón de retroceso colapsado y el `Frame` navega
+   sin parámetro, así que una página de detalle aparte habría costado inventar
+   las dos cosas). El stub de 11 líneas que decía "Próximamente" ya no existe.
+
+   **El defecto que encontró este paso, y que la lectura de código no había
+   visto:** `MeetingPipeline` guarda la sesión en curso en `_currentSessionId`,
+   un campo de instancia, y el pipeline **está registrado como singleton**.
+   `ExtractAndSaveAsync` deduce de ese campo a qué sesión pertenece el reporte.
+   Re-extraer desde el historial por ese camino habría hecho una de dos cosas,
+   las dos silenciosas: colgar el reporte de la **última grabación** en vez de la
+   reunión re-extraída, o —si no hubo grabación en esa sesión de la app— abrir
+   una **sesión fantasma** marcada como importación, duplicando una reunión que
+   ya existía. En ambos casos la base queda consistente, el `.md` llega al vault,
+   y el historial miente.
+
+   Corregido con `ExtractForSessionAsync(sessionId, transcript, promptId)` en
+   `IMeetingPipeline`: la sesión entra **por parámetro** y ese camino no lee ni
+   escribe `_currentSessionId`. Eso además lo hace seguro frente a una grabación
+   simultánea por HTTP, que sí puede ocurrir porque el endpoint llama al pipeline
+   directo. `ExtractAndSaveAsync` se quedó igual: sigue siendo el flujo de dos
+   pasos de la ventana y el de "Adjuntar transcripción (.txt)". La re-extracción
+   pasa por `RecordingCoordinator` para heredar su `_operationLock` —lo que de
+   verdad serializa— y para disparar el toast de reporte guardado.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores; los tres autotests anteriores siguen en
+     verde (`--verify-render`, `--verify-db-selftest` 29/29,
+     `--verify-settings-config` 33/33).
+   - **`--verify-reextraction`, nuevo en el harness: 18/18.** Corre con dobles de
+     prueba —sin Deepgram, sin LLM y sin micrófono—, así que es gratis y
+     determinístico: lo que se comprueba es a qué fila apunta una foreign key, y
+     pagarle a dos proveedores para eso sería absurdo. Además el micrófono puede
+     estar bloqueado por el consentimiento de Windows, que ya bloqueó una
+     verificación del paso 4.
+   - **El test se comprobó contra el defecto**, que es lo que le da valor: con
+     `ExtractForSessionAsync` delegando al camino viejo, **6 comprobaciones se
+     ponen en rojo**, incluidas las dos decisivas ("el reporte re-extraído quedó
+     en la reunión VIEJA" y "y NO se coló en la grabación de hoy"). Un test que
+     pasa igual con y sin la corrección no habría probado nada.
+   - **En pantalla, contra la app real y la base real** (6 sesiones, 1 transcript,
+     0 reportes): la lista trae las 6 reuniones con hora local y su origen
+     traducido; las 5 sesiones sin transcript se muestran como tales y no
+     revientan al abrirlas; el detalle de la única con transcript lo carga desde
+     la base (9.541 caracteres, Deepgram, 27/08/2026 16:00); y "Mostrar el .md en
+     el Explorador" aparece correctamente apagado, porque esa sesión no tiene
+     reportes.
+
+   **Dos defectos más, encontrados inspeccionando la app corriendo:**
+
+   - **Fechas mitad en inglés.** El título salía `"Thursday 27 de August"` — los
+     nombres de día y mes en la cultura del sistema (en-US) alrededor de un "de"
+     español. Toda la UI está escrita en español y no hay localización, así que
+     las fechas que se muestran usan una cultura fija (`es-ES`).
+   - **Nombre de accesibilidad inservible.** Cada fila se anunciaba como
+     `"MeetingAssistant.App.ViewModels.SessionListItem"`: WinUI usa el
+     `ToString()` del objeto cuando la plantilla no expone un nombre. Un lector
+     de pantalla leía eso. Resuelto con `ToString()` en los dos items de lista.
+
+   **Una vuelta perdida que vale anotar, para no repetirla.** La automatización de
+   interfaz (UIA) **no expone** la sección de re-extracción de esta página: ni el
+   `ComboBox` ni el botón aparecen en el árbol. Eso se leyó como "no se está
+   construyendo" y costó **tres reestructuraciones del XAML** persiguiendo un
+   defecto de layout que no existía. Medido desde dentro de la app, con una
+   sesión seleccionada, el botón mide **220x32 y es visible** y el panel 663 de
+   alto. La regla que queda: si algo no aparece en UIA, **medir
+   `ActualWidth`/`ActualHeight` antes de tocar el XAML**. (La estructura final
+   —lo que se lee con scroll arriba, la acción fija abajo— se conserva porque está
+   medida y es mejor UX, no porque arreglara nada.)
+
+   **Lo que NO se verificó, dicho explícitamente:** el botón **"Generar reporte
+   nuevo" no se pulsó**. Es una llamada real al LLM que cobra y escribe un `.md`
+   en el vault del usuario, así que quedó para que la dispare él. Todo lo que
+   está debajo del botón sí está probado end-to-end en `--verify-reextraction`:
+   el comando del coordinador, el `sessionId` explícito, la fila nueva de reporte
+   en la sesión correcta y el `.md` en el vault sin pisar el anterior. Sigue
+   pendiente, de paso, el **botón Guardar de `SettingsPage`** del paso 5, por la
+   misma razón (requiere GUI).
 7. Búsqueda full-text sobre transcripts (FTS5).
 8. Vista de costo acumulado y comparación entre versiones de prompt. Es el
    primer entregable que le paga a Fase 4.
@@ -481,10 +567,16 @@ mostrar.
 
 ### Criterio de salida
 
-- Puedes abrir Historial, ver tus reuniones pasadas, entrar a una y leer su
-  reporte sin salir de la app.
+- ~~Puedes abrir Historial, ver tus reuniones pasadas, entrar a una y leer su
+  reporte sin salir de la app.~~ **Cumplido (paso 6, 2026-08-28)**, con la
+  salvedad de que la base real todavía no tiene ningún reporte guardado: lo que
+  se vio en pantalla fue la lista, el detalle y el transcript. El renderizado de
+  un reporte se ejercita en cuanto exista uno.
 - Puedes buscar una palabra que se dijo en una reunión y encontrarla.
-- Puedes tomar un transcript viejo y volver a extraerlo con otro prompt.
+- ~~Puedes tomar un transcript viejo y volver a extraerlo con otro prompt.~~
+  **Construido y probado en el paso 6**, con 18/18 en `--verify-reextraction`,
+  incluida la atribucion de sesion. Falta el clic real: es una llamada al LLM
+  que cobra y escribe en el vault, y se dejo para el usuario.
 - Puedes ver cuánto llevas gastado, real y acumulado.
 - ~~Las API keys ya no están en texto plano en ningún lado.~~ **Cumplido para el
   archivo editable (paso 5, 2026-08-28):** las tres claves del usuario están

@@ -231,6 +231,51 @@ public sealed class RecordingCoordinator
         }
     }
 
+    /// <summary>
+    /// Re-genera un reporte para una sesión del historial con otro prompt.
+    ///
+    /// Pasa por el coordinador, y no directo al pipeline, por dos razones que no
+    /// son de estilo: el <c>_operationLock</c> es lo que <b>de verdad</b>
+    /// serializa las operaciones —así una re-extracción desde Historial no puede
+    /// solaparse con una grabación— y <c>RaiseReportSaved</c> es lo que dispara
+    /// el toast. Un reporte que aparece en el vault sin avisar sería una
+    /// regresión de T4.2.
+    /// </summary>
+    public async Task<ExtractionSaveResult> ExtractForSessionAsync(
+        long sessionId,
+        string transcript,
+        string promptId,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (IsRecording)
+            {
+                throw new InvalidOperationException("No se puede extraer un reporte mientras hay una grabación en curso.");
+            }
+
+            _isProcessing = true;
+            OnStateChanged();
+
+            ExtractionSaveResult result = await _pipeline.ExtractForSessionAsync(
+                sessionId, transcript, promptId, cancellationToken);
+            RaiseReportSaved(result.SavedReportPath, result.Prompt);
+            return result;
+        }
+        catch (Exception exception)
+        {
+            RaiseRecordingFailed(exception, "No se pudo re-generar el reporte");
+            throw;
+        }
+        finally
+        {
+            _isProcessing = false;
+            OnStateChanged();
+            _operationLock.Release();
+        }
+    }
+
     private void OnStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
 
     private void RaiseRecordingCompleted(MeetingPipelineResult result) =>

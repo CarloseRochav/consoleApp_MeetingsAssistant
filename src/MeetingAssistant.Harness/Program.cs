@@ -82,6 +82,11 @@ if (positional.Count is 2 or 3 && string.Equals(positional[0], "--set-setting", 
     return SetRealSetting(positional[1], positional.Count == 3 ? positional[2] : null);
 }
 
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-reextraction", StringComparison.OrdinalIgnoreCase))
+{
+    return await VerifyReextractionAsync();
+}
+
 try
 {
     IConfiguration configuration = new ConfigurationBuilder()
@@ -388,6 +393,187 @@ static async Task<int> VerifyPipelineHistoryAsync(string audioPath, string? requ
     catch (Exception exception)
     {
         Check($"la grabacion llego al vault pese a la base rota (reviento: {exception.GetType().Name})", false);
+    }
+
+    Console.WriteLine($"{Environment.NewLine}{(failures == 0 ? "Todo OK." : $"{failures} comprobacion(es) fallaron.")}");
+    return failures == 0 ? 0 : 1;
+}
+
+/// <summary>
+/// Prueba a que sesion queda colgado un reporte re-extraido desde el historial.
+///
+/// Corre con dobles de prueba —sin Deepgram, sin LLM y sin microfono— sobre una
+/// base temporal, asi que es gratis y deterministico. Eso importa: el defecto que
+/// este test persigue es de <b>atribucion</b>, no de extraccion, y pagarle a dos
+/// proveedores para comprobar a que fila apunta una foreign key seria absurdo.
+///
+/// El defecto, que la lectura de codigo si mostro pero solo mirandolo a proposito:
+/// <c>MeetingPipeline.ExtractAndSaveAsync</c> deduce la sesion de
+/// <c>_currentSessionId</c>, un campo de instancia de un singleton. Re-extraer una
+/// reunion vieja por ese camino la habria colgado de la ultima grabacion —o
+/// habria creado una sesion fantasma— y en los dos casos <b>sin sintoma</b>: base
+/// consistente, .md en el vault, historial que miente.
+/// </summary>
+static async Task<int> VerifyReextractionAsync()
+{
+    string temporaryPath = Path.Combine(Path.GetTempPath(), $"ma-reextract-{Guid.NewGuid():N}.db");
+    string temporaryVault = Path.Combine(Path.GetTempPath(), $"ma-reextract-vault-{Guid.NewGuid():N}");
+    Console.WriteLine($"=== Autotest de re-extraccion ==={Environment.NewLine}{temporaryPath}");
+
+    int failures = 0;
+    void Check(string description, bool passed)
+    {
+        Console.WriteLine($"  [{(passed ? "OK " : "MAL")}] {description}");
+        if (!passed) failures++;
+    }
+
+    try
+    {
+        Directory.CreateDirectory(temporaryVault);
+
+        var factory = new SqliteConnectionFactory(temporaryPath);
+        new SqliteSchemaMigrator(factory).Migrate();
+        IMeetingHistoryStore history = new SqliteMeetingHistoryStore(factory);
+
+        var capture = new FakeAudioCapture(temporaryVault);
+        var historyFailures = new List<string>();
+        IMeetingPipeline pipeline = new MeetingPipeline(
+            capture,
+            new FakeTranscriptionClient("Transcript de la grabacion nueva."),
+            new FakeReportExtractor(),
+            new FakeReportStorage(temporaryVault),
+            temporaryVault,
+            history,
+            (operation, exception) => historyFailures.Add($"{operation}: {exception.Message}"));
+
+        // --- Una reunion vieja, como la que estaria en el historial -----------
+        long oldSessionId = await history.CreateSessionAsync(
+            DateTimeOffset.UtcNow.AddDays(-7), SessionSource.Hotkey);
+        await history.CompleteSessionAsync(
+            oldSessionId, DateTimeOffset.UtcNow.AddDays(-7).AddMinutes(20),
+            Path.Combine(temporaryVault, "vieja.wav"), TimeSpan.FromMinutes(20));
+        await history.SaveTranscriptAsync(new TranscriptRecord(
+            oldSessionId, "Transcript de la reunion de la semana pasada.",
+            "Deepgram", "nova-3", null, DateTimeOffset.UtcNow.AddDays(-7)));
+
+        // --- Y una grabacion de HOY, que es la que deja _currentSessionId ----
+        // Esta es la condicion que hace visible el defecto. Sin grabar primero,
+        // el bug se manifiesta de la otra forma (sesion fantasma), y se comprueba
+        // mas abajo.
+        await pipeline.StartRecordingAsync(SessionSource.Hotkey);
+        MeetingPipelineResult todayResult = await pipeline.StopRecordingAndProcessAsync();
+
+        IReadOnlyList<SessionSummary> afterRecording = await history.ListSessionsAsync(10);
+        Check("la grabacion de hoy creo su propia sesion", afterRecording.Count == 2);
+        Check("no hubo fallos de historial", historyFailures.Count == 0);
+        if (historyFailures.Count > 0) historyFailures.ForEach(f => Console.WriteLine($"        {f}"));
+
+        long todaySessionId = afterRecording
+            .Where(session => session.SessionId != oldSessionId)
+            .Select(session => session.SessionId)
+            .Single();
+
+        Check("el reporte de hoy quedo en la sesion de hoy",
+            (await history.GetReportsAsync(todaySessionId)).Count == 1);
+        Check("y el .md de hoy llego al vault", File.Exists(todayResult.SavedReportPath));
+
+        // --- La re-extraccion de la reunion VIEJA, con la de hoy aun en curso -
+        Console.WriteLine($"{Environment.NewLine}--- Re-extraer la reunion vieja, con una grabacion reciente hecha ---");
+
+        TranscriptRecord? oldTranscript = await history.GetTranscriptAsync(oldSessionId);
+        Check("la reunion vieja tiene transcript guardado", oldTranscript is not null);
+
+        ExtractionSaveResult reextracted = await pipeline.ExtractForSessionAsync(
+            oldSessionId, oldTranscript!.Text, "feature-handoff");
+
+        // LA comprobacion. Con ExtractAndSaveAsync este reporte habria caido en
+        // todaySessionId y nada habria fallado.
+        IReadOnlyList<ReportRecord> oldReports = await history.GetReportsAsync(oldSessionId);
+        Check("el reporte re-extraido quedo en la reunion VIEJA", oldReports.Count == 1);
+        Check("y NO se colo en la grabacion de hoy",
+            (await history.GetReportsAsync(todaySessionId)).Count == 1);
+        Check("no se creo ninguna sesion fantasma",
+            (await history.ListSessionsAsync(10)).Count == 2);
+        Check("el reporte re-extraido guarda el prompt con el que se pidio",
+            oldReports.Count == 1 && oldReports[0].PromptId == "feature-handoff");
+        Check("el .md nuevo llego al vault", File.Exists(reextracted.SavedReportPath));
+        Check("y no piso el .md del reporte de hoy",
+            reextracted.SavedReportPath != todayResult.SavedReportPath &&
+            File.Exists(todayResult.SavedReportPath));
+
+        // --- La otra cara del defecto: sin grabacion previa -------------------
+        // Un pipeline nuevo tiene _currentSessionId en null. Por el camino viejo
+        // eso abria una sesion marcada como importacion; el camino nuevo no puede.
+        Console.WriteLine($"{Environment.NewLine}--- Re-extraer sin ninguna grabacion previa ---");
+
+        IMeetingPipeline freshPipeline = new MeetingPipeline(
+            new FakeAudioCapture(temporaryVault),
+            new FakeTranscriptionClient("no se usa"),
+            new FakeReportExtractor(),
+            new FakeReportStorage(temporaryVault),
+            temporaryVault,
+            history,
+            (operation, exception) => historyFailures.Add($"{operation}: {exception.Message}"));
+
+        await freshPipeline.ExtractForSessionAsync(oldSessionId, oldTranscript.Text, "functional-spec");
+
+        Check("sigue sin crearse una sesion fantasma de importacion",
+            (await history.ListSessionsAsync(10)).Count == 2);
+        Check("la reunion vieja acumula sus dos reportes (una sesion admite varios)",
+            (await history.GetReportsAsync(oldSessionId)).Count == 2);
+
+        // --- El comportamiento viejo no cambio -------------------------------
+        // ExtractAndSaveAsync es el flujo de dos pasos de la ventana y de
+        // "Adjuntar transcripcion (.txt)". Este paso no debia tocarlo.
+        Console.WriteLine($"{Environment.NewLine}--- ExtractAndSaveAsync sigue igual ---");
+
+        await freshPipeline.ExtractAndSaveAsync("Un transcript pegado a mano.", "assignment-meeting");
+        IReadOnlyList<SessionSummary> afterPaste = await history.ListSessionsAsync(10);
+        Check("un transcript suelto sigue abriendo su sesion de importacion",
+            afterPaste.Count == 3);
+
+        long pastedSessionId = afterPaste
+            .Where(s => s.SessionId != oldSessionId && s.SessionId != todaySessionId)
+            .Select(s => s.SessionId)
+            .Single();
+        Check("y esa sesion queda marcada como importacion",
+            (await history.GetSessionAsync(pastedSessionId))?.Source == SessionSource.Import);
+
+        // --- Resiliencia: la regla que manda en toda la fase -----------------
+        Console.WriteLine($"{Environment.NewLine}--- Base rota: la re-extraccion igual llega al vault ---");
+
+        var brokenFailures = new List<string>();
+        IMeetingPipeline brokenPipeline = new MeetingPipeline(
+            new FakeAudioCapture(temporaryVault),
+            new FakeTranscriptionClient("no se usa"),
+            new FakeReportExtractor(),
+            new FakeReportStorage(temporaryVault),
+            temporaryVault,
+            new SqliteMeetingHistoryStore(new SqliteConnectionFactory(@"\\?\Z:\no-existe\jamas\meetings.db")),
+            (operation, _) => brokenFailures.Add(operation));
+
+        ExtractionSaveResult degraded = await brokenPipeline.ExtractForSessionAsync(
+            999, "Transcript cualquiera.", "assignment-meeting");
+
+        Check("con la base rota, el .md igual llego al vault", File.Exists(degraded.SavedReportPath));
+        Check("y el fallo se registro en vez de propagarse",
+            brokenFailures.Contains("MeetingPipeline.SaveReport"));
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"El autotest reviento: {exception}");
+        failures++;
+    }
+    finally
+    {
+        SqliteConnection.ClearAllPools();
+        foreach (string leftover in new[] { temporaryPath, temporaryPath + "-wal", temporaryPath + "-shm" })
+        {
+            try { if (File.Exists(leftover)) File.Delete(leftover); } catch { /* best effort */ }
+        }
+
+        try { if (Directory.Exists(temporaryVault)) Directory.Delete(temporaryVault, recursive: true); }
+        catch { /* best effort */ }
     }
 
     Console.WriteLine($"{Environment.NewLine}{(failures == 0 ? "Todo OK." : $"{failures} comprobacion(es) fallaron.")}");
@@ -1121,4 +1307,114 @@ static int VerifyCatalogAndRender()
 
     Console.WriteLine("OK: catalogo y prompt de especificación funcional.");
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Dobles de prueba para --verify-reextraction
+//
+// Existen para que el test de atribucion de sesion sea gratis y deterministico:
+// lo que se comprueba es a que fila apunta una foreign key, y pagarle a Deepgram
+// y al LLM para averiguarlo seria absurdo. Ademas el microfono puede estar
+// bloqueado por el consentimiento de Windows, que ya bloqueo una verificacion
+// del paso 4.
+//
+// Se declaran al final del archivo porque un programa de sentencias de nivel
+// superior admite tipos despues de las sentencias, y sacarlos a archivos aparte
+// los volveria parte de la superficie del harness sin necesidad.
+// ---------------------------------------------------------------------------
+
+/// <summary>Captura de audio que no toca el microfono: crea un .wav vacio.</summary>
+internal sealed class FakeAudioCapture : IAudioCaptureService
+{
+    private readonly string _directory;
+
+    public FakeAudioCapture(string directory) => _directory = directory;
+
+    public bool IsCapturing { get; private set; }
+
+    public Task StartAsync(string outputDirectory, CancellationToken cancellationToken = default)
+    {
+        IsCapturing = true;
+        return Task.CompletedTask;
+    }
+
+    public Task<AudioCaptureResult> StopAsync(CancellationToken cancellationToken = default)
+    {
+        IsCapturing = false;
+        string path = Path.Combine(_directory, $"fake-{Guid.NewGuid():N}.wav");
+        File.WriteAllBytes(path, []);
+        return Task.FromResult(new AudioCaptureResult(path, TimeSpan.FromMinutes(3), "loopback falso", "mic falso"));
+    }
+}
+
+internal sealed class FakeTranscriptionClient : ITranscriptionClient
+{
+    private readonly string _transcript;
+
+    public FakeTranscriptionClient(string transcript) => _transcript = transcript;
+
+    public Task<TranscriptionResult> TranscribeAsync(string audioPath, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new TranscriptionResult(
+            _transcript, TimeSpan.FromMinutes(3), TimeSpan.FromSeconds(2), "es", []));
+}
+
+/// <summary>
+/// Extractor que devuelve Markdown fijo. Respeta el <c>promptId</c> que recibe
+/// —y por eso el test puede comprobar que el reporte guardado trae el prompt con
+/// el que se pidio, no el por defecto.
+/// </summary>
+internal sealed class FakeReportExtractor : ILlmReportExtractor
+{
+    public Task<ExtractionResult> ExtractAsync(
+        string transcript,
+        string? promptId = null,
+        CancellationToken cancellationToken = default)
+    {
+        string id = promptId ?? ReportExtractionPrompt.Id;
+        var prompt = new PromptDefinition(
+            id, $"Prompt {id}", "Doble de prueba", "vtest", "system prompt falso",
+            PromptOutputKind.FunctionalSpecification);
+
+        var metadata = new MeetingReportMetadata(
+            GeneratedAtUtc: DateTimeOffset.UtcNow,
+            LlmProvider: "Proveedor falso",
+            LlmModel: "modelo-falso",
+            PromptVersion: prompt.Version,
+            InputTokens: 100,
+            OutputTokens: 200,
+            EstimatedCostUsd: 0.000123m,
+            PromptId: id);
+
+        return Task.FromResult(new ExtractionResult(
+            $"# Reporte falso ({id})\n\n{transcript}", null, metadata, prompt));
+    }
+}
+
+/// <summary>
+/// Storage que escribe en un directorio temporal con el mismo esquema de nombres
+/// que <c>MarkdownReportStorage</c> (<c>{prompt}-{yyyyMMdd-HHmmss}</c> mas un
+/// sufijo unico). El sufijo esta porque el test genera varios reportes dentro del
+/// mismo segundo y hace falta poder comprobar que uno no pisa al otro.
+/// </summary>
+internal sealed class FakeReportStorage : IReportStorage
+{
+    private readonly string _directory;
+
+    public FakeReportStorage(string directory) => _directory = directory;
+
+    public Task<string> SaveAsync(MeetingReport report, CancellationToken cancellationToken = default) =>
+        SaveMarkdownAsync("# sin usar", report.Metadata, cancellationToken);
+
+    public Task<string> SaveMarkdownAsync(
+        string markdown,
+        MeetingReportMetadata? metadata,
+        CancellationToken cancellationToken = default)
+    {
+        string prefix = metadata?.PromptId ?? "meeting-report";
+        string path = Path.Combine(
+            _directory,
+            $"{prefix}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.md");
+        File.WriteAllText(path, markdown);
+        return Task.FromResult(path);
+    }
 }
