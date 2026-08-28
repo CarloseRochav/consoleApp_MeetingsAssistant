@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build *)",
+      "PowerShell(Get-Process *)",
+      "WebSearch",
+      "Bash(powershell -NoProfile -Command \"Get-Process -Name MeetingAssistant.App -ErrorAction SilentlyContinue | Select-Object Id,Path,StartTime\")",
+      "Bash(powershell -NoProfile -Command \"netstat -ano | Select-String ':5757'\")"
+    ]
+  }
+}
