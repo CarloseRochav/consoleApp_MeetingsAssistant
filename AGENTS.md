@@ -19,7 +19,8 @@ control endpoint.
 ## Architecture — non-negotiable rule
 
 `src/MeetingAssistant.Core` must NOT reference ANY provider-specific
-NuGet package (no NAudio, Deepgram, Google.GenAI, Azure.Identity, OpenAI).
+NuGet package (no NAudio, Deepgram, Google.GenAI, Azure.Identity,
+Azure.Storage.Blobs, OpenAI).
 Plain C# and interfaces only. Check `Core.csproj` before considering any
 task done — if it has a provider reference, something went wrong.
 
@@ -49,8 +50,10 @@ the other way around.
   Developer Mode enabled on Windows)
 - Self-tests, all in the harness, all safe to run (temp DBs, never the real
   one): `--verify-render`, `--verify-db-selftest`, `--verify-settings-config`,
-  `--verify-reextraction`, `--verify-pipeline-history <wav>` (this last one
-  makes real Deepgram and LLM calls). `--verify-db` inspects the REAL database
+  `--verify-reextraction`, `--verify-archive`,
+  `--verify-pipeline-history <wav>` (this last one makes real Deepgram and LLM
+  calls). `--verify-blob-upload` uploads two small files to the configured
+  Azure Storage account, reads them back and deletes them. `--verify-db` inspects the REAL database
   read-only; `--set-setting <key> [value]` writes one setting into it (omit the
   value to delete the key).
 

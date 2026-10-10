@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.30.1" />
     <PackageReference Include="Deepgram" Version="6.9.0" />
     <PackageReference Include="Google.GenAI" Version="1.16.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />

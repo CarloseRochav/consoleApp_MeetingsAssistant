@@ -148,7 +148,9 @@ public sealed class SqliteMeetingHistoryStore : IMeetingHistoryStore
                    (select count(*) from report r where r.session_id = s.id),
                    coalesce((select sum(r.cost_micro_usd) from report r where r.session_id = s.id), 0)
                      + coalesce((select t.cost_micro_usd from transcript t where t.session_id = s.id), 0),
-                   (select substr(t.text, 1, 180) from transcript t where t.session_id = s.id)
+                   (select substr(t.text, 1, 180) from transcript t where t.session_id = s.id),
+                   (select u.state from cloud_upload u
+                     where u.session_id = s.id and u.kind = 'audio' order by u.id desc limit 1)
               from session s
              order by s.started_at_utc desc
              limit $limit offset $offset;
@@ -167,7 +169,8 @@ public sealed class SqliteMeetingHistoryStore : IMeetingHistoryStore
                 Source: reader.GetString(3),
                 ReportCount: reader.GetInt32(4),
                 TotalCostUsd: SqliteValueConversions.ToUsd(reader.GetInt64(5)),
-                TranscriptPreview: reader.IsDBNull(6) ? null : reader.GetString(6)));
+                TranscriptPreview: reader.IsDBNull(6) ? null : reader.GetString(6),
+                AudioArchiveState: reader.IsDBNull(7) ? null : reader.GetString(7)));
         }
 
         return results;

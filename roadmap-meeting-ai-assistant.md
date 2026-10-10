@@ -760,8 +760,8 @@ mostrar.
 
 ## Fase 6 — Persistencia en la nube
 
-**Decidida el 2026-10-09.** Nada construido todavía. Depende de que Fase 5 cierre
-(falta ver en pantalla el paso 8).
+**Decidida el 2026-10-09.** Paso 1 construido el mismo día; el resto, sin
+empezar. Fase 5 sigue sin cerrar formalmente (falta ver en pantalla el paso 8).
 
 **Objetivo:** que el historial, el audio crudo y los reportes dejen de vivir sólo
 en un archivo de una máquina. Hoy `meetings.db` no tiene respaldo y cada máquina
@@ -794,11 +794,64 @@ tiene su propia base.
 
 ### Pasos
 
-1. **Audio a Azure Blob.** Interfaz `IAudioArchive` en Core, implementación con
-   Blob en Infrastructure. Subida en segundo plano después de transcribir, por
-   bloques y con reintento. Estado por sesión (pendiente, subido, fallido) y toast
-   cuando una subida falla del todo. Los `.md` de los reportes suben por el mismo
-   camino.
+1. ~~**Audio y reportes a Azure Blob.**~~ **✅ HECHO 2026-10-10.** Construido el
+   2026-10-09; la parte de la app real la probó el usuario al día siguiente.
+
+   En Core: `ICloudArchive` (subir un archivo), `IArchiveUploadStore` (la cola
+   persistente) e `IArchiveQueue` (lo único que ve el pipeline), más
+   `ArchiveUploadService`, que reintenta, serializa y avisa sin conocer ningún
+   SDK. En Infrastructure: `AzureBlobCloudArchive` y `SqliteArchiveUploadStore`.
+   `Azure.Storage.Blobs` entra **sólo** en Infrastructure; `Core.csproj` sigue
+   con 0 `PackageReference`.
+
+   **Esquema v2:** tabla `cloud_upload`, una fila por archivo, que es a la vez el
+   estado que se muestra y la cola que se retoma. Una tabla aparte y no columnas
+   en `session` y `report`, porque audio y reportes suben por el mismo camino.
+   Encolar es idempotente por (tipo, ruta local).
+
+   **Cómo se comporta:**
+   - El audio se encola **después** de transcribir y **en un `finally`**: si la
+     transcripción falla, el WAV sube igual, que es justo cuando más importa.
+   - El `.md` de cada reporte se encola al guardarse, incluidos los re-generados.
+   - Una subida a la vez, por bloques de 8 MB. Cuatro intentos (esperas de 5 s,
+     30 s y 2 min). Agotados, la fila queda `failed` con el error y sale un toast.
+   - Al arrancar se retoma lo pendiente o fallido, **sin toast**: con una
+     credencial mala sería un aviso por archivo en cada arranque.
+   - Historial muestra el estado del audio en la fila de cada reunión.
+   - Sin `AzureStorage:ConnectionString` todo esto queda apagado y no se encola
+     nada. Contenedores `meeting-audio` y `meeting-reports`, creados solos y
+     privados.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores.
+   - **`--verify-archive`, nuevo: 30/30**, con un archivo en la nube falso y base
+     temporal. Cubre reintento que se recupera, fallo definitivo con un solo
+     aviso, retomar al arrancar, archivo local desaparecido, apagado sin
+     credencial, base rota que no se propaga, el pipeline encolando audio y
+     reporte, la subida del audio cuando la transcripción falla, y una base v1
+     con datos migrando a v2.
+   - **`--verify-blob-upload`, nuevo, contra la cuenta real** (`stdevlogagent`):
+     un archivo de 20 MB —más de un bloque— y uno de 2 KB subidos, leídos de
+     vuelta byte a byte e idénticos, con su tipo de contenido, y borrados. Los dos
+     contenedores quedaron creados, sin acceso público.
+   - Los cuatro autotests anteriores siguen en verde (62, 37, 18 y render).
+
+   **En la app real (2026-10-10):** el agente no puede lanzarla (mismo bloqueo de
+   Control de aplicaciones que en Fase 5), así que la probó el usuario y reportó
+   que todo anda. Lo que el agente midió después, contra la base real: el esquema
+   **migró a v2** al arrancar, y la reunión grabada dejó **una fila de audio y una
+   de reporte, las dos `uploaded` al primer intento**.
+
+   **Lo que sigue sin verse, dicho explícitamente:**
+   - **Un WAV de tamaño real.** La reunión de prueba fue corta y la subida real
+     del autotest fue de 20 MB; una reunión de una hora son unos 320 MB.
+   - **El camino de fallo en la app:** el toast y el reintento al arrancar. Están
+     probados con el archivo en la nube falso, no vistos en pantalla.
+
+   **Dos cosas que quedaron hechas en la máquina y no en el repo:** la cadena de
+   conexión se escribió en los dos `appsettings.json` reales (ignorados por git),
+   y la cuenta de Storage es compartida con otro proyecto (contenedor
+   `devlog-notes`), que no se tocó.
 2. **Store de Postgres** detrás de `IMeetingHistoryStore`, elegido por
    `Database:Provider`. La búsqueda se rehace con full-text de Postgres
    (`tsvector` + `unaccent` + prefijo) hasta reproducir lo que fijan los

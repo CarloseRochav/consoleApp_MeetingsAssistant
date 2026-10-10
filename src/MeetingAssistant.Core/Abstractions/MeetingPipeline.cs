@@ -85,6 +85,7 @@ public sealed class MeetingPipeline : IMeetingPipeline
     private readonly IMeetingHistoryStore? _historyStore;
     private readonly Action<string, Exception>? _onHistoryFailure;
     private readonly ITranscriptionCostEstimator? _transcriptionCostEstimator;
+    private readonly IArchiveQueue? _archiveQueue;
 
     /// <summary>
     /// Con qué nombre queda registrado el proveedor de transcripción, y bajo qué
@@ -114,7 +115,8 @@ public sealed class MeetingPipeline : IMeetingPipeline
         string audioOutputDirectory,
         IMeetingHistoryStore? historyStore = null,
         Action<string, Exception>? onHistoryFailure = null,
-        ITranscriptionCostEstimator? transcriptionCostEstimator = null)
+        ITranscriptionCostEstimator? transcriptionCostEstimator = null,
+        IArchiveQueue? archiveQueue = null)
     {
         _audioCaptureService = audioCaptureService;
         _transcriptionClient = transcriptionClient;
@@ -130,6 +132,8 @@ public sealed class MeetingPipeline : IMeetingPipeline
         // Opcional: sin estimador el costo de transcripción queda en null, que
         // es lo mismo que pasa cuando el estimador no tiene precio configurado.
         _transcriptionCostEstimator = transcriptionCostEstimator;
+        // Opcional: sin cola, nada se sube a la nube y el resto sigue igual.
+        _archiveQueue = archiveQueue;
     }
 
     public bool IsRecording => _audioCaptureService.IsCapturing;
@@ -178,7 +182,33 @@ public sealed class MeetingPipeline : IMeetingPipeline
                 _currentSessionId!.Value, DateTimeOffset.UtcNow, audio.AudioPath, audio.Duration, cancellationToken),
             requiresSession: true);
 
-        return await TranscribeAudioAsync(audio, cancellationToken);
+        return await TranscribeThenArchiveAsync(audio, cancellationToken);
+    }
+
+    /// <summary>
+    /// El audio se manda a archivar <b>después</b> de transcribir, para no
+    /// competir por el ancho de banda con la subida a la transcripción — y en un
+    /// <c>finally</c>, porque el caso en que más importa conservar el WAV es
+    /// justo cuando la transcripción falló: es lo único con lo que esa reunión
+    /// se puede recuperar.
+    /// </summary>
+    private async Task<TranscriptionSession> TranscribeThenArchiveAsync(
+        AudioCaptureResult audio,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await TranscribeAudioAsync(audio, cancellationToken);
+        }
+        finally
+        {
+            // Sin sesión no hay fila contra la cual registrar la subida: pasa
+            // sólo si la base falló al abrir la sesión.
+            if (_currentSessionId is { } sessionId)
+            {
+                _archiveQueue?.Enqueue(sessionId, ArchiveKind.Audio, audio.AudioPath);
+            }
+        }
     }
 
     public async Task<TranscriptionSession> TranscribeAudioFileAsync(string audioPath, CancellationToken cancellationToken = default)
@@ -203,7 +233,7 @@ public sealed class MeetingPipeline : IMeetingPipeline
                     _currentSessionId.Value, DateTimeOffset.UtcNow, audioPath, null, cancellationToken);
             });
 
-        return await TranscribeAudioAsync(audio, cancellationToken);
+        return await TranscribeThenArchiveAsync(audio, cancellationToken);
     }
 
     public async Task<ExtractionSaveResult> ExtractAndSaveAsync(
@@ -361,6 +391,10 @@ public sealed class MeetingPipeline : IMeetingPipeline
         // con un sessionId perfectamente válido en el parámetro. Dejarlo habría
         // hecho que el reporte NO se registrara, en silencio y sólo por el camino
         // nuevo. El guard equivalente es el `if (sessionId is null)` de arriba.
+
+        // El .md también va a la nube. Se encola aunque la fila del reporte no
+        // se haya podido guardar: el archivo existe en el vault igual.
+        _archiveQueue?.Enqueue(sessionId.Value, ArchiveKind.Report, savedVaultPath);
     }
 
     /// <summary>

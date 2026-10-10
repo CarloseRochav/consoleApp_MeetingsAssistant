@@ -49,6 +49,13 @@ public sealed partial class SessionListItem : ObservableObject
         TotalCostUsd = summary.TotalCostUsd;
         HasTranscript = !string.IsNullOrWhiteSpace(summary.TranscriptPreview);
         TranscriptPreview = summary.TranscriptPreview;
+        AudioArchiveLabel = summary.AudioArchiveState switch
+        {
+            "uploaded" => "audio en la nube",
+            "failed" => "subida del audio fallida",
+            "pending" => "audio pendiente de subir",
+            _ => null
+        };
 
         // El origen se traduce, pero el valor crudo se conserva: es lo primero
         // que uno quiere saber al mirar el historial, y un valor nuevo que
@@ -72,6 +79,13 @@ public sealed partial class SessionListItem : ObservableObject
     public string? TranscriptPreview { get; }
 
     public string SourceLabel { get; }
+
+    /// <summary>
+    /// Null cuando la subida nunca se pidió: archivar apagado, o una reunión
+    /// anterior a que existiera. No se muestra nada en ese caso, en vez de un
+    /// "sin respaldo" que sonaría a fallo.
+    /// </summary>
+    public string? AudioArchiveLabel { get; }
 
     /// <summary>
     /// El fragmento del transcript donde apareció lo buscado. Sólo tiene valor
@@ -119,6 +133,7 @@ public sealed partial class SessionListItem : ObservableObject
                 });
 
             if (TotalCostUsd > 0) parts.Add($"US${TotalCostUsd:F4}");
+            if (AudioArchiveLabel is not null) parts.Add(AudioArchiveLabel);
 
             return string.Join(" · ", parts);
         }

@@ -29,7 +29,8 @@ public sealed class SqliteSchemaMigrator
     /// </summary>
     private static readonly (int Version, string Sql)[] Migrations =
     [
-        (1, Version1Sql)
+        (1, Version1Sql),
+        (2, Version2Sql)
     ];
 
     public static int LatestVersion => Migrations[^1].Version;
@@ -99,6 +100,38 @@ public sealed class SqliteSchemaMigrator
     /// - <b>vault_path deja el .md del vault como lo que es</b>: una
     ///   exportación, no el registro. El vault sigue siendo el producto.
     /// </summary>
+    /// <summary>
+    /// v2 — la cola de subidas a la nube (Fase 6, paso 1).
+    ///
+    /// Una tabla aparte y no columnas en <c>session</c> y <c>report</c>: audio y
+    /// reportes se suben por el mismo camino, y una sola tabla es a la vez el
+    /// estado que se muestra y la cola que se retoma al arrancar.
+    ///
+    /// <c>unique(kind, local_path)</c> es lo que hace idempotente encolar: el
+    /// mismo archivo pedido dos veces es una sola fila. <c>remote_name</c> se
+    /// fija al encolar para que un reintento suba siempre al mismo nombre.
+    /// </summary>
+    private const string Version2Sql =
+        """
+        create table cloud_upload (
+            id              integer primary key autoincrement,
+            session_id      integer not null references session(id) on delete cascade,
+            kind            text    not null,
+            local_path      text    not null,
+            remote_name     text    not null,
+            state           text    not null,
+            attempts        integer not null default 0,
+            remote_url      text,
+            last_error      text,
+            created_at_utc  text    not null,
+            updated_at_utc  text    not null,
+            unique(kind, local_path)
+        );
+
+        create index ix_cloud_upload_session on cloud_upload(session_id);
+        create index ix_cloud_upload_state   on cloud_upload(state);
+        """;
+
     private const string Version1Sql =
         """
         create table session (

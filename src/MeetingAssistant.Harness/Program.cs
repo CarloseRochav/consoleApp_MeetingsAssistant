@@ -87,6 +87,22 @@ if (positional.Count == 1 && string.Equals(positional[0], "--verify-reextraction
     return await VerifyReextractionAsync();
 }
 
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-archive", StringComparison.OrdinalIgnoreCase))
+{
+    return await ArchiveSelfTests.VerifyArchiveAsync();
+}
+
+// A diferencia de los demas autotests, este SI sale a la red: sube dos archivos
+// chicos a la cuenta de Azure configurada, los lee de vuelta y los borra.
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-blob-upload", StringComparison.OrdinalIgnoreCase))
+{
+    return await ArchiveSelfTests.VerifyBlobUploadAsync(new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .Build());
+}
+
 try
 {
     IConfiguration configuration = new ConfigurationBuilder()

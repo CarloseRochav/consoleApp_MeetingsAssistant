@@ -2,6 +2,7 @@ using MeetingAssistant.App.Services;
 using MeetingAssistant.App.ViewModels;
 using MeetingAssistant.App.Views;
 using MeetingAssistant.Core.Abstractions;
+using MeetingAssistant.Core.Services;
 using MeetingAssistant.Infrastructure.Api;
 using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Cost;
@@ -143,6 +144,23 @@ public partial class App : Application
             _activityNotificationService?.Dispose();
             _activityNotificationService = null;
             LogStartupFailure("AppNotificationManager.Register", exception);
+        }
+
+        // Retoma las subidas a la nube que quedaron pendientes o fallidas. En
+        // segundo plano y sin esperar: no lanza, y el arranque no depende de la
+        // red. Dentro de su propio try porque resolver el servicio sí puede
+        // fallar, y un respaldo opcional no puede impedir abrir la ventana.
+        try
+        {
+            ICloudArchive archive = Services.GetRequiredService<ICloudArchive>();
+            LogDiagnostic(archive.IsConfigured
+                ? "Archivo en la nube: configurado; se retoman las subidas pendientes."
+                : "Archivo en la nube: sin AzureStorage:ConnectionString, apagado.");
+            _ = Services.GetRequiredService<ArchiveUploadService>().ResumeUnfinishedAsync();
+        }
+        catch (Exception exception)
+        {
+            LogStartupFailure("ArchiveUploadService.ResumeUnfinished", exception);
         }
 
         _window = Services.GetRequiredService<MainWindow>();
@@ -422,7 +440,8 @@ public partial class App : Application
             // ventana. Un solo punto, sin filas duplicadas.
             provider.GetRequiredService<IMeetingHistoryStore>(),
             LogStartupFailure,
-            provider.GetRequiredService<ITranscriptionCostEstimator>()));
+            provider.GetRequiredService<ITranscriptionCostEstimator>(),
+            provider.GetRequiredService<ArchiveUploadService>()));
         services.AddSingleton<RecordingCoordinator>();
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
@@ -438,6 +457,14 @@ public partial class App : Application
         services.AddSingleton(secretProtector);
         services.AddSingleton(settingsStore);
         services.AddSingleton<IMeetingHistoryStore, Infrastructure.Storage.Sqlite.SqliteMeetingHistoryStore>();
+        // Subida en segundo plano del audio y los reportes (Fase 6, paso 1). Sin
+        // AzureStorage:ConnectionString queda apagada y no hace nada.
+        services.AddSingleton<ICloudArchive, AzureBlobCloudArchive>();
+        services.AddSingleton<IArchiveUploadStore, Infrastructure.Storage.Sqlite.SqliteArchiveUploadStore>();
+        services.AddSingleton(provider => new ArchiveUploadService(
+            provider.GetRequiredService<ICloudArchive>(),
+            provider.GetRequiredService<IArchiveUploadStore>(),
+            LogStartupFailure));
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();
         // Transient, igual que RecordViewModel y por el mismo motivo: el Frame

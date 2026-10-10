@@ -94,7 +94,10 @@ public sealed record SessionSummary(
     string Source,
     int ReportCount,
     decimal TotalCostUsd,
-    string? TranscriptPreview);
+    string? TranscriptPreview,
+    // Estado de la subida del audio a la nube: "pending", "uploaded", "failed",
+    // o null si nunca se pidió (archivar apagado, o reunión anterior a Fase 6).
+    string? AudioArchiveState = null);
 
 /// <summary>Un resultado de búsqueda, con el fragmento donde apareció el término.</summary>
 public sealed record TranscriptSearchHit(

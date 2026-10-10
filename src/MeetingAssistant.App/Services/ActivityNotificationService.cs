@@ -1,3 +1,5 @@
+using MeetingAssistant.Core.Abstractions;
+using MeetingAssistant.Core.Services;
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
 
@@ -22,11 +24,14 @@ namespace MeetingAssistant.App.Services;
 public sealed class ActivityNotificationService : IDisposable
 {
     private readonly RecordingCoordinator _coordinator;
+    private readonly ArchiveUploadService _archiveUploads;
     private bool _isDisposed;
 
-    public ActivityNotificationService(RecordingCoordinator coordinator)
+    public ActivityNotificationService(RecordingCoordinator coordinator, ArchiveUploadService archiveUploads)
     {
         _coordinator = coordinator;
+        _archiveUploads = archiveUploads;
+        _archiveUploads.UploadFailed += OnArchiveUploadFailed;
         _coordinator.RecordingStarted += OnRecordingStarted;
         _coordinator.TranscriptReady += OnTranscriptReady;
         _coordinator.ReportSaved += OnReportSaved;
@@ -47,6 +52,19 @@ public sealed class ActivityNotificationService : IDisposable
 
     private void OnRecordingFailed(object? sender, RecordingFailedEventArgs e) =>
         Show("RecordingFailed", e.Operation, e.Exception.Message);
+
+    /// <summary>
+    /// Sólo cuando una subida agotó sus reintentos. El archivo local sigue en su
+    /// lugar y la subida se vuelve a intentar al próximo arranque; el aviso es
+    /// para que no pase inadvertido que el respaldo de esa reunión todavía no
+    /// existe.
+    /// </summary>
+    private void OnArchiveUploadFailed(object? sender, ArchiveUploadFailedEventArgs e) =>
+        Show(
+            "ArchiveUploadFailed",
+            e.Kind == ArchiveKind.Audio ? "No se pudo subir el audio a la nube" : "No se pudo subir el reporte a la nube",
+            $"{Path.GetFileName(e.LocalPath)}: {e.Error}",
+            "El archivo local sigue en su lugar. Se reintenta al próximo arranque.");
 
     /// <summary>
     /// <paramref name="eventName"/> existe solo para la traza: un toast que no
@@ -87,6 +105,7 @@ public sealed class ActivityNotificationService : IDisposable
         _coordinator.TranscriptReady -= OnTranscriptReady;
         _coordinator.ReportSaved -= OnReportSaved;
         _coordinator.RecordingFailed -= OnRecordingFailed;
+        _archiveUploads.UploadFailed -= OnArchiveUploadFailed;
         _isDisposed = true;
         GC.SuppressFinalize(this);
     }
