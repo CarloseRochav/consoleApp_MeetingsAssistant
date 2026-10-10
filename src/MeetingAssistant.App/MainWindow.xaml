@@ -38,6 +38,11 @@
                         <SymbolIcon Symbol="Clock" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Costos" Tag="costs">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Calculator" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Configuración" Tag="settings">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Setting" />

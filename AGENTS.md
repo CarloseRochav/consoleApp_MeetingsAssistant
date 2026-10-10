@@ -49,7 +49,8 @@ the other way around.
   Developer Mode enabled on Windows)
 - Self-tests, all in the harness, all safe to run (temp DBs, never the real
   one): `--verify-render`, `--verify-db-selftest`, `--verify-settings-config`,
-  `--verify-pipeline-history <wav>`. `--verify-db` inspects the REAL database
+  `--verify-reextraction`, `--verify-pipeline-history <wav>` (this last one
+  makes real Deepgram and LLM calls). `--verify-db` inspects the REAL database
   read-only; `--set-setting <key> [value]` writes one setting into it (omit the
   value to delete the key).
 

@@ -404,6 +404,7 @@ public partial class App : Application
             ReadRequiredSetting(configuration, "Deepgram", "ApiKey", "DEEPGRAM_API_KEY")));
         services.AddSingleton<ILlmClient>(_ => CreateLlmClient(configuration));
         services.AddSingleton<ICostEstimator, ConfigPricingCostEstimator>();
+        services.AddSingleton<ITranscriptionCostEstimator, ConfigPricingCostEstimator>();
         services.AddSingleton<IPromptCatalog, BuiltInPromptCatalog>();
         services.AddSingleton<ILlmReportExtractor, LlmReportExtractor>();
         services.AddSingleton<IReportStorage, MarkdownReportStorage>();
@@ -420,7 +421,8 @@ public partial class App : Application
             // registrar justo las grabaciones por HTTP — las que más se usan sin
             // ventana. Un solo punto, sin filas duplicadas.
             provider.GetRequiredService<IMeetingHistoryStore>(),
-            LogStartupFailure));
+            LogStartupFailure,
+            provider.GetRequiredService<ITranscriptionCostEstimator>()));
         services.AddSingleton<RecordingCoordinator>();
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
@@ -442,6 +444,7 @@ public partial class App : Application
         // reconstruye la página en cada navegación, así que un singleton acá sólo
         // conservaría estado que la página ya no puede mostrar.
         services.AddTransient<HistoryViewModel>();
+        services.AddTransient<CostViewModel>();
         services.AddSingleton<MainWindow>();
 
         return services.BuildServiceProvider();

@@ -105,19 +105,45 @@ public sealed record TranscriptSearchHit(
 /// <summary>
 /// Lo que Fase 4 pide como "revisar costo real acumulado vs. estimado". Hoy el
 /// dato ya se genera en el frontmatter de cada reporte y nadie lo consulta.
+///
+/// Es la mitad <b>estimada</b>: tokens y minutos por los precios de
+/// configuración. Nadie lo comparó contra una factura.
+///
+/// LLM y transcripción van <b>separados</b>, y junto a cada monto va la cuenta
+/// de lo que ese monto NO incluye. Un total solo no se puede creer:
+/// <list type="bullet">
+/// <item><see cref="ReportsMissingPriceCount"/>: reportes con tokens y costo 0.
+/// El estimador devuelve 0 cuando no hay precio para el modelo, así que esos
+/// ceros son "no se sabía el precio", no "costó cero".</item>
+/// <item><see cref="ReportsWithoutCostCount"/> y
+/// <see cref="TranscriptsWithoutCostCount"/>: filas con el costo en null.</item>
+/// </list>
 /// </summary>
 public sealed record CostSummary(
     int SessionCount,
+    int SessionsWithReportsCount,
     int ReportCount,
-    decimal TotalCostUsd,
+    int TranscriptCount,
+    decimal LlmCostUsd,
+    decimal TranscriptionCostUsd,
+    int ReportsMissingPriceCount,
+    int ReportsWithoutCostCount,
+    int TranscriptsWithoutCostCount,
     DateTimeOffset? FirstReportUtc,
-    DateTimeOffset? LastReportUtc);
+    DateTimeOffset? LastReportUtc)
+{
+    public decimal TotalCostUsd => LlmCostUsd + TranscriptionCostUsd;
+}
 
 /// <summary>
 /// Uso y costo por prompt y versión — el otro pedido de Fase 4: "comparar
 /// calidad de reportes entre versiones de prompt". Esto da el lado medible
 /// (cuántos, cuánto costaron, qué tan largos salen); la calidad sigue siendo
 /// juicio humano, pero al menos deja de ser también un recuento manual.
+///
+/// <see cref="TotalCostUsd"/> es <b>sólo LLM</b>: la transcripción es de la
+/// reunión, no de un prompt. La suma de estas filas es
+/// <see cref="CostSummary.LlmCostUsd"/>, no el total.
 /// </summary>
 public sealed record PromptUsageSummary(
     string PromptId,
@@ -125,4 +151,5 @@ public sealed record PromptUsageSummary(
     int ReportCount,
     decimal TotalCostUsd,
     double AverageOutputTokens,
-    DateTimeOffset? LastUsedUtc);
+    DateTimeOffset? LastUsedUtc,
+    int ReportsMissingPriceCount);

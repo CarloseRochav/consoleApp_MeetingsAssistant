@@ -47,6 +47,7 @@ public sealed partial class MainWindow : Window
         {
             "record" => typeof(RecordPage),
             "history" => typeof(HistoryPage),
+            "costs" => typeof(CostPage),
             "settings" => typeof(SettingsPage),
             _ => typeof(RecordPage)
         };

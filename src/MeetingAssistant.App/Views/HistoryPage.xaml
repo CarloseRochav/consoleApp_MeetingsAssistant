@@ -43,6 +43,19 @@
                 <ProgressBar x:Name="LoadingBar"
                              IsIndeterminate="True"
                              Visibility="Collapsed" />
+
+                <!--
+                    Busca en las transcripciones, no en los reportes: sólo el
+                    transcript está indexado. Filtra y anota la lista de abajo;
+                    no la reemplaza por otra.
+                -->
+                <TextBox Header="Buscar en las transcripciones"
+                         PlaceholderText="Una palabra que se dijo en la reunión"
+                         Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTipService.ToolTip="Busca por comienzo de palabra: «factura» encuentra «facturación». Los acentos no importan. Si escribes varias palabras, tienen que aparecer todas." />
+                <TextBlock Text="{Binding SearchSummary}"
+                           TextWrapping="Wrap"
+                           Opacity="0.8" />
             </StackPanel>
 
             <!--
@@ -63,6 +76,12 @@
                             <TextBlock Text="{x:Bind Subtitle}"
                                        TextWrapping="Wrap"
                                        Opacity="0.75"
+                                       FontSize="12" />
+                            <!-- Sólo con búsqueda activa: dónde apareció el término. -->
+                            <TextBlock Text="{x:Bind Snippet, Mode=OneWay}"
+                                       Visibility="{x:Bind HasSnippet, Mode=OneWay}"
+                                       TextWrapping="Wrap"
+                                       FontStyle="Italic"
                                        FontSize="12" />
                         </StackPanel>
                     </DataTemplate>

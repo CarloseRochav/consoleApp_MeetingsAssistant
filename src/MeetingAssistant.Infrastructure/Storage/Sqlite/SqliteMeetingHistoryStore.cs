@@ -300,16 +300,31 @@ public sealed class SqliteMeetingHistoryStore : IMeetingHistoryStore
 
     // -------------------------------------------------------------- analítica
 
+    /// <summary>
+    /// Un reporte que consumió tokens y quedó con costo 0 es un reporte cuyo
+    /// modelo no tenía precio configurado: <c>ConfigPricingCostEstimator</c>
+    /// devuelve 0 en ese caso para no tumbar la extracción. Es la única señal
+    /// que queda después del hecho para distinguirlo de un costo real de cero.
+    /// Constante, sin nada del usuario adentro.
+    /// </summary>
+    private const string MissingPriceCondition =
+        "cost_micro_usd = 0 and (coalesce(tokens_input, 0) > 0 or coalesce(tokens_output, 0) > 0)";
+
     public async Task<CostSummary> GetCostSummaryAsync(CancellationToken cancellationToken = default)
     {
         await using SqliteConnection connection = _connectionFactory.Open();
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
-            """
+            $"""
             select (select count(*) from session),
+                   (select count(distinct session_id) from report),
                    (select count(*) from report),
-                   coalesce((select sum(cost_micro_usd) from report), 0)
-                     + coalesce((select sum(cost_micro_usd) from transcript), 0),
+                   (select count(*) from transcript),
+                   coalesce((select sum(cost_micro_usd) from report), 0),
+                   coalesce((select sum(cost_micro_usd) from transcript), 0),
+                   (select count(*) from report where {MissingPriceCondition}),
+                   (select count(*) from report where cost_micro_usd is null),
+                   (select count(*) from transcript where cost_micro_usd is null),
                    (select min(created_at_utc) from report),
                    (select max(created_at_utc) from report);
             """;
@@ -319,10 +334,16 @@ public sealed class SqliteMeetingHistoryStore : IMeetingHistoryStore
 
         return new CostSummary(
             SessionCount: reader.GetInt32(0),
-            ReportCount: reader.GetInt32(1),
-            TotalCostUsd: SqliteValueConversions.ToUsd(reader.GetInt64(2)),
-            FirstReportUtc: reader.IsDBNull(3) ? null : SqliteValueConversions.ToTimestamp(reader.GetString(3)),
-            LastReportUtc: reader.IsDBNull(4) ? null : SqliteValueConversions.ToTimestamp(reader.GetString(4)));
+            SessionsWithReportsCount: reader.GetInt32(1),
+            ReportCount: reader.GetInt32(2),
+            TranscriptCount: reader.GetInt32(3),
+            LlmCostUsd: SqliteValueConversions.ToUsd(reader.GetInt64(4)),
+            TranscriptionCostUsd: SqliteValueConversions.ToUsd(reader.GetInt64(5)),
+            ReportsMissingPriceCount: reader.GetInt32(6),
+            ReportsWithoutCostCount: reader.GetInt32(7),
+            TranscriptsWithoutCostCount: reader.GetInt32(8),
+            FirstReportUtc: reader.IsDBNull(9) ? null : SqliteValueConversions.ToTimestamp(reader.GetString(9)),
+            LastReportUtc: reader.IsDBNull(10) ? null : SqliteValueConversions.ToTimestamp(reader.GetString(10)));
     }
 
     public async Task<IReadOnlyList<PromptUsageSummary>> GetPromptUsageAsync(
@@ -331,13 +352,14 @@ public sealed class SqliteMeetingHistoryStore : IMeetingHistoryStore
         await using SqliteConnection connection = _connectionFactory.Open();
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
-            """
+            $"""
             select prompt_id,
                    prompt_version,
                    count(*),
                    coalesce(sum(cost_micro_usd), 0),
                    coalesce(avg(tokens_output), 0),
-                   max(created_at_utc)
+                   max(created_at_utc),
+                   coalesce(sum(case when {MissingPriceCondition} then 1 else 0 end), 0)
               from report
              group by prompt_id, prompt_version
              order by count(*) desc, prompt_id;
@@ -353,7 +375,8 @@ public sealed class SqliteMeetingHistoryStore : IMeetingHistoryStore
                 ReportCount: reader.GetInt32(2),
                 TotalCostUsd: SqliteValueConversions.ToUsd(reader.GetInt64(3)),
                 AverageOutputTokens: reader.GetDouble(4),
-                LastUsedUtc: reader.IsDBNull(5) ? null : SqliteValueConversions.ToTimestamp(reader.GetString(5))));
+                LastUsedUtc: reader.IsDBNull(5) ? null : SqliteValueConversions.ToTimestamp(reader.GetString(5)),
+                ReportsMissingPriceCount: reader.GetInt32(6)));
         }
 
         return results;

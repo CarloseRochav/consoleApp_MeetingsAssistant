@@ -17,7 +17,7 @@ namespace MeetingAssistant.Infrastructure.Cost;
 ///   }
 /// }
 /// </summary>
-public sealed class ConfigPricingCostEstimator : ICostEstimator
+public sealed class ConfigPricingCostEstimator : ICostEstimator, ITranscriptionCostEstimator
 {
     private readonly IConfiguration _configuration;
 
@@ -43,5 +43,21 @@ public sealed class ConfigPricingCostEstimator : ICostEstimator
         decimal inputCost = inputTokens / 1_000_000m * inputPerMillion;
         decimal outputCost = outputTokens / 1_000_000m * outputPerMillion;
         return inputCost + outputCost;
+    }
+
+    /// <summary>
+    /// La transcripción se cobra por minuto de audio. El precio va en
+    /// <c>Pricing:{proveedor}:PerMinute</c> (hoy, <c>Pricing:Deepgram:PerMinute</c>)
+    /// y lo pone el usuario según su plan: en el código no hay ninguno.
+    ///
+    /// Sin precio —clave ausente, o el 0 que trae el archivo de ejemplo como
+    /// marcador— devuelve <b>null</b>, no 0. Un cero guardado parecería medido.
+    /// </summary>
+    public decimal? EstimateTranscriptionCostUsd(string provider, TimeSpan audioDuration)
+    {
+        decimal? perMinute = _configuration.GetValue<decimal?>($"Pricing:{provider}:PerMinute");
+        if (perMinute is null or <= 0m) return null;
+
+        return (decimal)audioDuration.TotalMinutes * perMinute.Value;
     }
 }

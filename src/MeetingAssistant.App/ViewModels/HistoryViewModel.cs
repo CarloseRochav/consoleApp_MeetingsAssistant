@@ -17,7 +17,7 @@ namespace MeetingAssistant.App.ViewModels;
 /// aparecer el desfase ya conocido — el <c>.wav</c> se nombra en hora local y el
 /// reporte en UTC, así que una reunión de la noche parece del día siguiente.
 /// </summary>
-public sealed class SessionListItem
+public sealed partial class SessionListItem : ObservableObject
 {
     /// <summary>
     /// Cultura con la que se formatean las fechas que se muestran.
@@ -73,6 +73,27 @@ public sealed class SessionListItem
 
     public string SourceLabel { get; }
 
+    /// <summary>
+    /// El fragmento del transcript donde apareció lo buscado. Sólo tiene valor
+    /// mientras hay una búsqueda activa.
+    ///
+    /// Es una <b>anotación sobre la misma fila</b>, y no un tipo de fila aparte,
+    /// a propósito: <c>TranscriptSearchHit</c> no trae origen, duración ni
+    /// reportes, y todo el detalle —y la re-extracción— cuelga de que
+    /// <c>SelectedSession</c> sea uno de estos. Reemplazar la lista por
+    /// resultados habría roto esa cadena en silencio.
+    ///
+    /// Se muestra tal cual lo devuelve <c>snippet()</c>: el término entre
+    /// corchetes y «…» donde se recortó. Resaltar de verdad obligaría a
+    /// interpretar los corchetes, y un transcript que traiga uno propio se
+    /// pintaría mal; así no hay nada que interpretar.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSnippet))]
+    private string? snippet;
+
+    public bool HasSnippet => !string.IsNullOrWhiteSpace(Snippet);
+
     public string Title => StartedAtLocal.ToString("dddd d 'de' MMMM, HH:mm", DisplayCulture);
 
     /// <summary>
@@ -112,7 +133,7 @@ public sealed class SessionListItem
     /// inspeccionando el árbol de accesibilidad de la app corriendo, no leyendo
     /// el código.
     /// </summary>
-    public override string ToString() => $"{Title}. {Subtitle}";
+    public override string ToString() => HasSnippet ? $"{Title}. {Subtitle}. {Snippet}" : $"{Title}. {Subtitle}";
 }
 
 /// <summary>Un reporte de la sesión abierta, listo para mostrar.</summary>
@@ -171,8 +192,32 @@ public partial class HistoryViewModel : ObservableObject
     /// </summary>
     private const int PageSize = 200;
 
+    /// <summary>Tope de resultados de una búsqueda. Si se alcanza, se dice.</summary>
+    private const int SearchLimit = 50;
+
+    /// <summary>
+    /// Espera tras la última tecla antes de consultar. La base es local y
+    /// responde al instante, así que esto no es por rendimiento: es para que la
+    /// lista no parpadee con el resultado de cada prefijo intermedio.
+    /// </summary>
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
+
     private readonly IMeetingHistoryStore _historyStore;
     private readonly RecordingCoordinator _recordingCoordinator;
+
+    /// <summary>
+    /// Todas las reuniones cargadas, en orden de fecha. <see cref="Sessions"/> es
+    /// lo que se ve: esta misma lista, o el subconjunto que devuelve la búsqueda.
+    /// </summary>
+    private readonly List<SessionListItem> _allSessions = [];
+
+    /// <summary>
+    /// Sube con cada cambio de la caja y con cada recarga. Una consulta que
+    /// vuelve con un número viejo se descarta: escribiendo rápido, una búsqueda
+    /// anterior puede terminar después de una posterior y pisar lo que está en
+    /// pantalla. Mismo motivo que el guard de <see cref="LoadSessionDetailAsync"/>.
+    /// </summary>
+    private int _searchVersion;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -188,6 +233,19 @@ public partial class HistoryViewModel : ObservableObject
 
     [ObservableProperty]
     private string? errorDetails;
+
+    [ObservableProperty]
+    private string searchText = string.Empty;
+
+    /// <summary>
+    /// Qué se está viendo mientras hay una búsqueda: cuántas reuniones salieron,
+    /// que el orden pasó a ser por relevancia, y —lo que más confunde si se
+    /// calla— cuántas reuniones <b>no tienen transcripción</b> y por eso no
+    /// pueden aparecer. Sin eso, una búsqueda que esconde reuniones se ve igual
+    /// que una búsqueda rota.
+    /// </summary>
+    [ObservableProperty]
+    private string? searchSummary;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]
@@ -224,7 +282,12 @@ public partial class HistoryViewModel : ObservableObject
 
     public IReadOnlyList<PromptDefinition> Prompts { get; }
 
-    public bool IsEmpty => !IsLoading && Sessions.Count == 0;
+    /// <summary>
+    /// "No hay historial todavía". Mira la lista completa y no la visible: una
+    /// búsqueda sin resultados sobre un historial lleno es otra cosa, y la
+    /// explica <see cref="SearchSummary"/>.
+    /// </summary>
+    public bool IsEmpty => !IsLoading && _allSessions.Count == 0;
 
     public bool HasSelection => SelectedSession is not null;
 
@@ -301,8 +364,8 @@ public partial class HistoryViewModel : ObservableObject
         {
             IReadOnlyList<SessionSummary> summaries = await _historyStore.ListSessionsAsync(PageSize);
 
-            Sessions.Clear();
-            foreach (SessionSummary summary in summaries) Sessions.Add(new SessionListItem(summary));
+            _allSessions.Clear();
+            foreach (SessionSummary summary in summaries) _allSessions.Add(new SessionListItem(summary));
 
             StatusMessage = summaries.Count switch
             {
@@ -312,10 +375,10 @@ public partial class HistoryViewModel : ObservableObject
             };
 
             // Refrescar después de re-generar no debe perder de vista la reunión
-            // que se estaba mirando.
-            SelectedSession = previouslySelected is null
-                ? null
-                : Sessions.FirstOrDefault(session => session.SessionId == previouslySelected);
+            // que se estaba mirando, ni la búsqueda que estaba escrita: se vuelve
+            // a aplicar sobre la lista recién cargada. El número de versión nuevo
+            // descarta además cualquier búsqueda en camino contra la lista vieja.
+            await ApplySearchAsync(++_searchVersion, previouslySelected);
         }
         catch (Exception exception)
         {
@@ -323,7 +386,9 @@ public partial class HistoryViewModel : ObservableObject
             // transcribir y guardar en el vault no dependen del historial, así
             // que esta página avisa y el resto de la app sigue.
             App.LogStartupFailure("HistoryViewModel.Refresh", exception);
+            _allSessions.Clear();
             Sessions.Clear();
+            SearchSummary = null;
             StatusMessage = "No se pudo leer el historial. El resto de la app sigue funcionando: " +
                 "grabar, transcribir y guardar en el vault no dependen de la base.";
             ErrorDetails = exception.Message;
@@ -333,6 +398,151 @@ public partial class HistoryViewModel : ObservableObject
             IsLoading = false;
             OnPropertyChanged(nameof(IsEmpty));
         }
+    }
+
+    partial void OnSearchTextChanged(string value) => _ = SearchAfterPauseAsync();
+
+    private async Task SearchAfterPauseAsync()
+    {
+        int version = ++_searchVersion;
+
+        await Task.Delay(SearchDebounce);
+        if (version != _searchVersion) return;
+
+        await ApplySearchAsync(version, SelectedSession?.SessionId);
+    }
+
+    /// <summary>
+    /// Deja en <see cref="Sessions"/> lo que corresponde a lo que está escrito
+    /// <b>ahora</b>: la lista completa por fecha, o las reuniones que mencionan
+    /// la búsqueda, por relevancia y con su fragmento.
+    ///
+    /// La búsqueda <b>filtra y anota</b> las mismas filas en vez de reemplazarlas
+    /// por otro tipo — ver <see cref="SessionListItem.Snippet"/>.
+    ///
+    /// No lanza. Es la ruta que el usuario dispara más veces en esta página, y
+    /// un fallo de la base acá tiene que quedar en un aviso, igual que en
+    /// <see cref="RefreshAsync"/>.
+    /// </summary>
+    private async Task ApplySearchAsync(int version, long? sessionToKeepSelected)
+    {
+        string query = SearchText.Trim();
+
+        if (query.Length == 0)
+        {
+            ShowSessions(_allSessions, snippets: null, sessionToKeepSelected);
+            SearchSummary = null;
+            return;
+        }
+
+        IReadOnlyList<TranscriptSearchHit> hits;
+        try
+        {
+            // Uno de más, para poder decir que hay más en vez de recortar callado.
+            // La consulta va cruda: sanearla es trabajo del store (ToFts5Query),
+            // y armarla acá "para agregarle algo" es como se pierde esa garantía.
+            hits = await _historyStore.SearchTranscriptsAsync(query, SearchLimit + 1);
+        }
+        catch (Exception exception)
+        {
+            if (version != _searchVersion) return;
+
+            App.LogStartupFailure("HistoryViewModel.Search", exception);
+            ShowSessions(_allSessions, snippets: null, sessionToKeepSelected);
+            SearchSummary = "No se pudo buscar en las transcripciones. Se muestra la lista completa, sin filtrar.";
+            ErrorDetails = exception.Message;
+            return;
+        }
+
+        // Mientras se consultaba, el usuario pudo seguir escribiendo.
+        if (version != _searchVersion) return;
+
+        bool truncated = hits.Count > SearchLimit;
+        int outsideLoadedPage = 0;
+        var snippets = new Dictionary<long, string>();
+        var matches = new List<SessionListItem>();
+        foreach (TranscriptSearchHit hit in hits.Take(SearchLimit))
+        {
+            // Una reunión fuera de la página cargada (PageSize) no tiene fila que
+            // anotar. Con el corpus de hoy no ocurre; si ocurre, se dice.
+            SessionListItem? session = _allSessions.FirstOrDefault(item => item.SessionId == hit.SessionId);
+            if (session is null)
+            {
+                outsideLoadedPage++;
+                continue;
+            }
+
+            snippets[hit.SessionId] = hit.Snippet;
+            matches.Add(session);
+        }
+
+        ShowSessions(matches, snippets, sessionToKeepSelected);
+        SearchSummary = DescribeSearch(query, matches.Count, truncated, outsideLoadedPage);
+    }
+
+    private void ShowSessions(
+        IReadOnlyList<SessionListItem> visible,
+        IReadOnlyDictionary<long, string>? snippets,
+        long? sessionToKeepSelected)
+    {
+        foreach (SessionListItem session in _allSessions)
+        {
+            session.Snippet = snippets is not null && snippets.TryGetValue(session.SessionId, out string? snippet)
+                ? snippet
+                : null;
+        }
+
+        // Si la lista visible no cambia, no se toca: vaciar la colección le
+        // suelta la selección al ListView, y eso recarga el detalle y parpadea.
+        if (!Sessions.SequenceEqual(visible))
+        {
+            Sessions.Clear();
+            foreach (SessionListItem session in visible) Sessions.Add(session);
+        }
+
+        // La reunión abierta se conserva si sigue a la vista. Si la búsqueda la
+        // dejó fuera, el detalle se cierra: dejarlo abierto mostraría una
+        // reunión que no está en la lista de al lado.
+        SelectedSession = sessionToKeepSelected is null
+            ? null
+            : Sessions.FirstOrDefault(session => session.SessionId == sessionToKeepSelected);
+
+        OnPropertyChanged(nameof(IsEmpty));
+    }
+
+    /// <summary>
+    /// La búsqueda es por comienzo de palabra, sin distinguir acentos, y varias
+    /// palabras tienen que aparecer todas. Es lo que hace <c>ToFts5Query</c> para
+    /// que la caja nunca lance; los textos de acá no prometen otra cosa.
+    /// </summary>
+    private string DescribeSearch(string query, int shown, bool truncated, int outsideLoadedPage)
+    {
+        var parts = new List<string>
+        {
+            shown switch
+            {
+                0 => $"Ninguna transcripción menciona «{query}».",
+                1 => $"1 reunión menciona «{query}».",
+                _ => $"{shown} reuniones mencionan «{query}», ordenadas por relevancia y no por fecha."
+            }
+        };
+
+        if (truncated) parts.Add($"Hay más: se muestran las primeras {SearchLimit}.");
+
+        if (outsideLoadedPage > 0)
+        {
+            parts.Add($"{outsideLoadedPage} coincidencia(s) más son de reuniones anteriores a las {PageSize} cargadas.");
+        }
+
+        int withoutTranscript = _allSessions.Count(session => !session.HasTranscript);
+        if (withoutTranscript > 0)
+        {
+            parts.Add(withoutTranscript == 1
+                ? $"1 de tus {_allSessions.Count} reuniones no tiene transcripción y no se puede buscar."
+                : $"{withoutTranscript} de tus {_allSessions.Count} reuniones no tienen transcripción y no se pueden buscar.");
+        }
+
+        return string.Join(" ", parts);
     }
 
     /// <summary>
@@ -370,6 +580,11 @@ public partial class HistoryViewModel : ObservableObject
                 : $"{storedTranscript.Text.Length:N0} caracteres · {storedTranscript.Provider ?? "proveedor desconocido"} · " +
                   $"{storedTranscript.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture)}";
 
+            // Se vacía acá y no sólo al cambiar de selección: re-generar llama a
+            // esta carga dos veces seguidas para la misma reunión (una por la
+            // selección que restaura el refresco, otra explícita), y sin esto
+            // cada reporte saldría duplicado en la lista.
+            Reports.Clear();
             foreach (ReportRecord report in reports) Reports.Add(new ReportListItem(report));
             SelectedReport = Reports.FirstOrDefault();
         }

@@ -84,6 +84,14 @@ public sealed class MeetingPipeline : IMeetingPipeline
     private readonly string _audioOutputDirectory;
     private readonly IMeetingHistoryStore? _historyStore;
     private readonly Action<string, Exception>? _onHistoryFailure;
+    private readonly ITranscriptionCostEstimator? _transcriptionCostEstimator;
+
+    /// <summary>
+    /// Con qué nombre queda registrado el proveedor de transcripción, y bajo qué
+    /// nombre se busca su precio. Una sola constante para que no puedan
+    /// discrepar: si lo hicieran, el costo quedaría en null sin que nada falle.
+    /// </summary>
+    public const string TranscriptionProviderName = "Deepgram";
 
     /// <summary>
     /// Id de la sesión en curso. Es estado mutable, igual que ya lo es la
@@ -105,7 +113,8 @@ public sealed class MeetingPipeline : IMeetingPipeline
         IReportStorage reportStorage,
         string audioOutputDirectory,
         IMeetingHistoryStore? historyStore = null,
-        Action<string, Exception>? onHistoryFailure = null)
+        Action<string, Exception>? onHistoryFailure = null,
+        ITranscriptionCostEstimator? transcriptionCostEstimator = null)
     {
         _audioCaptureService = audioCaptureService;
         _transcriptionClient = transcriptionClient;
@@ -118,6 +127,9 @@ public sealed class MeetingPipeline : IMeetingPipeline
         // Delegado en vez de una llamada directa a App.LogStartupFailure porque
         // Core no puede referenciar App. Lo inyecta quien compone.
         _onHistoryFailure = onHistoryFailure;
+        // Opcional: sin estimador el costo de transcripción queda en null, que
+        // es lo mismo que pasa cuando el estimador no tiene precio configurado.
+        _transcriptionCostEstimator = transcriptionCostEstimator;
     }
 
     public bool IsRecording => _audioCaptureService.IsCapturing;
@@ -284,18 +296,18 @@ public sealed class MeetingPipeline : IMeetingPipeline
         // cadena que no se puede regenerar sin volver a pagarle a Deepgram, así
         // que no puede depender de que la extracción con el LLM salga bien.
         //
-        // CostUsd va en null porque hoy nadie calcula el costo de transcripción:
-        // ICostEstimator sólo cubre el LLM. Preferible null a un cero que
-        // parezca medido.
+        // CostUsd sale de los minutos de audio por el precio configurado. Si no
+        // hay precio queda en null: preferible a un cero que parezca medido.
         await RecordHistoryAsync(
             "SaveTranscript",
             store => store.SaveTranscriptAsync(
                 new TranscriptRecord(
                     _currentSessionId!.Value,
                     transcription.Transcript,
-                    Provider: "Deepgram",
+                    Provider: TranscriptionProviderName,
                     Model: null,
-                    CostUsd: null,
+                    CostUsd: _transcriptionCostEstimator?.EstimateTranscriptionCostUsd(
+                        TranscriptionProviderName, transcription.AudioDuration),
                     CreatedAtUtc: DateTimeOffset.UtcNow),
                 cancellationToken),
             requiresSession: true);

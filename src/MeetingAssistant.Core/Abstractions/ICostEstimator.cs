@@ -9,3 +9,17 @@ public interface ICostEstimator
 {
     decimal EstimateCostUsd(string provider, string model, int inputTokens, int outputTokens);
 }
+
+/// <summary>
+/// Estima el costo en USD de transcribir un audio, que se cobra por minuto y no
+/// por token. Es una interfaz aparte de <see cref="ICostEstimator"/> porque la
+/// respuesta tiene otra forma: <b>null cuando no hay precio configurado</b>.
+///
+/// <see cref="ICostEstimator"/> devuelve 0 en ese caso para no tumbar la
+/// extracción, y ese cero después no se distingue de un costo real de cero. Acá
+/// no hay nada que tumbar, así que lo desconocido se devuelve como desconocido.
+/// </summary>
+public interface ITranscriptionCostEstimator
+{
+    decimal? EstimateTranscriptionCostUsd(string provider, TimeSpan audioDuration);
+}

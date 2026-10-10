@@ -493,17 +493,132 @@ las interfaces de Core no cambiarían.
    en la sesión correcta y el `.md` en el vault sin pisar el anterior. Sigue
    pendiente, de paso, el **botón Guardar de `SettingsPage`** del paso 5, por la
    misma razón (requiere GUI).
-7. Búsqueda full-text sobre transcripts (FTS5). **Brief escrito:**
-   `codex-brief-F5-paso7.md`. El motor ya está hecho y probado — el trabajo es la
-   interfaz, y la trampa es que `TranscriptSearchHit` no tiene la misma forma que
-   la fila de la lista.
+7. ~~Búsqueda full-text sobre transcripts (FTS5).~~ **✅ HECHO 2026-10-09.**
+   Brief: `codex-brief-F5-paso7.md`. La parte de pantalla la verificó **el
+   usuario**, no el agente — ver abajo.
+
+   Caja de búsqueda en `HistoryPage`. La búsqueda **filtra y anota** la lista
+   existente en vez de reemplazarla: `SessionListItem` sigue siendo el único tipo
+   de fila y gana un `Snippet` opcional, así que el detalle y la re-extracción
+   siguen colgando de `SelectedSession` sin tocarse. El SQL de búsqueda y
+   `ToFts5Query` **no se tocaron**; la consulta del usuario llega cruda al store.
+
+   Decisiones tomadas a propósito:
+   - El fragmento se muestra **tal cual** lo devuelve `snippet()`, con el término
+     entre corchetes. Sin resaltado real: no hay nada que interpretar y un
+     corchete propio del transcript no rompe nada.
+   - *Debounce* de 250 ms y un número de versión por consulta: un resultado viejo
+     que vuelve tarde se descarta.
+   - El mensaje bajo la caja dice cuántas reuniones salieron, que el orden pasó a
+     ser por relevancia, si se recortó en 50, y **cuántas reuniones no tienen
+     transcripción y por eso no pueden aparecer**. El estado "sin resultados" es
+     ese mensaje; el panel de "todavía no hay reuniones" ahora mira la lista
+     completa y no la filtrada.
+   - Si la búsqueda deja fuera la reunión abierta, el detalle se cierra.
+   - Un fallo de la base al buscar se registra, deja un aviso y muestra la lista
+     completa sin filtrar.
+
+   **Un defecto encontrado de paso, en el código del paso 6:** re-generar un
+   reporte cargaba el detalle dos veces seguidas y `LoadSessionDetailAsync`
+   agregaba a `Reports` sin vaciarla, así que cada reporte habría salido
+   **duplicado** en la lista tras pulsar "Generar reporte nuevo". Deducido leyendo
+   el código, no visto en pantalla (ese botón sigue sin pulsarse). Corregido
+   vaciando la colección antes de llenarla.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores; `Core.csproj` con 0 `PackageReference`.
+   - `--verify-db-selftest` extendido de 29 a **43 comprobaciones, todas en
+     verde**: varias sesiones con sólo las que corresponden y en orden de
+     relevancia, una sesión sin transcript que nunca aparece, consulta vacía o de
+     espacios que vuelve vacía **sin abrir la base**, los corchetes del fragmento,
+     prefijo sí / no-prefijo no, AND entre palabras, el límite, y que el store
+     **sí lanza** con la base rota (quien no puede lanzar es la página).
+   - `--verify-render`, `--verify-settings-config` y `--verify-reextraction`
+     siguen en verde.
+
+   **En pantalla: verificado por el usuario, no por el agente.**
+   `dotnet run --project src/MeetingAssistant.App` falla desde la sesión del
+   agente: una directiva de Control de aplicaciones de Windows bloquea
+   `winapp.exe` (la herramienta que re-registra el layout `AppX\`). No se buscó
+   rodear el bloqueo. El usuario lanzó la app y reportó que pasan las cuatro
+   comprobaciones que se le dejaron: una palabra que sí se dijo aparece con su
+   fragmento y abre el detalle correcto; una que no se dijo da el mensaje de sin
+   resultados; borrar la caja devuelve la lista completa; y re-extraer desde un
+   resultado de búsqueda funciona. Para eso grabó cuatro reuniones más: la base
+   quedó con 5 sesiones, 5 transcripts y 5 reportes. De paso eso cierra el
+   pendiente manual del botón **"Generar reporte nuevo"** del paso 6.
+
+   **Lo que sigue sin verse:** el aviso de la página ante una base rota. No
+   estaba en la lista que se le pasó al usuario. Por debajo está cubierto: el
+   store lanza y `HistoryViewModel` lo atrapa con el mismo patrón que
+   `RefreshAsync`.
 8. Vista de costo acumulado y comparación entre versiones de prompt. Es el
-   primer entregable que le paga a Fase 4, y **cierra la fase**. **Brief
-   escrito:** `codex-brief-F5-paso8.md`, que documenta dos huecos medidos en el
-   código y que hay que resolver o declarar: el costo de transcripción es
-   siempre `null` (nadie calcula lo de Deepgram), y un precio que falta en
-   configuración produce un **cero silencioso** indistinguible de un costo real
-   de cero.
+   primer entregable que le paga a Fase 4, y **cierra la fase**. Brief:
+   `codex-brief-F5-paso8.md`. **CONSTRUIDO 2026-10-09, SIN VERIFICAR EN
+   PANTALLA — ni el paso ni la fase están cerrados.**
+
+   Página nueva **Costos** (cuarto item del `NavigationView`), con
+   `CostViewModel`. Sin librería de gráficos: dos líneas de total y una lista
+   por prompt y versión.
+
+   **Las tres decisiones que pedía el brief:**
+
+   - **Costo de transcripción: se calcula (vía a), con precio de configuración.**
+     Clave nueva `Pricing:Deepgram:PerMinute`, en dólares por minuto.
+     `ConfigPricingCostEstimator` implementa una interfaz nueva de Core,
+     `ITranscriptionCostEstimator`, que devuelve **null** —no 0— cuando no hay
+     precio. `MeetingPipeline` la recibe como dependencia opcional y guarda
+     minutos de audio por precio en `transcript.cost_micro_usd`. **No hay ningún
+     precio de Deepgram en el código ni en los archivos de ejemplo**: el ejemplo
+     trae `"PerMinute": 0`, y el 0 se trata como "sin precio". Lo pone el
+     usuario según su plan, por ejemplo con
+     `dotnet run --project src/MeetingAssistant.Harness -- --set-setting Pricing:Deepgram:PerMinute <precio>`.
+     Mientras falte, la página lo dice y muestra la transcripción como
+     **desconocida**. Las transcripciones ya guardadas **no se recalculan**.
+   - **Ceros por precio faltante: el estimador no se tocó, se cuentan.** Sigue
+     devolviendo 0 para no tumbar la extracción. La base detecta después "tokens
+     > 0 y costo = 0" y la página muestra cuántos reportes son, en el total y en
+     cada fila de prompt.
+   - **Estimado, no facturado.** La página se titula "Costos estimados" y dice
+     que no se comparó con ninguna factura. Comparar contra la factura real sigue
+     siendo trabajo manual: backlog de Fase 4.
+
+   **La inconsistencia que anotaba el brief quedó resuelta en el modelo:**
+   `CostSummary` ahora separa `LlmCostUsd` y `TranscriptionCostUsd`, y la
+   página dice que la tabla por prompt es sólo LLM. El promedio por reunión
+   divide por las reuniones **con reporte**, no por todas las sesiones, y dice
+   por cuántas.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores; `Core.csproj` con 0 `PackageReference`.
+     Sin cambios de esquema: sigue en v1.
+   - `--verify-db-selftest` pasó de 43 a **62 comprobaciones, todas en verde**.
+     Lo nuevo: siete reportes de tres prompts y dos versiones del mismo, la suma
+     en micro-dólares exacta con varios sumandos, un costo null conviviendo con
+     los demás, el reporte con tokens y costo 0, el promedio de tokens con un
+     null en el grupo, la tabla por prompt sumando igual que la línea de LLM, una
+     base vacía, y el estimador de transcripción (sin precio da null, el 0 del
+     ejemplo también, con precio da minutos por precio).
+   - `--verify-reextraction` (18/18) comprueba además que el pipeline guarda el
+     costo de transcripción cuando hay precio. `--verify-render` y
+     `--verify-settings-config` siguen en verde.
+   - `--verify-db` gana una sección de costos en micro-dólares crudos, con SQL
+     propio y sin pasar por el store, para tener contra qué comparar la pantalla.
+
+   **Lo que dice la base real de esta máquina hoy, medido con `--verify-db`:**
+   5 reportes (2 de `assignment-meeting` v1, 3 de `feature-handoff` v1), **los
+   5 con tokens y costo 0**, y 5 transcripts sin costo. O sea: el modelo que se
+   está usando acá **no tiene precio en la sección Pricing**, y el total que va a
+   mostrar la página es US$0.000000 con los dos avisos. Es el comportamiento
+   correcto, pero no es un total: hasta que se configuren los dos precios, la
+   página sólo cuenta reportes.
+
+   **Lo que NO se verificó, dicho explícitamente: nada de esto se vio en
+   pantalla.** Mismo bloqueo que en el paso 7. Queda para el usuario: que la
+   página abre y sus números son los de `--verify-db`; que los avisos aparecen;
+   que con una base rota avisa en vez de caerse; y, después de configurar
+   `Pricing:Deepgram:PerMinute` y grabar una reunión, que esa transcripción trae
+   costo.
 
 ### Pendiente de confirmación manual — sólo lo puede cerrar el usuario
 
@@ -621,19 +736,93 @@ mostrar.
   salvedad de que la base real todavía no tiene ningún reporte guardado: lo que
   se vio en pantalla fue la lista, el detalle y el transcript. El renderizado de
   un reporte se ejercita en cuanto exista uno.
-- Puedes buscar una palabra que se dijo en una reunión y encontrarla.
+- ~~Puedes buscar una palabra que se dijo en una reunión y encontrarla.~~
+  **Cumplido (paso 7, 2026-10-09)**, verificado en pantalla por el usuario sobre
+  una base con 5 transcripts.
 - ~~Puedes tomar un transcript viejo y volver a extraerlo con otro prompt.~~
   **Construido y probado en el paso 6**, con 18/18 en `--verify-reextraction`,
   incluida la atribucion de sesion. Falta el clic real: es una llamada al LLM
   que cobra y escribe en el vault, y se dejo para el usuario. Ver
   *Pendiente de confirmacion manual*, arriba.
-- Puedes ver cuánto llevas gastado, real y acumulado.
+- Puedes ver cuánto llevas gastado, real y acumulado. **Construido en el paso 8,
+  no cumplido todavía.** La página existe y suma bien (62/62 en el autotest),
+  pero falta verla en pantalla, y sobre todo: es costo **estimado**, no real, y
+  en esta máquina no hay precio configurado ni para el modelo de LLM en uso ni
+  para Deepgram, así que hoy el número que mostraría es cero con avisos.
 - ~~Las API keys ya no están en texto plano en ningún lado.~~ **Cumplido para el
   archivo editable (paso 5, 2026-08-28):** las tres claves del usuario están
   cifradas con DPAPI en `meetings.db` y el `appsettings.json` de su perfil ya no
   existe. Queda **una salvedad, no un pendiente del paso**: el `appsettings.json`
   *empaquetado* sigue con credenciales en claro dentro del `.msix` de sólo
   lectura — es la capa de fábrica, y vaciarla es una decisión aparte.
+
+---
+
+## Fase 6 — Persistencia en la nube
+
+**Decidida el 2026-10-09.** Nada construido todavía. Depende de que Fase 5 cierre
+(falta ver en pantalla el paso 8).
+
+**Objetivo:** que el historial, el audio crudo y los reportes dejen de vivir sólo
+en un archivo de una máquina. Hoy `meetings.db` no tiene respaldo y cada máquina
+tiene su propia base.
+
+### Decisiones tomadas (2026-10-09)
+
+| Decisión | Elegido | Nota |
+|---|---|---|
+| Base de datos | **Postgres en Neon** | Sólo hace falta Postgres; el almacenamiento va a Azure, así que lo demás de Supabase no se usaría |
+| Escritura | **Directo a Postgres**, sin SQLite local primero ni sincronización | La app ya necesita red para Deepgram y el LLM. Riesgo asumido: una caída de Postgres deja esa reunión fuera del historial |
+| SQLite | **Se conserva como proveedor seleccionable** (`Database:Provider = Sqlite \| Postgres`) | Los autotests siguen corriendo offline y gratis. No se sincroniza nada entre los dos |
+| Audio | **WAV crudo, sin comprimir**, a Azure Blob Storage, subido en segundo plano | Unos 320 MB por hora de reunión. Reintento, estado por sesión y aviso si falla |
+| Reportes | **En los dos lados**: el Markdown en la base y el `.md` en Blob | El vault de Obsidian sigue escribiéndose igual |
+| Configuración no secreta | **Primero la base, `appsettings.json` como respaldo**, conmutable (`Configuration:Source = Local \| Database`) | El conmutador y la cadena de conexión son locales: no se puede leer de la nube dónde está la nube |
+| Secretos | **Se quedan en la configuración local** | API keys, cadena de conexión de Neon y credencial de Storage. Nunca se escriben en Postgres: DPAPI ata el cifrado a un usuario y una máquina |
+| Azure Key Vault | **Descartado por ahora, opcional para más adelante** | Sacaría los secretos del disco y los compartiría entre máquinas |
+| Confidencialidad de los transcripts en la nube | Fuera del plan, por decisión del usuario | |
+
+### Lo que no cambia
+
+- `Core` sigue sin referencias a proveedores: `Npgsql` y `Azure.Storage.Blobs`
+  van en Infrastructure. `IMeetingHistoryStore` ya es la costura; el audio
+  necesita una interfaz nueva en Core.
+- Las variables de entorno siguen arriba de todo como vía de escape.
+- Un fallo de la base o de la subida no puede tumbar una grabación ni el arranque.
+  La carga de configuración desde Postgres lleva timeout corto y cae a lo local
+  sin lanzar.
+- Qué clave es secreta se sigue decidiendo sólo en `SettingKeyPolicy`.
+
+### Pasos
+
+1. **Audio a Azure Blob.** Interfaz `IAudioArchive` en Core, implementación con
+   Blob en Infrastructure. Subida en segundo plano después de transcribir, por
+   bloques y con reintento. Estado por sesión (pendiente, subido, fallido) y toast
+   cuando una subida falla del todo. Los `.md` de los reportes suben por el mismo
+   camino.
+2. **Store de Postgres** detrás de `IMeetingHistoryStore`, elegido por
+   `Database:Provider`. La búsqueda se rehace con full-text de Postgres
+   (`tsvector` + `unaccent` + prefijo) hasta reproducir lo que fijan los
+   autotests: sin acentos, por prefijo, AND entre palabras.
+3. **Configuración no secreta desde Postgres**, elegida por
+   `Configuration:Source`, con respaldo local.
+4. **Migración única** de las filas, los WAV y los reportes existentes,
+   comprobada por conteo de filas.
+5. **Retención local de WAV** una vez confirmada la subida. Cierra la deuda de
+   `meeting-output\` que viene de Fase 3.
+
+### Riesgos, anotados antes de empezar
+
+- **Una caída sólo de Postgres pierde el registro de esa reunión.** El `.md`
+  llega al vault y el WAV queda en disco, pero las filas no se reintentan solas.
+  Mitigación barata si llega a doler: reintento en la escritura y volcar la
+  escritura fallida a un archivo local para reimportar.
+- **Arranque en frío de Neon.** La primera consulta tras un rato sin uso tarda
+  más; Historial y Costos lo van a notar.
+- **Los autotests de Postgres necesitan una base.** Los de SQLite siguen offline;
+  los del store nuevo necesitan una rama de Neon o un Postgres local.
+- **Secretos en texto plano en `appsettings.json`.** Es la consecuencia de
+  descartar Key Vault: la cadena de conexión de Neon y la credencial de Storage
+  se suman a las API keys que ya están ahí.
 
 ---
 
