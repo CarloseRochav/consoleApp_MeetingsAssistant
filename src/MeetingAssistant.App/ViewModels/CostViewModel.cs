@@ -140,7 +140,7 @@ public partial class CostViewModel : ObservableObject
             PromptRows.Clear();
             StatusMessage = "No se pudieron leer los costos. El resto de la app sigue funcionando: " +
                 "grabar, transcribir y guardar en el vault no dependen de la base.";
-            ErrorDetails = exception.Message;
+            ErrorDetails = exception.ToString();
         }
         finally
         {

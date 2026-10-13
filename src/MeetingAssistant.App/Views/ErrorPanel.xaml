@@ -1,0 +1,60 @@
+<UserControl
+    x:Class="MeetingAssistant.App.Views.ErrorPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!--
+        Cómo se muestra un error en toda la app. Antes era un TextBlock rojo con
+        el ToString() de la excepción: la traza entera en el mismo tamaño que el
+        mensaje, sin poder seleccionarla. Acá el mensaje va arriba, legible; la
+        traza queda plegada; y un botón copia todo al portapapeles.
+
+        Cerrado mientras no haya error: no ocupa lugar.
+    -->
+    <InfoBar x:Name="Bar"
+             Severity="Error"
+             IsOpen="False"
+             IsClosable="True"
+             Title="Ocurrió un error">
+        <InfoBar.Content>
+            <StackPanel Spacing="10" Margin="0,0,16,14">
+                <TextBlock x:Name="SummaryText"
+                           TextWrapping="Wrap"
+                           IsTextSelectionEnabled="True" />
+
+                <Expander x:Name="DetailsExpander"
+                          Header="Detalle técnico"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch">
+                    <TextBox x:Name="DetailsBox"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="NoWrap"
+                             FontFamily="Consolas"
+                             FontSize="12"
+                             MaxHeight="240"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             AutomationProperties.Name="Detalle técnico del error" />
+                </Expander>
+
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="CopyButton"
+                            Click="CopyButton_Click"
+                            AutomationProperties.Name="Copiar el error al portapapeles">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <SymbolIcon Symbol="Copy" />
+                            <TextBlock Text="Copiar" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock x:Name="CopiedText"
+                               VerticalAlignment="Center"
+                               Opacity="0.8" />
+                </StackPanel>
+            </StackPanel>
+        </InfoBar.Content>
+    </InfoBar>
+</UserControl>

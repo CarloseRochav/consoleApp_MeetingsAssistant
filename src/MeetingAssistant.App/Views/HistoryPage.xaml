@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:views="using:MeetingAssistant.App.Views"
     xmlns:vm="using:MeetingAssistant.App.ViewModels"
     mc:Ignorable="d">
 
@@ -43,6 +44,12 @@
                 <ProgressBar x:Name="LoadingBar"
                              IsIndeterminate="True"
                              Visibility="Collapsed" />
+                <!--
+                    Acá y no en la cabecera del detalle: ese panel está colapsado
+                    hasta que se elige una reunión, así que un fallo al cargar la
+                    lista misma no se veía en ningún lado.
+                -->
+                <views:ErrorPanel Details="{Binding ErrorDetails}" />
 
                 <!--
                     Busca en las transcripciones, no en los reportes: sólo el
@@ -146,9 +153,6 @@
                     <TextBlock Text="{Binding SelectedSession.Subtitle}"
                                TextWrapping="Wrap"
                                Opacity="0.8" />
-                    <TextBlock Text="{Binding ErrorDetails}"
-                               TextWrapping="Wrap"
-                               Foreground="DarkRed" />
                 </StackPanel>
 
                 <!-- Transcripción: acotada, con su propio scroll -->

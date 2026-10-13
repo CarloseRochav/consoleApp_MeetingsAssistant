@@ -148,6 +148,7 @@ public sealed partial class SettingsPage : Page
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         SaveButton.IsEnabled = false;
+        SaveErrorPanel.Details = null;
         try
         {
             var settings = new UserSettings
@@ -170,7 +171,8 @@ public sealed partial class SettingsPage : Page
         catch (Exception exception)
         {
             App.LogStartupFailure("SettingsPage.Save", exception);
-            SaveStatusText.Text = $"No se pudo guardar: {exception.Message}";
+            SaveStatusText.Text = "No se pudo guardar.";
+            SaveErrorPanel.Details = exception.ToString();
         }
         finally
         {

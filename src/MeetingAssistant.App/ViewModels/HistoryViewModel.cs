@@ -406,7 +406,7 @@ public partial class HistoryViewModel : ObservableObject
             SearchSummary = null;
             StatusMessage = "No se pudo leer el historial. El resto de la app sigue funcionando: " +
                 "grabar, transcribir y guardar en el vault no dependen de la base.";
-            ErrorDetails = exception.Message;
+            ErrorDetails = exception.ToString();
         }
         finally
         {
@@ -465,7 +465,7 @@ public partial class HistoryViewModel : ObservableObject
             App.LogStartupFailure("HistoryViewModel.Search", exception);
             ShowSessions(_allSessions, snippets: null, sessionToKeepSelected);
             SearchSummary = "No se pudo buscar en las transcripciones. Se muestra la lista completa, sin filtrar.";
-            ErrorDetails = exception.Message;
+            ErrorDetails = exception.ToString();
             return;
         }
 
@@ -607,7 +607,7 @@ public partial class HistoryViewModel : ObservableObject
         {
             App.LogStartupFailure("HistoryViewModel.LoadSessionDetail", exception);
             TranscriptDetails = "No se pudo leer el detalle de esta reunión.";
-            ErrorDetails = exception.Message;
+            ErrorDetails = exception.ToString();
         }
     }
 
