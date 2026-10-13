@@ -137,7 +137,10 @@ retención, y la desinstalación **no** borra `%LOCALAPPDATA%\MeetingAssistant\`
 
 ---
 
-## Fase 5 — Persistencia local, historial y búsqueda
+## Fase 5 — Persistencia local, historial y búsqueda ✅ COMPLETA
+
+**Cerrada el 2026-10-12**, cuando el usuario confirmó en pantalla la página de
+costos del paso 8. La salvedad que queda está en el criterio de costos, abajo.
 
 **Decidida el 2026-08-27.** Es un cambio arquitectónico, no pulido de UI.
 
@@ -554,8 +557,8 @@ las interfaces de Core no cambiarían.
    `RefreshAsync`.
 8. Vista de costo acumulado y comparación entre versiones de prompt. Es el
    primer entregable que le paga a Fase 4, y **cierra la fase**. Brief:
-   `codex-brief-F5-paso8.md`. **CONSTRUIDO 2026-10-09, SIN VERIFICAR EN
-   PANTALLA — ni el paso ni la fase están cerrados.**
+   `codex-brief-F5-paso8.md`. **✅ HECHO 2026-10-12.** Construido el
+   2026-10-09; el usuario lo revisó en pantalla y lo dio por bueno.
 
    Página nueva **Costos** (cuarto item del `NavigationView`), con
    `CostViewModel`. Sin librería de gráficos: dos líneas de total y una lista
@@ -613,12 +616,14 @@ las interfaces de Core no cambiarían.
    correcto, pero no es un total: hasta que se configuren los dos precios, la
    página sólo cuenta reportes.
 
-   **Lo que NO se verificó, dicho explícitamente: nada de esto se vio en
-   pantalla.** Mismo bloqueo que en el paso 7. Queda para el usuario: que la
-   página abre y sus números son los de `--verify-db`; que los avisos aparecen;
-   que con una base rota avisa en vez de caerse; y, después de configurar
-   `Pricing:Deepgram:PerMinute` y grabar una reunión, que esa transcripción trae
-   costo.
+   **En pantalla (2026-10-12):** el agente no puede lanzar la app; el usuario
+   revisó la página y la dio por buena. El agente no comparó los números de la
+   pantalla contra la base, ni vio el aviso ante una base rota.
+
+   **Decisión del usuario (2026-10-12): el precio de Deepgram queda sin
+   configurar, a propósito.** La transcripción se sigue mostrando como
+   "desconocido" y el total como incompleto. No es un pendiente: la página está
+   diciendo exactamente lo que se sabe.
 
 ### Pendiente de confirmación manual — sólo lo puede cerrar el usuario
 
@@ -744,11 +749,11 @@ mostrar.
   incluida la atribucion de sesion. Falta el clic real: es una llamada al LLM
   que cobra y escribe en el vault, y se dejo para el usuario. Ver
   *Pendiente de confirmacion manual*, arriba.
-- Puedes ver cuánto llevas gastado, real y acumulado. **Construido en el paso 8,
-  no cumplido todavía.** La página existe y suma bien (62/62 en el autotest),
-  pero falta verla en pantalla, y sobre todo: es costo **estimado**, no real, y
-  en esta máquina no hay precio configurado ni para el modelo de LLM en uso ni
-  para Deepgram, así que hoy el número que mostraría es cero con avisos.
+- ~~Puedes ver cuánto llevas gastado, real y acumulado.~~ **Cumplido con
+  salvedad (paso 8, 2026-10-12).** Se ve el gasto **estimado** de LLM,
+  acumulado y por prompt. No es "real": nadie lo comparó contra una factura. Y
+  la transcripción no suma, porque el precio de Deepgram queda sin configurar
+  por decisión del usuario; la página lo dice en vez de mostrar un cero.
 - ~~Las API keys ya no están en texto plano en ningún lado.~~ **Cumplido para el
   archivo editable (paso 5, 2026-08-28):** las tres claves del usuario están
   cifradas con DPAPI en `meetings.db` y el `appsettings.json` de su perfil ya no
@@ -760,8 +765,9 @@ mostrar.
 
 ## Fase 6 — Persistencia en la nube
 
-**Decidida el 2026-10-09.** Paso 1 construido el mismo día; el resto, sin
-empezar. Fase 5 sigue sin cerrar formalmente (falta ver en pantalla el paso 8).
+**Decidida el 2026-10-09.** Al 2026-10-12: pasos 1, 2, 4 y 5 hechos; el paso 3
+(ajustes desde la nube) está construido y sin verificar en la app, así que la
+fase no se cierra todavía.
 
 **Objetivo:** que el historial, el audio crudo y los reportes dejen de vivir sólo
 en un archivo de una máquina. Hoy `meetings.db` no tiene respaldo y cada máquina
@@ -1010,6 +1016,10 @@ tiene su propia base.
    usa la app mientras `Database:Provider` esté en `Sqlite`. Lo que se grabe ahí
    después de hoy no está en Neon: volver a correr `--migrate-to-postgres --apply`
    lo lleva.
+
+   **Segunda corrida, 2026-10-12:** llevó la única reunión que se había grabado
+   en SQLite después de la primera (la del 2026-10-10, antes de conmutar), con su
+   transcript y su reporte. La comprobación volvió a no encontrar diferencias.
 5. **Retención local de WAV** una vez confirmada la subida. Cierra la deuda de
    `meeting-output\` que viene de Fase 3. **CONSTRUIDO 2026-10-12, configurado con
    30 días en esta máquina (elegido por el usuario).**
@@ -1049,10 +1059,15 @@ tiene su propia base.
    el primero recién va a cumplir el plazo a principios de noviembre de 2026
    (el más viejo registrado es del 2026-10-09).
 
-   **Lo que este paso NO limpia:** los audios sin subida registrada. En esta
-   máquina son 8 de los 17 WAV — los anteriores al historial, que el paso 4 subió
-   directo y sin fila. Están en Azure, pero la retención no tiene con qué
-   comprobarlo y los deja para siempre. Borrarlos es una decisión manual.
+   **Lo que este paso NO limpia:** los audios sin subida registrada — los
+   anteriores al historial, que el paso 4 subió directo y sin fila. La retención
+   no tiene con qué comprobarlos y los deja para siempre.
+
+   **Limpieza manual, 2026-10-12, a pedido del usuario:** eran 8 WAV (54,9 MB).
+   Con un script de una sola vez —no queda en el repo— se borró cada uno **sólo
+   después de comprobar que el blob existe en Azure y pesa lo mismo**; los 8
+   pasaron. Quedan 9 WAV en `meeting-output\`, todos con subida registrada, que
+   ahora sí maneja la retención.
 
 ### Riesgos, anotados antes de empezar
 
@@ -1067,6 +1082,10 @@ tiene su propia base.
 - **Secretos en texto plano en `appsettings.json`.** Es la consecuencia de
   descartar Key Vault: la cadena de conexión de Neon y la credencial de Storage
   se suman a las API keys que ya están ahí.
+- **La contraseña de Neon se pegó en el chat del agente (2026-10-10).** Riesgo
+  aceptado por el usuario el 2026-10-12; la rotación queda para otro momento.
+  Rotarla obliga a actualizar `Postgres:ConnectionString` en los dos
+  `appsettings.json` reales.
 
 ---
 
