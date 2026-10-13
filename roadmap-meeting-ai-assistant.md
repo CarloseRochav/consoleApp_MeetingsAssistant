@@ -763,11 +763,10 @@ mostrar.
 
 ---
 
-## Fase 6 — Persistencia en la nube
+## Fase 6 — Persistencia en la nube ✅ COMPLETA
 
-**Decidida el 2026-10-09.** Al 2026-10-12: pasos 1, 2, 4 y 5 hechos; el paso 3
-(ajustes desde la nube) está construido y sin verificar en la app, así que la
-fase no se cierra todavía.
+**Decidida el 2026-10-09, cerrada el 2026-10-12**, cuando el usuario confirmó en
+la app el último paso que faltaba (el 3, ajustes desde la nube).
 
 **Objetivo:** que el historial, el audio crudo y los reportes dejen de vivir sólo
 en un archivo de una máquina. Hoy `meetings.db` no tiene respaldo y cada máquina
@@ -921,10 +920,10 @@ tiene su propia base.
    **A tener presente desde la conmutación:** `--verify-db` sigue leyendo el
    SQLite local, que ya no es el historial que usa la app. Sus números van a ir
    quedando atrás respecto de lo que muestran Historial y Costos.
-3. **Configuración no secreta desde Postgres**, elegida por
-   `Configuration:Source`. **CONSTRUIDO 2026-10-10, SIN VERIFICAR EN LA APP REAL
-   — el paso no está cerrado.** Se hizo después del paso 4, por pedido del
-   usuario.
+3. ~~**Configuración no secreta desde Postgres**, elegida por
+   `Configuration:Source`.~~ **✅ HECHO 2026-10-12.** Construido el 2026-10-10,
+   después del paso 4 por pedido del usuario; el usuario lo activó y lo probó en
+   la app el 2026-10-12.
 
    **La pila pasa de cuatro capas a cinco**, de menor a mayor precedencia:
    empaquetado -> archivo de usuario (legado) -> SQLite local -> **nube** ->
@@ -966,12 +965,16 @@ tiene su propia base.
    - Dos comandos nuevos sobre los ajustes reales de la nube:
      `--set-cloud-setting <clave> [valor]` y `--list-cloud-settings`.
 
-   **Lo que NO se verificó, dicho explícitamente:**
-   - **Nada en la app real.** Con `Configuration:Source = Database`: el arranque,
-     cuánto se demora de verdad con Neon dormido, y el botón Guardar escribiendo
-     en los dos lados.
-   - **`UserSettingsService`** vive en el proyecto `App` y el harness no lo
-     alcanza: su escritura doble se leyó, no se ejecutó.
+   **En la app real (2026-10-12):** el usuario lo activó y reportó que funciona.
+   Lo que el agente midió después:
+   - el log de arranque dice "Ajustes: primero la nube (Postgres), después lo
+     local" en los dos arranques posteriores a activarlo, o sea que la nube
+     **contestó dentro del plazo**;
+   - el botón Guardar escribió en la nube: `--list-cloud-settings` muestra
+     `Llm:Provider`, `AzureFoundry:Endpoint` y `AzureFoundry:Deployment`, y
+     **ninguna credencial ni ruta local**, que es lo que la política permite.
+
+   **Lo que sigue sin medirse:** cuánto tarda el arranque con Neon dormido.
 
    **Lo que cuesta, para que no sorprenda:** con la nube activada el arranque
    **espera** a Neon, hasta el plazo. Es el precio de leer la configuración antes
