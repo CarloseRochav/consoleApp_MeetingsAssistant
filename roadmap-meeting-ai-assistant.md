@@ -852,9 +852,9 @@ tiene su propia base.
    conexión se escribió en los dos `appsettings.json` reales (ignorados por git),
    y la cuenta de Storage es compartida con otro proyecto (contenedor
    `devlog-notes`), que no se tocó.
-2. **Store de Postgres** detrás de `IMeetingHistoryStore`, elegido por
-   `Database:Provider`. **CONSTRUIDO 2026-10-10, SIN VERIFICAR EN LA APP REAL —
-   el paso no está cerrado.**
+2. ~~**Store de Postgres** detrás de `IMeetingHistoryStore`, elegido por
+   `Database:Provider`.~~ **✅ HECHO 2026-10-12.** Construido el 2026-10-10; el
+   usuario conmutó la app a Postgres el 2026-10-12 y confirmó que funciona.
 
    En Infrastructure, carpeta `Storage/Postgres`: `PostgresDatabase` (conexión
    y migraciones), `PostgresMeetingHistoryStore` y `PostgresArchiveUploadStore`.
@@ -907,17 +907,14 @@ tiene su propia base.
    no coincide. Verificado después: tras una corrida completa, `public` sigue
    vacío.
 
-   **Lo que NO se verificó, dicho explícitamente:**
-   - **Nada en la app real.** Con `Database:Provider = Postgres`: que la app
-     arranca, que una grabación deja sus filas en Neon, que Historial y Costos
-     leen de ahí, y cuánto tarda la primera apertura tras un rato sin uso.
-   - **El pipeline entero contra Postgres.** El contrato prueba los stores; el
-     pipeline sólo se probó de punta a punta sobre SQLite.
+   **En la app real (2026-10-12):** el agente no puede lanzarla, así que la
+   conmutó y la probó el usuario, que reportó que Postgres funciona. El agente
+   **no midió** qué probó exactamente ni cuánto tarda la primera apertura con
+   Neon dormido; queda como dicho por el usuario, no como medido.
 
-   **Estado del conmutador en esta máquina:** quedó en `Sqlite`, con la cadena de
-   conexión ya puesta en los dos `appsettings.json` reales. Desde el paso 4 el
-   esquema real de Neon ya tiene el historial, así que conmutar no deja nada
-   vacío.
+   **A tener presente desde la conmutación:** `--verify-db` sigue leyendo el
+   SQLite local, que ya no es el historial que usa la app. Sus números van a ir
+   quedando atrás respecto de lo que muestran Historial y Costos.
 3. **Configuración no secreta desde Postgres**, elegida por
    `Configuration:Source`. **CONSTRUIDO 2026-10-10, SIN VERIFICAR EN LA APP REAL
    — el paso no está cerrado.** Se hizo después del paso 4, por pedido del
