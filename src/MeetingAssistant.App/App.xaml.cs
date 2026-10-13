@@ -179,7 +179,37 @@ public partial class App : Application
             LogDiagnostic(archive.IsConfigured
                 ? "Archivo en la nube: configurado; se retoman las subidas pendientes."
                 : "Archivo en la nube: sin AzureStorage:ConnectionString, apagado.");
-            _ = Services.GetRequiredService<ArchiveUploadService>().ResumeUnfinishedAsync();
+            ArchiveUploadService uploads = Services.GetRequiredService<ArchiveUploadService>();
+            LocalAudioRetentionService retention = Services.GetRequiredService<LocalAudioRetentionService>();
+            double retentionDays = Services.GetRequiredService<IConfiguration>()
+                .GetValue<double?>("AzureStorage:LocalAudioRetentionDays") ?? 0;
+            LogDiagnostic(retentionDays > 0
+                ? $"Retención de audio local: {retentionDays:0.##} días."
+                : "Retención de audio local: apagada (AzureStorage:LocalAudioRetentionDays sin valor). No se borra nada.");
+
+            // Primero las subidas pendientes y después la retención, en ese
+            // orden y una vez por día: la app vive días en la bandeja. Nada de
+            // esto se espera ni puede lanzar hacia el arranque.
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await uploads.ResumeUnfinishedAsync();
+
+                    if (retentionDays > 0)
+                    {
+                        AudioRetentionResult result = await retention.RunAsync(TimeSpan.FromDays(retentionDays), apply: true);
+                        if (result.Deleted.Count > 0 || result.Kept.Count > 0)
+                        {
+                            LogDiagnostic(
+                                $"Retención de audio local: {result.Deleted.Count} borrados ({result.BytesFreed / 1048576.0:F1} MB); " +
+                                $"{result.Kept.Count} cumplieron el plazo y se conservaron por no poder confirmarse en la nube.");
+                        }
+                    }
+
+                    await Task.Delay(TimeSpan.FromHours(24));
+                }
+            });
         }
         catch (Exception exception)
         {
@@ -553,6 +583,13 @@ public partial class App : Application
         services.AddSingleton(provider => new ArchiveUploadService(
             provider.GetRequiredService<ICloudArchive>(),
             provider.GetRequiredService<IArchiveUploadStore>(),
+            LogStartupFailure));
+        // Fase 6, paso 5. Sólo mira MeetingOutputDirectory: un audio importado
+        // desde otra carpeta del usuario no se borra nunca.
+        services.AddSingleton(provider => new LocalAudioRetentionService(
+            provider.GetRequiredService<ICloudArchive>(),
+            provider.GetRequiredService<IArchiveUploadStore>(),
+            MeetingOutputDirectory,
             LogStartupFailure));
         services.AddSingleton<LocalRecordingApiServer>();
         services.AddTransient<RecordViewModel>();

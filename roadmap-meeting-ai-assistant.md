@@ -1003,15 +1003,56 @@ tiene su propia base.
      quedó pendiente.
    - **Una segunda simulación, después:** 0 por copiar, 6 que ya estaban.
 
-   **Lo que NO se verificó:** que la app, conmutada a Postgres, muestre ese
-   historial en pantalla. Es la misma verificación pendiente del paso 2.
+   **En pantalla:** el usuario conmutó la app a Postgres el 2026-10-12 y reportó
+   que funciona (ver paso 2).
 
    **El SQLite local no se borró ni se modificó.** Sigue siendo el historial que
    usa la app mientras `Database:Provider` esté en `Sqlite`. Lo que se grabe ahí
    después de hoy no está en Neon: volver a correr `--migrate-to-postgres --apply`
    lo lleva.
 5. **Retención local de WAV** una vez confirmada la subida. Cierra la deuda de
-   `meeting-output\` que viene de Fase 3.
+   `meeting-output\` que viene de Fase 3. **CONSTRUIDO 2026-10-12, configurado con
+   30 días en esta máquina (elegido por el usuario).**
+
+   `LocalAudioRetentionService` en Core. Es lo único de la app que **borra
+   archivos del usuario**, así que un WAV se borra sólo si se cumplen las cinco
+   condiciones, todas:
+   1. hay una subida registrada como terminada para ese archivo;
+   2. **el blob existe en ese momento y pesa lo mismo que el archivo local** — se
+      le pregunta a la nube al borrar, no se le cree a la fila;
+   3. el archivo está dentro de `meeting-output\`: un audio importado desde otra
+      carpeta del usuario no se toca nunca, aunque esté subido;
+   4. pasó el plazo desde su última modificación;
+   5. el plazo es mayor que cero.
+
+   Ante cualquier duda —red caída, tamaños distintos, blob ausente— el archivo
+   se queda y se anota el motivo. Los reportes no entran: sólo audio.
+
+   **Configuración:** `AzureStorage:LocalAudioRetentionDays`. Sin valor o en 0,
+   **no se borra nada**, que es como queda por defecto. Corre al arrancar,
+   después de retomar las subidas pendientes, y una vez por día mientras la app
+   siga abierta. Lo que hizo queda en el log.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores.
+   - **`--verify-retention`, nuevo: 17/17**, con nube falsa. Un caso por cada
+     condición, más: sin plazo, sin nube configurada, **nube inalcanzable (no
+     poder preguntar no cuenta como "está subido")**, base rota, simulación que
+     no borra, segunda pasada, y el plazo medido de verdad adelantando el reloj.
+   - **Simulación contra esta máquina y la nube real** (`--audio-retention <días>`,
+     que sin `--apply` no borra): con 30 días, 0 por borrar y 9 dentro del plazo;
+     con 1 día, 7 por borrar (53,5 MB), **los 7 con tamaño idéntico en Azure**.
+     Nada se borró.
+
+   **Lo que NO se verificó:** un borrado real, y la pasada automática dentro de
+   la app. Ningún WAV de esta máquina fue borrado por este paso, y con 30 días
+   el primero recién va a cumplir el plazo a principios de noviembre de 2026
+   (el más viejo registrado es del 2026-10-09).
+
+   **Lo que este paso NO limpia:** los audios sin subida registrada. En esta
+   máquina son 8 de los 17 WAV — los anteriores al historial, que el paso 4 subió
+   directo y sin fila. Están en Azure, pero la retención no tiene con qué
+   comprobarlo y los deja para siempre. Borrarlos es una decisión manual.
 
 ### Riesgos, anotados antes de empezar
 

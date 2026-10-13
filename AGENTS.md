@@ -56,7 +56,10 @@ the other way around.
   Azure Storage account, reads them back and deletes them. `--verify-postgres`
   runs one store contract against a temp SQLite file and against the configured
   Postgres, in a throwaway schema it drops afterwards; `--verify-cloud-settings`
-  does the same for the settings layer. `--verify-migration` is offline.
+  does the same for the settings layer. `--verify-migration` and
+  `--verify-retention` are offline. `--audio-retention <days>` reports which
+  local WAVs would be deleted, checking the real cloud; it deletes only with
+  `--apply`.
   `--migrate-to-postgres` only simulates unless `--apply` is passed;
   `--set-cloud-setting` and `--list-cloud-settings` touch the REAL cloud
   settings.

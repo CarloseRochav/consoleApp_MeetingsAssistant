@@ -38,6 +38,33 @@ public sealed class AzureBlobCloudArchive : ICloudArchive
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 
+    private string ContainerNameFor(ArchiveKind kind) => kind == ArchiveKind.Audio
+        ? _configuration["AzureStorage:AudioContainer"] ?? DefaultAudioContainer
+        : _configuration["AzureStorage:ReportsContainer"] ?? DefaultReportsContainer;
+
+    public async Task<long?> GetRemoteSizeAsync(
+        ArchiveKind kind,
+        string remoteName,
+        CancellationToken cancellationToken = default)
+    {
+        string connectionString = ConnectionString
+            ?? throw new InvalidOperationException("Falta AzureStorage:ConnectionString.");
+
+        var blob = new BlobClient(connectionString, ContainerNameFor(kind), remoteName);
+        try
+        {
+            BlobProperties properties = await blob.GetPropertiesAsync(cancellationToken: cancellationToken);
+            return properties.ContentLength;
+        }
+        catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+        {
+            // Sólo "no existe" es null. Cualquier otro fallo —red, credencial—
+            // se propaga: quien pregunta para decidir si borra una copia local
+            // no puede confundir "no pude preguntar" con "no está".
+            return null;
+        }
+    }
+
     public async Task<string> UploadAsync(
         ArchiveKind kind,
         string localPath,
@@ -47,9 +74,7 @@ public sealed class AzureBlobCloudArchive : ICloudArchive
         string connectionString = ConnectionString
             ?? throw new InvalidOperationException("Falta AzureStorage:ConnectionString.");
 
-        string containerName = kind == ArchiveKind.Audio
-            ? _configuration["AzureStorage:AudioContainer"] ?? DefaultAudioContainer
-            : _configuration["AzureStorage:ReportsContainer"] ?? DefaultReportsContainer;
+        string containerName = ContainerNameFor(kind);
 
         var container = new BlobContainerClient(connectionString, containerName);
         if (_ensuredContainers.TryAdd(containerName, true))

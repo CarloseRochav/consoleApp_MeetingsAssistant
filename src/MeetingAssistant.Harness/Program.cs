@@ -129,6 +129,32 @@ if (positional.Count >= 1 &&
     }
 }
 
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-retention", StringComparison.OrdinalIgnoreCase))
+{
+    return await RetentionCommands.VerifyAsync();
+}
+
+// Que WAV locales se borrarian con ese plazo, comprobando contra la nube de
+// verdad. Solo con --apply borra.
+if (positional.Count is 2 or 3 && string.Equals(positional[0], "--audio-retention", StringComparison.OrdinalIgnoreCase))
+{
+    if (!int.TryParse(positional[1], out int retentionDays) || retentionDays <= 0 ||
+        (positional.Count == 3 && !string.Equals(positional[2], "--apply", StringComparison.OrdinalIgnoreCase)))
+    {
+        Console.Error.WriteLine("Uso: --audio-retention <dias> [--apply]   (dias mayor que cero)");
+        return 1;
+    }
+
+    return await RetentionCommands.RunAsync(
+        new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+            .AddEnvironmentVariables()
+            .Build(),
+        retentionDays,
+        apply: positional.Count == 3);
+}
+
 if (positional.Count == 1 && string.Equals(positional[0], "--verify-migration", StringComparison.OrdinalIgnoreCase))
 {
     return await MigrationCommands.VerifyMigrationAsync();

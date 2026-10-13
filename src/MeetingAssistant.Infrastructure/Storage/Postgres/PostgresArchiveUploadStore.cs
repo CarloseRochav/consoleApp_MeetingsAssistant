@@ -111,6 +111,25 @@ public sealed class PostgresArchiveUploadStore : IArchiveUploadStore
         return results;
     }
 
+    /// <summary>Sólo las de esta máquina, por el mismo motivo que <see cref="ListUnfinishedAsync"/>.</summary>
+    public async Task<IReadOnlyList<ArchiveUpload>> ListUploadedAsync(
+        ArchiveKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        await using NpgsqlConnection connection = await _database.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            $"select {Columns} from cloud_upload where machine_name = @machine and state = 'uploaded' and kind = @kind order by id;",
+            connection);
+        command.Parameters.Add("machine", NpgsqlDbType.Text).Value = _machineName;
+        command.Parameters.Add("kind", NpgsqlDbType.Text).Value = ToText(kind);
+
+        var results = new List<ArchiveUpload>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) results.Add(Read(reader));
+
+        return results;
+    }
+
     private static ArchiveUpload Read(NpgsqlDataReader reader) => new(
         Id: reader.GetInt64(0),
         SessionId: reader.GetInt64(1),

@@ -96,6 +96,22 @@ public sealed class SqliteArchiveUploadStore : IArchiveUploadStore
         return results;
     }
 
+    public async Task<IReadOnlyList<ArchiveUpload>> ListUploadedAsync(
+        ArchiveKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = _connectionFactory.Open();
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"select {Columns} from cloud_upload where state = 'uploaded' and kind = $kind order by id;";
+        command.Parameters.AddWithValue("$kind", ToText(kind));
+
+        var results = new List<ArchiveUpload>();
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) results.Add(Read(reader));
+
+        return results;
+    }
+
     private static ArchiveUpload Read(SqliteDataReader reader) => new(
         Id: reader.GetInt64(0),
         SessionId: reader.GetInt64(1),

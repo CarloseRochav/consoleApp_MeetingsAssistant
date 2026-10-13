@@ -36,6 +36,16 @@ public interface ICloudArchive
         string localPath,
         string remoteName,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tamaño en bytes del objeto remoto, o <c>null</c> si no existe. Es lo que
+    /// permite comprobar contra la nube, y no contra la base, que un archivo
+    /// está respaldado antes de borrar su copia local.
+    /// </summary>
+    Task<long?> GetRemoteSizeAsync(
+        ArchiveKind kind,
+        string remoteName,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Una subida, con su estado. Fila de <c>cloud_upload</c>.</summary>
@@ -76,6 +86,9 @@ public interface IArchiveUploadStore
 
     /// <summary>Todo lo que no terminó: pendiente o fallido.</summary>
     Task<IReadOnlyList<ArchiveUpload>> ListUnfinishedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Las subidas terminadas de un tipo. Las usa la retención de audio local.</summary>
+    Task<IReadOnlyList<ArchiveUpload>> ListUploadedAsync(ArchiveKind kind, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

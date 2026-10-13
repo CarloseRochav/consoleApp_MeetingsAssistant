@@ -404,7 +404,23 @@ internal sealed class FakeCloudArchive : ICloudArchive
         }
 
         Calls.Add(localPath);
+        RemoteSizes[remoteName] = new FileInfo(localPath).Length;
         return Task.FromResult($"fake://{(kind == ArchiveKind.Audio ? "audio" : "report")}/{remoteName}");
+    }
+
+    /// <summary>Lo que "hay en la nube": nombre remoto y tamano. Los tests lo alteran para simular perdidas.</summary>
+    public Dictionary<string, long> RemoteSizes { get; } = [];
+
+    /// <summary>Si es true, preguntar por un blob lanza, como con la red caida.</summary>
+    public bool SizeLookupFails { get; set; }
+
+    public Task<long?> GetRemoteSizeAsync(
+        ArchiveKind kind,
+        string remoteName,
+        CancellationToken cancellationToken = default)
+    {
+        if (SizeLookupFails) throw new IOException("sin red (simulado)");
+        return Task.FromResult(RemoteSizes.TryGetValue(remoteName, out long size) ? size : (long?)null);
     }
 }
 
