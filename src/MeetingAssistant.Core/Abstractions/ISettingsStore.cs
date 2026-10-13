@@ -56,3 +56,15 @@ public interface ISettingsStore
 
     Task RemoveAsync(string key, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Los ajustes que viven en la base compartida en la nube. Es el mismo contrato
+/// que <see cref="ISettingsStore"/>, con una restricción: sólo acepta y sólo
+/// devuelve claves para las que <see cref="SettingKeyPolicy.CanLiveInCloud"/> es
+/// <c>true</c>. Todo lo demás —secretos, rutas de esta máquina, la propia
+/// dirección de la base— se queda en el almacén local.
+///
+/// Es un tipo aparte para que nadie pueda inyectar el almacén de la nube donde
+/// se esperaba el local, que sí guarda secretos.
+/// </summary>
+public interface ICloudSettingsStore : ISettingsStore;

@@ -81,8 +81,15 @@ public sealed class ArchiveUploadService : IArchiveQueue
         {
             try
             {
+                // La fecha del archivo y no la de ahora: para una grabación recién
+                // hecha es lo mismo, y para una reunión vieja que se migra deja
+                // el blob bajo el mes en que ocurrió.
+                DateTimeOffset fileTime = File.Exists(localPath)
+                    ? File.GetLastWriteTimeUtc(localPath)
+                    : DateTimeOffset.UtcNow;
+
                 ArchiveUpload upload = await _store.EnqueueAsync(
-                    sessionId, kind, localPath, BuildRemoteName(localPath, DateTimeOffset.UtcNow));
+                    sessionId, kind, localPath, BuildRemoteName(localPath, fileTime));
 
                 if (upload.State == ArchiveUploadState.Uploaded) return;
 
@@ -185,6 +192,6 @@ public sealed class ArchiveUploadService : IArchiveQueue
     /// contenedor se pueda recorrer a ojo. Se fija al encolar y se guarda en la
     /// fila, así que un reintento sube siempre al mismo nombre.
     /// </summary>
-    internal static string BuildRemoteName(string localPath, DateTimeOffset nowUtc) =>
+    public static string BuildRemoteName(string localPath, DateTimeOffset nowUtc) =>
         $"{nowUtc.UtcDateTime:yyyy}/{nowUtc.UtcDateTime:MM}/{Path.GetFileName(localPath)}";
 }

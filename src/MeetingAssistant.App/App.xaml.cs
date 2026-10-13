@@ -8,6 +8,7 @@ using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Cost;
 using MeetingAssistant.Infrastructure.Llm;
 using MeetingAssistant.Infrastructure.Storage;
+using MeetingAssistant.Infrastructure.Storage.Postgres;
 using MeetingAssistant.Infrastructure.Storage.Sqlite;
 using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
@@ -35,6 +36,8 @@ public partial class App : Application
     // LaunchCore.
     private static string? _databaseDiagnostic;
     private static string? _settingsImportDiagnostic;
+    private static string? _historyStoreDiagnostic;
+    private static string? _settingsSourceDiagnostic;
 
     public App()
     {
@@ -131,6 +134,26 @@ public partial class App : Application
         // que es donde se revisa qué hizo un arranque.
         if (_databaseDiagnostic is not null) LogDiagnostic($"Base de reuniones: {_databaseDiagnostic}");
         if (_settingsImportDiagnostic is not null) LogDiagnostic(_settingsImportDiagnostic);
+        if (_historyStoreDiagnostic is not null) LogDiagnostic(_historyStoreDiagnostic);
+        if (_settingsSourceDiagnostic is not null) LogDiagnostic(_settingsSourceDiagnostic);
+
+        // Si el historial está en Postgres, se lo despierta en segundo plano: la
+        // primera consulta tras un rato sin uso tarda, y es mejor que esa espera
+        // ocurra acá y no cuando se abre Historial. No se espera ni puede lanzar.
+        if (Services.GetService<PostgresDatabase>() is { } postgres)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    LogDiagnostic($"Postgres: {await postgres.MigrateAsync()}");
+                }
+                catch (Exception exception)
+                {
+                    LogStartupFailure("PostgresDatabase.Migrate", exception);
+                }
+            });
+        }
 
         try
         {
@@ -402,13 +425,63 @@ public partial class App : Application
         // el caso en que la base NO abrió — el import no ocurrió, el archivo sigue
         // ahí, y la app arranca con la configuración del usuario igual que antes.
         // SetBasePath no le afecta: LegacyFilePath es una ruta absoluta.
-        IConfiguration configuration = new ConfigurationBuilder()
+        IConfigurationBuilder LocalLayers() => new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
             .AddJsonFile(UserSettingsService.LegacyFilePath, optional: true, reloadOnChange: false)
-            .AddSqliteSettings(settingsStore, LogStartupFailure)
-            .AddEnvironmentVariables()
-            .Build();
+            .AddSqliteSettings(settingsStore, LogStartupFailure);
+
+        // La configuración se arma en dos tiempos (Fase 6, paso 3). Primero sólo
+        // con lo local, porque de ahí sale **dónde está la nube**: los dos
+        // conmutadores y la cadena de conexión no se pueden leer de la base que
+        // describen.
+        IConfiguration localConfiguration = LocalLayers().AddEnvironmentVariables().Build();
+
+        bool historyInPostgres = string.Equals(
+            localConfiguration["Database:Provider"], "Postgres", StringComparison.OrdinalIgnoreCase);
+        bool settingsFromCloud = string.Equals(
+            localConfiguration["Configuration:Source"], "Database", StringComparison.OrdinalIgnoreCase);
+
+        PostgresDatabase? postgres = historyInPostgres || settingsFromCloud
+            ? TryCreatePostgres(localConfiguration)
+            : null;
+
+        _historyStoreDiagnostic = (historyInPostgres, postgres) switch
+        {
+            (false, _) => "Historial: SQLite local.",
+            (true, null) => "Historial: Database:Provider pide Postgres pero no hay una Postgres:ConnectionString utilizable. Se usa SQLite local.",
+            (true, not null) => $"Historial: Postgres en {postgres.Description}."
+        };
+
+        // Después, si Configuration:Source lo pide, se intercala la capa de la
+        // nube: empaquetado -> archivo de usuario -> SQLite local -> **nube** ->
+        // entorno. Primero la base compartida; si no contesta dentro del plazo,
+        // esa capa queda vacía y manda lo local. El entorno sigue arriba de todo.
+        IConfiguration configuration = localConfiguration;
+        ICloudSettingsStore? cloudSettings = null;
+        if (settingsFromCloud && postgres is not null)
+        {
+            cloudSettings = new PostgresSettingsStore(postgres);
+            TimeSpan timeout = TimeSpan.FromSeconds(
+                localConfiguration.GetValue<double?>("Configuration:CloudTimeoutSeconds") is > 0 and var seconds ? seconds : 5);
+
+            IConfigurationRoot withCloud = LocalLayers()
+                .AddCloudSettings(cloudSettings, timeout, LogStartupFailure)
+                .AddEnvironmentVariables()
+                .Build();
+            configuration = withCloud;
+
+            _settingsSourceDiagnostic =
+                withCloud.Providers.OfType<CloudSettingsConfigurationProvider>().Single().LoadedFromCloud
+                    ? "Ajustes: primero la nube (Postgres), después lo local."
+                    : "Ajustes: la nube no respondió a tiempo; en este arranque se usan sólo los locales.";
+        }
+        else
+        {
+            _settingsSourceDiagnostic = settingsFromCloud
+                ? "Ajustes: Configuration:Source pide la nube pero no hay una Postgres:ConnectionString utilizable. Se usan los locales."
+                : "Ajustes: locales.";
+        }
 
         // Antes de registrar nada: si falta configuración, es preferible una
         // lista completa aquí que ir descubriéndola clave a clave según cada
@@ -456,11 +529,27 @@ public partial class App : Application
         services.AddSingleton(schemaMigrator);
         services.AddSingleton(secretProtector);
         services.AddSingleton(settingsStore);
-        services.AddSingleton<IMeetingHistoryStore, Infrastructure.Storage.Sqlite.SqliteMeetingHistoryStore>();
+        // Dónde vive el historial (Fase 6, paso 2): Database:Provider elige entre
+        // el SQLite local y Postgres. Los ajustes tienen su propio conmutador
+        // (Configuration:Source), así que la base de Postgres puede existir por
+        // cualquiera de los dos motivos.
+        if (postgres is not null) services.AddSingleton(postgres);
+        if (cloudSettings is not null) services.AddSingleton(cloudSettings);
+
+        if (historyInPostgres && postgres is not null)
+        {
+            services.AddSingleton<IMeetingHistoryStore, PostgresMeetingHistoryStore>();
+            services.AddSingleton<IArchiveUploadStore, PostgresArchiveUploadStore>();
+        }
+        else
+        {
+            services.AddSingleton<IMeetingHistoryStore, Infrastructure.Storage.Sqlite.SqliteMeetingHistoryStore>();
+            services.AddSingleton<IArchiveUploadStore, Infrastructure.Storage.Sqlite.SqliteArchiveUploadStore>();
+        }
+
         // Subida en segundo plano del audio y los reportes (Fase 6, paso 1). Sin
         // AzureStorage:ConnectionString queda apagada y no hace nada.
         services.AddSingleton<ICloudArchive, AzureBlobCloudArchive>();
-        services.AddSingleton<IArchiveUploadStore, Infrastructure.Storage.Sqlite.SqliteArchiveUploadStore>();
         services.AddSingleton(provider => new ArchiveUploadService(
             provider.GetRequiredService<ICloudArchive>(),
             provider.GetRequiredService<IArchiveUploadStore>(),
@@ -475,6 +564,31 @@ public partial class App : Application
         services.AddSingleton<MainWindow>();
 
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Devuelve la base de Postgres, o null si no hay una cadena de conexión
+    /// utilizable. <b>No abre ninguna conexión</b>: el esquema se asegura la
+    /// primera vez que algo la usa.
+    ///
+    /// Una cadena ausente o que no se puede interpretar devuelve null y queda en
+    /// el log, y quien llama cae a lo local: un valor mal escrito no puede
+    /// impedir abrir la app.
+    /// </summary>
+    private static PostgresDatabase? TryCreatePostgres(IConfiguration configuration)
+    {
+        string? connectionString = configuration["Postgres:ConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString)) return null;
+
+        try
+        {
+            return new PostgresDatabase(connectionString);
+        }
+        catch (Exception exception)
+        {
+            LogStartupFailure("PostgresDatabase", exception);
+            return null;
+        }
     }
 
     private async Task ExitApplicationAsync()

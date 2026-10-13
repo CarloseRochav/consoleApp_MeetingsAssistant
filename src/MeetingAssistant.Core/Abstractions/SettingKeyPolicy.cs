@@ -45,4 +45,47 @@ public static class SettingKeyPolicy
 
         return SecretLeafNames.Any(name => leaf.Equals(name, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Secciones cuyos ajustes se pueden guardar en la base compartida en la
+    /// nube. Es una lista de lo que <b>sí</b> va, no de lo que no: un ajuste
+    /// nuevo se queda local hasta que alguien decida lo contrario, que es el
+    /// error barato de los dos.
+    ///
+    /// Lo que queda afuera, y por qué:
+    /// <list type="bullet">
+    /// <item><c>Storage</c>, <c>Api</c>, <c>Hotkey</c>: son de <b>esta máquina</b>
+    /// — la ruta del vault, un puerto, un atajo. Compartirlos haría que una
+    /// máquina le pise la ruta a la otra.</item>
+    /// <item><c>Configuration</c>, <c>Database</c>, <c>Postgres</c>: son lo que
+    /// dice <b>dónde está</b> la base en la nube. No se pueden leer de ella.</item>
+    /// </list>
+    /// </summary>
+    private static readonly string[] CloudSections =
+    [
+        "Pricing",
+        "Llm",
+        "Gemini",
+        "AzureFoundry"
+    ];
+
+    /// <summary>
+    /// <c>true</c> si la clave se puede guardar en la base en la nube y leer de
+    /// ella. <b>Un secreto nunca</b>, esté en la sección que esté: la nube no
+    /// tiene con qué cifrarlo de forma que otra máquina lo pueda leer.
+    ///
+    /// Se aplica al escribir <b>y al leer</b>: una fila que alguien haya metido
+    /// a mano en la tabla no puede cambiarle a la app una credencial ni la
+    /// dirección de su base.
+    /// </summary>
+    public static bool CanLiveInCloud(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key) || IsSecret(key)) return false;
+
+        int separator = key.IndexOf(':');
+        if (separator <= 0) return false;
+
+        string section = key[..separator];
+        return CloudSections.Any(name => section.Equals(name, StringComparison.OrdinalIgnoreCase));
+    }
 }

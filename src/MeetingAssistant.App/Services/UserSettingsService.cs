@@ -45,11 +45,20 @@ public sealed class UserSettingsService
 {
     private readonly IConfiguration _configuration;
     private readonly ISettingsStore _settingsStore;
+    private readonly ICloudSettingsStore? _cloudSettingsStore;
 
-    public UserSettingsService(IConfiguration configuration, ISettingsStore settingsStore)
+    /// <param name="cloudSettingsStore">
+    /// Sólo está cuando <c>Configuration:Source = Database</c>. Con null, todo
+    /// se guarda únicamente en esta máquina, como antes de Fase 6.
+    /// </param>
+    public UserSettingsService(
+        IConfiguration configuration,
+        ISettingsStore settingsStore,
+        ICloudSettingsStore? cloudSettingsStore = null)
     {
         _configuration = configuration;
         _settingsStore = settingsStore;
+        _cloudSettingsStore = cloudSettingsStore;
     }
 
     /// <summary>
@@ -115,6 +124,30 @@ public sealed class UserSettingsService
                 value?.Trim(),
                 SettingKeyPolicy.IsSecret(key),
                 cancellationToken);
+        }
+
+        if (_cloudSettingsStore is null) return;
+
+        // Lo local va siempre y va primero: es el respaldo cuando la nube no
+        // contesta. A la nube sólo va lo que SettingKeyPolicy permite — nunca
+        // una credencial, nunca la ruta del vault de esta máquina.
+        try
+        {
+            foreach ((string key, string? value) in values)
+            {
+                if (!SettingKeyPolicy.CanLiveInCloud(key)) continue;
+
+                await _cloudSettingsStore.SetAsync(key, value?.Trim(), isSecret: false, cancellationToken);
+            }
+        }
+        catch (Exception exception)
+        {
+            // Hay que decirlo: al arrancar manda la nube, así que lo que quedó
+            // guardado sólo acá puede volver a ser pisado por el valor viejo.
+            throw new InvalidOperationException(
+                "Se guardó en esta máquina, pero no en la nube. Mientras la nube tenga el valor anterior, " +
+                $"ese es el que va a mandar al reiniciar. Detalle: {exception.Message}",
+                exception);
         }
     }
 

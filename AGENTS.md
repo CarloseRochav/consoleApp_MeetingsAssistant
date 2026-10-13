@@ -20,7 +20,7 @@ control endpoint.
 
 `src/MeetingAssistant.Core` must NOT reference ANY provider-specific
 NuGet package (no NAudio, Deepgram, Google.GenAI, Azure.Identity,
-Azure.Storage.Blobs, OpenAI).
+Azure.Storage.Blobs, Npgsql, OpenAI).
 Plain C# and interfaces only. Check `Core.csproj` before considering any
 task done — if it has a provider reference, something went wrong.
 
@@ -53,7 +53,17 @@ the other way around.
   `--verify-reextraction`, `--verify-archive`,
   `--verify-pipeline-history <wav>` (this last one makes real Deepgram and LLM
   calls). `--verify-blob-upload` uploads two small files to the configured
-  Azure Storage account, reads them back and deletes them. `--verify-db` inspects the REAL database
+  Azure Storage account, reads them back and deletes them. `--verify-postgres`
+  runs one store contract against a temp SQLite file and against the configured
+  Postgres, in a throwaway schema it drops afterwards; `--verify-cloud-settings`
+  does the same for the settings layer. `--verify-migration` is offline.
+  `--migrate-to-postgres` only simulates unless `--apply` is passed;
+  `--set-cloud-setting` and `--list-cloud-settings` touch the REAL cloud
+  settings.
+- When isolating a test in its own Postgres schema, never rely on the
+  `search_path` connection-string parameter: Neon's proxy drops it silently and
+  the test writes to `public`. `PostgresDatabase` sets it per connection and
+  verifies `current_schema()`. `--verify-db` inspects the REAL database
   read-only; `--set-setting <key> [value]` writes one setting into it (omit the
   value to delete the key).
 
@@ -70,16 +80,20 @@ console that launches it (the shell broker activates it). The
 
 ## Non-negotiable conventions
 
-- Configuration is four stacked `IConfiguration` layers, in this order:
+- Configuration is stacked `IConfiguration` layers, in this order:
   packaged `appsettings.json` → legacy per-user JSON (T9; migrated into the
   database on first run and replaced by a redacted copy) → SQLite `setting`
-  table → environment variables. **Environment variables stay on top**: they
+  table → cloud settings from Postgres (only when `Configuration:Source =
+  Database`) → environment variables. **Environment variables stay on top**: they
   are the escape hatch when a bad stored value prevents startup. Don't reorder
   it, and don't replace `IConfiguration` with the database — the whole point is
   that `ReadRequiredSetting`, `StartupConfigurationValidator` and
   `ConfigPricingCostEstimator` never learn the database exists. Whether a key is
   a secret (and therefore DPAPI-encrypted) is decided in ONE place,
-  `Core/Abstractions/SettingKeyPolicy.cs` — never inline at a call site.
+  `Core/Abstractions/SettingKeyPolicy.cs` — never inline at a call site. The
+  same file decides which keys may live in the cloud database
+  (`CanLiveInCloud`): never a secret, never a machine-local path, never the
+  keys that say where the cloud is. It is enforced on write AND on read.
 - The real `appsettings.json` is NEVER committed — only
   `appsettings.example.json` with placeholders. Any new
   `appsettings.json` (new project, new path) must be explicitly checked

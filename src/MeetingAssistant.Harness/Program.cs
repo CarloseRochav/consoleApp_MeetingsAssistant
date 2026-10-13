@@ -92,6 +92,67 @@ if (positional.Count == 1 && string.Equals(positional[0], "--verify-archive", St
     return await ArchiveSelfTests.VerifyArchiveAsync();
 }
 
+// El mismo contrato contra SQLite (temporal) y contra Postgres. Sale a la red:
+// usa la base configurada, pero en un esquema propio que borra al terminar.
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-postgres", StringComparison.OrdinalIgnoreCase))
+{
+    return await StoreContractTests.VerifyPostgresAsync(new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .Build());
+}
+
+// Ajustes compartidos en la nube (Fase 6, paso 3). El autotest usa un esquema
+// descartable; --set-cloud-setting y --list-cloud-settings tocan los reales.
+if (positional.Count >= 1 &&
+    positional[0].ToLowerInvariant() is "--verify-cloud-settings" or "--set-cloud-setting" or "--list-cloud-settings")
+{
+    IConfiguration cloudConfiguration = new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .Build();
+
+    switch (positional[0].ToLowerInvariant(), positional.Count)
+    {
+        case ("--verify-cloud-settings", 1):
+            return await CloudSettingsCommands.VerifyAsync(cloudConfiguration);
+        case ("--list-cloud-settings", 1):
+            return await CloudSettingsCommands.ListAsync(cloudConfiguration);
+        case ("--set-cloud-setting", 2 or 3):
+            return await CloudSettingsCommands.SetAsync(
+                cloudConfiguration, positional[1], positional.Count == 3 ? positional[2] : null);
+        default:
+            Console.Error.WriteLine("Uso: --verify-cloud-settings | --list-cloud-settings | --set-cloud-setting <clave> [valor]");
+            return 1;
+    }
+}
+
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-migration", StringComparison.OrdinalIgnoreCase))
+{
+    return await MigrationCommands.VerifyMigrationAsync();
+}
+
+// La migracion de una sola vez del historial local a Postgres y Azure Blob. Sin
+// --apply solo muestra lo que haria.
+if (positional.Count is 1 or 2 && string.Equals(positional[0], "--migrate-to-postgres", StringComparison.OrdinalIgnoreCase))
+{
+    if (positional.Count == 2 && !string.Equals(positional[1], "--apply", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Error.WriteLine("Uso: --migrate-to-postgres [--apply]");
+        return 1;
+    }
+
+    return await MigrationCommands.MigrateToPostgresAsync(
+        new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+            .AddEnvironmentVariables()
+            .Build(),
+        apply: positional.Count == 2);
+}
+
 // A diferencia de los demas autotests, este SI sale a la red: sube dos archivos
 // chicos a la cuenta de Azure configurada, los lee de vuelta y los borra.
 if (positional.Count == 1 && string.Equals(positional[0], "--verify-blob-upload", StringComparison.OrdinalIgnoreCase))

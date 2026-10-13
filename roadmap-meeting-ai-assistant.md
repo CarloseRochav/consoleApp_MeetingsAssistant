@@ -853,13 +853,166 @@ tiene su propia base.
    y la cuenta de Storage es compartida con otro proyecto (contenedor
    `devlog-notes`), que no se tocó.
 2. **Store de Postgres** detrás de `IMeetingHistoryStore`, elegido por
-   `Database:Provider`. La búsqueda se rehace con full-text de Postgres
-   (`tsvector` + `unaccent` + prefijo) hasta reproducir lo que fijan los
-   autotests: sin acentos, por prefijo, AND entre palabras.
+   `Database:Provider`. **CONSTRUIDO 2026-10-10, SIN VERIFICAR EN LA APP REAL —
+   el paso no está cerrado.**
+
+   En Infrastructure, carpeta `Storage/Postgres`: `PostgresDatabase` (conexión
+   y migraciones), `PostgresMeetingHistoryStore` y `PostgresArchiveUploadStore`.
+   `Npgsql` entra sólo en Infrastructure; `Core.csproj` sigue con 0
+   `PackageReference` y **ninguna interfaz de Core cambió**.
+
+   **Conmutador:** `Database:Provider = Sqlite | Postgres`, con
+   `Postgres:ConnectionString`. Acepta la URL que da Neon tal cual, o una cadena
+   de Npgsql. Pedir Postgres sin cadena, o con una ilegible, **cae a SQLite** y lo
+   deja en el log. Los ajustes **no** siguen el conmutador: siguen en el SQLite
+   local (eso es el paso 3).
+
+   **Decisiones:**
+   - **La migración no corre al arrancar.** El arranque no puede depender de la
+     red. El esquema se asegura la primera vez que algo pide una conexión, y al
+     arrancar sólo se despierta la base en segundo plano.
+   - **Búsqueda:** configuración de texto propia, `ma_simple` (la `simple`, sin
+     stemming ni palabras vacías, con `unaccent` adelante), sobre una columna
+     `tsvector` generada con índice GIN. Es el equivalente del tokenizador
+     `unicode61 remove_diacritics 2`. La consulta del usuario se reduce a letras
+     y dígitos antes de llegar al servidor, así que ningún operador de `tsquery`
+     puede pasar. El fragmento sale con `ts_headline` y los mismos corchetes.
+   - **`cloud_upload.machine_name`**, que SQLite no tiene: las rutas locales son
+     de una máquina, y con la base compartida cada una sólo retoma **sus**
+     subidas.
+   - Conexión **directa**, no la `-pooler` de Neon: Npgsql ya trae su propio
+     pool, y las migraciones necesitan conexión directa.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores.
+   - **`--verify-postgres`, nuevo: 113/113.** Es **un solo contrato corrido contra
+     los dos proveedores**: 55 comprobaciones contra un SQLite temporal y las
+     mismas 55 contra Neon, más 3 propias de Postgres (migrar dos veces, y dos
+     máquinas con la misma ruta local). Cubre ida y vuelta de fechas y dinero,
+     toda la búsqueda (acentos en los dos sentidos, prefijo, AND, relevancia,
+     corchetes, 14 entradas hostiles incluida una inyección SQL), la analítica de
+     costos, y la cola de subidas.
+   - Los cinco autotests anteriores siguen en verde.
+
+   **Un error del agente en este paso, que queda anotado porque tocó la base
+   real:** la primera versión del autotest aislaba sus datos con el parámetro de
+   arranque `search_path` de la cadena de conexión. **El proxy de Neon lo
+   descarta en silencio**: la conexión abre sin error y trabaja contra
+   `public`. Tres corridas escribieron datos de prueba (15 sesiones falsas) en
+   el esquema real, que por suerte estaba recién creado y vacío. Se detectó
+   porque la segunda corrida encontró datos donde esperaba una base vacía. Se
+   comprobó fila por fila que todo era de prueba, se borraron las tablas, y la
+   base quedó sin nada. Corrección: `set search_path` explícito en cada
+   apertura, seguido de una comprobación de `current_schema()` que **lanza** si
+   no coincide. Verificado después: tras una corrida completa, `public` sigue
+   vacío.
+
+   **Lo que NO se verificó, dicho explícitamente:**
+   - **Nada en la app real.** Con `Database:Provider = Postgres`: que la app
+     arranca, que una grabación deja sus filas en Neon, que Historial y Costos
+     leen de ahí, y cuánto tarda la primera apertura tras un rato sin uso.
+   - **El pipeline entero contra Postgres.** El contrato prueba los stores; el
+     pipeline sólo se probó de punta a punta sobre SQLite.
+
+   **Estado del conmutador en esta máquina:** quedó en `Sqlite`, con la cadena de
+   conexión ya puesta en los dos `appsettings.json` reales. Desde el paso 4 el
+   esquema real de Neon ya tiene el historial, así que conmutar no deja nada
+   vacío.
 3. **Configuración no secreta desde Postgres**, elegida por
-   `Configuration:Source`, con respaldo local.
-4. **Migración única** de las filas, los WAV y los reportes existentes,
-   comprobada por conteo de filas.
+   `Configuration:Source`. **CONSTRUIDO 2026-10-10, SIN VERIFICAR EN LA APP REAL
+   — el paso no está cerrado.** Se hizo después del paso 4, por pedido del
+   usuario.
+
+   **La pila pasa de cuatro capas a cinco**, de menor a mayor precedencia:
+   empaquetado -> archivo de usuario (legado) -> SQLite local -> **nube** ->
+   entorno. O sea: primero la base compartida y, si no contesta, lo local. Las
+   variables de entorno siguen arriba de todo. Con `Configuration:Source = Local`
+   (el valor por defecto) la capa nueva no existe y todo queda como antes.
+
+   **Qué va a la nube lo decide un solo lugar**, `SettingKeyPolicy.CanLiveInCloud`,
+   y es una lista de lo que **sí** va: las secciones `Pricing`, `Llm`, `Gemini`
+   y `AzureFoundry`, menos cualquier credencial. Quedan locales, siempre:
+   - **los secretos**, estén en la sección que estén;
+   - **lo propio de la máquina**: `Storage` (la ruta del vault), `Api`, `Hotkey`;
+   - **lo que dice dónde está la nube**: `Configuration`, `Database`,
+     `Postgres`, `AzureStorage`.
+
+   La regla se aplica **al escribir y al leer**: el store rechaza esas claves, y
+   la capa de configuración las descarta aunque alguien las haya metido a mano
+   en la tabla. Una fila intrusa no puede cambiarle a la app una credencial ni
+   adónde se conecta.
+
+   **La configuración se arma en dos tiempos.** Primero sólo con lo local, porque
+   de ahí salen los dos conmutadores y la cadena de conexión; después se
+   intercala la capa de la nube. La carga tiene un **plazo** (5 s por defecto,
+   `Configuration:CloudTimeoutSeconds`): si la nube no contesta, la capa queda
+   vacía, se registra, y la app arranca con lo local.
+
+   **Guardar desde Configuración:** lo local se escribe siempre y primero; lo que
+   puede ir a la nube se escribe además ahí. Si la nube falla, el mensaje lo dice
+   y avisa que al reiniciar va a mandar el valor viejo de la nube.
+
+   **Verificado:**
+   - Build en 0 warnings / 0 errores; `Core.csproj` con 0 `PackageReference`.
+   - **`--verify-cloud-settings`, nuevo: 27/27**, contra Neon en un esquema
+     descartable. Cubre qué claves pueden ir, el store rechazando credenciales y
+     claves locales, tres filas intrusas que no salen ni pisan nada, la
+     precedencia local -> nube -> entorno, `Reload()`, una base inalcanzable que
+     no impide construir la configuración, y **una nube que tarda 30 s sin retener
+     el arranque más que el plazo de 1 s** (medido: 1,0 s).
+   - Dos comandos nuevos sobre los ajustes reales de la nube:
+     `--set-cloud-setting <clave> [valor]` y `--list-cloud-settings`.
+
+   **Lo que NO se verificó, dicho explícitamente:**
+   - **Nada en la app real.** Con `Configuration:Source = Database`: el arranque,
+     cuánto se demora de verdad con Neon dormido, y el botón Guardar escribiendo
+     en los dos lados.
+   - **`UserSettingsService`** vive en el proyecto `App` y el harness no lo
+     alcanza: su escritura doble se leyó, no se ejecutó.
+
+   **Lo que cuesta, para que no sorprenda:** con la nube activada el arranque
+   **espera** a Neon, hasta el plazo. Es el precio de leer la configuración antes
+   de construir los servicios. Y la tabla de la nube está **vacía**: hasta que se
+   guarde algo desde Configuración o con `--set-cloud-setting`, activar el
+   conmutador no cambia ningún valor.
+4. ~~**Migración única** de las filas, los WAV y los reportes existentes.~~
+   **✅ HECHO 2026-10-10, y corrida de verdad.**
+
+   `HistoryMigrationService` en Core: copia de un `IMeetingHistoryStore` a otro,
+   sin saber de SQLite ni de Postgres. **No toca el origen**, **se puede volver a
+   correr** (una reunión se reconoce por su instante de inicio y un reporte por
+   prompt e instante de creación; lo que ya está no se duplica y lo que quedó a
+   medias se completa) y **respeta lo que el destino ya tenga**. Los ids cambian:
+   los asigna el destino, en orden cronológico.
+
+   En el harness: `--migrate-to-postgres` **sólo simula**; con `--apply` lo hace.
+   Los archivos del historial se suben por la cola del paso 1, contra la sesión
+   del destino. Los audios y reportes **anteriores al historial**, que no tienen
+   reunión a la que colgarse, se suben directo y sin fila. El nombre remoto pasó
+   a usar la fecha del archivo y no la del momento de subir, así que una reunión
+   de agosto queda bajo `2026/08/`.
+
+   **Verificado:**
+   - **`--verify-migration`, nuevo: 21/21**, entre SQLite temporales y con nube
+     falsa. El test encontró un defecto real antes de la corrida de verdad: una
+     migración interrumpida justo después de crear una sesión la dejaba **sin
+     cerrar** para siempre. Corregido.
+   - **La corrida real, del SQLite de esta máquina a Neon:** 6 reuniones, 6
+     transcripts y 7 reportes copiados. La comprobación posterior, campo por
+     campo, no encontró diferencias, y el costo de LLM coincide
+     (US$0,016184 en los dos lados).
+   - **Archivos en Azure Blob:** 13 audios (6 del historial y 7 anteriores) y 30
+     reportes (7 y 23), contados después en los contenedores. Ninguna subida
+     quedó pendiente.
+   - **Una segunda simulación, después:** 0 por copiar, 6 que ya estaban.
+
+   **Lo que NO se verificó:** que la app, conmutada a Postgres, muestre ese
+   historial en pantalla. Es la misma verificación pendiente del paso 2.
+
+   **El SQLite local no se borró ni se modificó.** Sigue siendo el historial que
+   usa la app mientras `Database:Provider` esté en `Sqlite`. Lo que se grabe ahí
+   después de hoy no está en Neon: volver a correr `--migrate-to-postgres --apply`
+   lo lleva.
 5. **Retención local de WAV** una vez confirmada la subida. Cierra la deuda de
    `meeting-output\` que viene de Fase 3.
 
