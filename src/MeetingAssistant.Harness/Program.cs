@@ -1233,9 +1233,12 @@ static int VerifyDatabaseSelfTest()
         store.SaveTranscriptAsync(new TranscriptRecord(
             sessionId, "Revisamos la integracion con el módulo de facturación.",
             "Deepgram", "nova-3", 0.001234m, startedAt.AddMinutes(13))).GetAwaiter().GetResult();
+        // Modelo inventado a propósito, igual que en FakeReportExtractor: el test
+        // no mira el nombre, y uno real (fue DeepSeek-V4-Flash) quedaba viejo
+        // cada vez que se cambiaba el deployment.
         store.SaveReportAsync(new NewReport(
             sessionId, "assignment-meeting", "v1", "# Reporte", null,
-            "Azure AI Foundry", "DeepSeek-V4-Flash", 890, 520, 0.000434m,
+            "Azure AI Foundry", "modelo-de-prueba", 890, 520, 0.000434m,
             @"C:\vault\r.md", startedAt.AddMinutes(14))).GetAwaiter().GetResult();
 
         SessionRecord? roundTripped = store.GetSessionAsync(sessionId).GetAwaiter().GetResult();
