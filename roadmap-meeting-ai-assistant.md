@@ -58,7 +58,10 @@
 
 ---
 
-## Fase 2 — Shell WinUI 3 (MVP de interfaz)
+## Fase 2 — Shell WinUI 3 (MVP de interfaz) ✅ COMPLETA
+
+**Cerrada 2026-10-14.** El último paso abierto, editar los prompts desde
+Configuración (paso 6), lo verificó el usuario en pantalla.
 
 **Objetivo:** Interfaz mínima usable para no depender de la consola.
 
@@ -86,8 +89,8 @@ lo que se absorbieron a Fase 5 en vez de construirlos dos veces. Lo único que
 seguía abierto de esta fase era **editar el system prompt desde Configuración**
 (paso 6).
 
-**Paso 6, editar los prompts: CONSTRUIDO 2026-10-12, SIN VERIFICAR EN LA APP —
-la fase no se cierra todavía.**
+**Paso 6, editar los prompts: CONSTRUIDO 2026-10-12, VERIFICADO EN LA APP
+2026-10-14 — cierra la fase.**
 
 Sección **Prompts** al final de Configuración, con su propio ViewModel
 (`PromptEditorViewModel`) dentro de un control (`PromptEditorPanel`).
@@ -139,10 +142,7 @@ que exige el parser (`summary`, `insights`, `taskList`, `requirements`,
 `v1`/`v2`/`v3` quedó sobre su propia constante (venían apilados sobre la
 primera desde v2).
 
-**Lo que NO se verificó:** nada en la app. Falta ver la sección en pantalla,
-guardar una versión, generar un reporte con ella y volver al original.
-
-**Cambios sin guardar (2026-10-14, también sin verificar en pantalla):** antes,
+**Cambios sin guardar (2026-10-14):** antes,
 cinco caminos tiraban sin avisar lo escrito en el editor. Ahora los cinco
 preguntan con un diálogo ("Descartar cambios" / "Seguir editando", por defecto
 seguir): cambiar de prompt en el desplegable, elegir una versión del historial,
@@ -151,8 +151,16 @@ muestra la ventana). Cuenta como cambio sólo lo escrito a mano: cargar una
 versión vieja no lo es. Si el diálogo no se puede mostrar, se sigue editando.
 Los campos de ajustes de arriba de Configuración siguen sin esta protección.
 
-### Criterio de salida
+**Verificado en pantalla por el usuario (2026-10-14):** corrió en la app el
+recorrido de prueba completo y reportó que todo funciona. Ese recorrido cubre
+la sección Prompts, guardar una versión, generar un reporte con ella, volver al
+original y cargar una versión vieja, más los diálogos de cambios sin guardar:
+desplegable, historial, cambio de página y salida desde la bandeja. Las
+comprobaciones automáticas siguen siendo las de `--verify-prompts`.
+
+### Criterio de salida — ✅ CUMPLIDO 2026-10-14
 - Puedes grabar una reunión completa desde la UI, sin tocar consola, y ver el reporte generado en pantalla
+- (El criterio ya se cumplía; lo único abierto de la fase era el paso 6.)
 
 ---
 
