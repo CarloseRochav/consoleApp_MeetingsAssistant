@@ -61,17 +61,10 @@ public partial class App : Application
             Services = new ServiceCollection().BuildServiceProvider();
         }
 
+        // El manejador de Application.UnhandledException ya lo suscribió
+        // RegisterGlobalExceptionHandlers; acá había un segundo que escribía
+        // cada excepción dos veces en el log.
         InitializeComponent();
-        UnhandledException += OnUnhandledException;
-    }
-
-    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
-    {
-        // Red de seguridad de diagnóstico: captura cualquier excepción no
-        // manejada en el hilo de UI (incluidas las que ocurren en callbacks
-        // asíncronos, fuera del alcance de los try/catch en OnLaunched) para
-        // que quede registrada en vez de perderse en un fallo nativo opaco.
-        LogStartupFailure("Application.UnhandledException", e.Exception);
     }
 
     public static IServiceProvider Services { get; private set; } = null!;
@@ -624,7 +617,10 @@ public partial class App : Application
             provider.GetRequiredService<IArchiveUploadStore>(),
             MeetingOutputDirectory,
             LogStartupFailure));
-        services.AddSingleton<LocalRecordingApiServer>();
+        services.AddSingleton(provider => new LocalRecordingApiServer(
+            provider.GetRequiredService<IRecordingTrigger>(),
+            provider.GetRequiredService<IConfiguration>(),
+            LogStartupFailure));
         services.AddTransient<RecordViewModel>();
         // Transient, igual que RecordViewModel y por el mismo motivo: el Frame
         // reconstruye la página en cada navegación, así que un singleton acá sólo

@@ -57,6 +57,14 @@ public sealed partial class PostgresDatabase : IAsyncDisposable
     }
 
     /// <summary>
+    /// Una conexión <b>sin migrar antes</b>, para mirar la base sin cambiarla
+    /// (<c>--verify-db</c>). Quien la usa no puede suponer que el esquema esté
+    /// al día, ni siquiera que exista: para eso está <see cref="HasSchemaAsync"/>.
+    /// </summary>
+    public Task<NpgsqlConnection> OpenWithoutMigratingAsync(CancellationToken cancellationToken = default) =>
+        OpenInSchemaAsync(requireSchema: _schema is not null, cancellationToken);
+
+    /// <summary>
     /// Abre una conexión y, si hay esquema propio, la apunta a él <b>en cada
     /// apertura</b> y comprueba que quedó apuntada.
     ///

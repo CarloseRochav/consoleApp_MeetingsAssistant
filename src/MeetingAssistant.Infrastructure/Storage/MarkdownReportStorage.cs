@@ -43,13 +43,26 @@ public sealed class MarkdownReportStorage : IReportStorage
 
         DateTimeOffset generatedAt = metadata?.GeneratedAtUtc ?? DateTimeOffset.UtcNow;
         string prefix = SanitizeFilePrefix(metadata?.PromptId) ?? "meeting-report";
-        string fileName = $"{prefix}-{generatedAt:yyyyMMdd-HHmmss}.md";
-        string fullPath = Path.Combine(targetDir, fileName);
+        string baseName = $"{prefix}-{generatedAt:yyyyMMdd-HHmmss}";
+        byte[] content = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(
+            RenderDocument(markdown, metadata, generatedAt))).ToArray();
 
-        string document = RenderDocument(markdown, metadata, generatedAt);
-        await File.WriteAllTextAsync(fullPath, document, Encoding.UTF8, cancellationToken);
-
-        return fullPath;
+        // El nombre sólo es único al segundo: dos reportes del mismo prompt en
+        // el mismo segundo (re-extraer dos veces seguidas) pisaban al primero.
+        // CreateNew no pisa nunca; si el nombre ya existe se prueba -2, -3...
+        for (int attempt = 1; ; attempt++)
+        {
+            string fullPath = Path.Combine(targetDir, attempt == 1 ? $"{baseName}.md" : $"{baseName}-{attempt}.md");
+            try
+            {
+                await using var stream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                await stream.WriteAsync(content, cancellationToken);
+                return fullPath;
+            }
+            catch (IOException) when (File.Exists(fullPath) && attempt < 100)
+            {
+            }
+        }
     }
 
     private static string RenderDocument(string markdown, MeetingReportMetadata? metadata, DateTimeOffset generatedAt)

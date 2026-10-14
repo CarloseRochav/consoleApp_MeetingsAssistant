@@ -58,7 +58,15 @@ if (positional.Count == 1 && string.Equals(positional[0], "--verify-render", Str
 
 if (positional.Count == 1 && string.Equals(positional[0], "--verify-db", StringComparison.OrdinalIgnoreCase))
 {
-    return VerifyDatabase();
+    // El SQLite local (ajustes, y el historial si la app no usa Postgres) y
+    // despues el historial en Postgres, que es el que usa la app desde Fase 6.
+    int localResult = VerifyDatabase();
+    int postgresResult = await PostgresInspection.RunAsync(new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .Build());
+    return Math.Max(localResult, postgresResult);
 }
 
 if (positional.Count == 1 && string.Equals(positional[0], "--verify-db-selftest", StringComparison.OrdinalIgnoreCase))
@@ -758,6 +766,35 @@ static async Task<int> VerifyReextractionAsync()
         Check("con la base rota, el .md igual llego al vault", File.Exists(degraded.SavedReportPath));
         Check("y el fallo se registro en vez de propagarse",
             brokenFailures.Contains("MeetingPipeline.SaveReport"));
+
+        // --- Dos reportes en el mismo segundo no se pisan ----------------------
+        // El almacenamiento real, no el doble: el nombre del archivo lleva la
+        // hora al segundo, y re-extraer dos veces seguidas daba el mismo nombre.
+        Console.WriteLine($"{Environment.NewLine}--- Dos reportes del mismo prompt en el mismo segundo ---");
+        var markdownStorage = new MarkdownReportStorage(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Storage:VaultPath"] = temporaryVault,
+                ["Storage:SubFolder"] = "mismo-segundo"
+            })
+            .Build());
+        var sameSecond = new MeetingReportMetadata(
+            new DateTimeOffset(2026, 10, 14, 15, 0, 0, TimeSpan.Zero), "Prueba", "modelo-de-prueba", "v1", 1, 1, 0m, "feature-handoff");
+        string firstPath = await markdownStorage.SaveMarkdownAsync("# Primero", sameSecond);
+        string secondPath = await markdownStorage.SaveMarkdownAsync("# Segundo", sameSecond);
+        string thirdPath = await markdownStorage.SaveMarkdownAsync("# Tercero", sameSecond);
+        Check("tres reportes en el mismo segundo dan tres archivos distintos",
+            new[] { firstPath, secondPath, thirdPath }.Distinct().Count() == 3 &&
+            Directory.GetFiles(Path.GetDirectoryName(firstPath)!, "*.md").Length == 3);
+        Check("el primero conserva el nombre de siempre y su contenido",
+            Path.GetFileName(firstPath) == "feature-handoff-20261014-150000.md" &&
+            File.ReadAllText(firstPath).Contains("# Primero", StringComparison.Ordinal));
+        Check("los siguientes llevan -2 y -3",
+            Path.GetFileName(secondPath) == "feature-handoff-20261014-150000-2.md" &&
+            Path.GetFileName(thirdPath) == "feature-handoff-20261014-150000-3.md" &&
+            File.ReadAllText(thirdPath).Contains("# Tercero", StringComparison.Ordinal));
+        Check("el archivo sigue saliendo en UTF-8 con BOM, como antes",
+            File.ReadAllBytes(firstPath).AsSpan().StartsWith(System.Text.Encoding.UTF8.GetPreamble()));
     }
     catch (Exception exception)
     {
@@ -1533,6 +1570,9 @@ static int VerifyDatabase()
     }
 
     Console.WriteLine($"Tamano: {new FileInfo(databasePath).Length:N0} bytes");
+    Console.WriteLine(
+        "Ojo: los ajustes viven siempre aca, pero si la app tiene Database:Provider = Postgres su historial " +
+        "es el de Postgres (mas abajo), no las sesiones de este archivo.");
 
     var factory = new SqliteConnectionFactory(databasePath);
     using Microsoft.Data.Sqlite.SqliteConnection connection = factory.Open();

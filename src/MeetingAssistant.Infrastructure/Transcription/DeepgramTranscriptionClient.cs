@@ -71,10 +71,19 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
         string segmentPath,
         CancellationToken cancellationToken)
     {
+        byte[] audio = await File.ReadAllBytesAsync(segmentPath, cancellationToken);
+
+        // El SDK pide un CancellationTokenSource, no un token. Sin él arma uno
+        // propio con su plazo por defecto; con él, ese plazo ya no se aplica,
+        // así que se repite acá para no cambiar nada más que poder cancelar.
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestCancellation.CancelAfter(Deepgram.Abstractions.v1.Constants.DefaultRESTTimeout);
+
         var stopwatch = Stopwatch.StartNew();
         var response = await client.TranscribeFile(
-            await File.ReadAllBytesAsync(segmentPath, cancellationToken),
-            new PreRecordedSchema { Model = "nova-3", Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true });
+            audio,
+            new PreRecordedSchema { Model = "nova-3", Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true },
+            requestCancellation);
         stopwatch.Stop();
 
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(response));

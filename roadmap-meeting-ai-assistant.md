@@ -1014,9 +1014,11 @@ tiene su propia base.
    **no midió** qué probó exactamente ni cuánto tarda la primera apertura con
    Neon dormido; queda como dicho por el usuario, no como medido.
 
-   **A tener presente desde la conmutación:** `--verify-db` sigue leyendo el
-   SQLite local, que ya no es el historial que usa la app. Sus números van a ir
-   quedando atrás respecto de lo que muestran Historial y Costos.
+   ~~**A tener presente desde la conmutación:** `--verify-db` sigue leyendo el
+   SQLite local, que ya no es el historial que usa la app.~~ **Resuelto
+   2026-10-14:** `--verify-db` mira además el historial en Postgres (filas,
+   últimas sesiones, costos), sin pasar por los stores —que migran al abrir— y
+   con la sesión en modo de sólo lectura.
 3. ~~**Configuración no secreta desde Postgres**, elegida por
    `Configuration:Source`.~~ **✅ HECHO 2026-10-12.** Construido el 2026-10-10,
    después del paso 4 por pedido del usuario; el usuario lo activó y lo probó en

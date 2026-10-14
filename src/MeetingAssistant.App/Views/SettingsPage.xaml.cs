@@ -9,17 +9,69 @@ namespace MeetingAssistant.App.Views;
 public sealed partial class SettingsPage : Page, IConfirmNavigation
 {
     /// <summary>
-    /// Sólo el editor de prompts. Los campos de ajustes de arriba siguen como
-    /// antes: si se sale sin "Guardar cambios", se pierden sin preguntar.
+    /// Los campos de ajustes de arriba y el editor de prompts. Cada uno se
+    /// guarda con su propio botón, así que se pregunta por cada uno.
     /// </summary>
-    public bool HasUnsavedChanges => PromptEditor.HasUnsavedEdits;
+    public bool HasUnsavedChanges => HasUnsavedSettings || PromptEditor.HasUnsavedEdits;
 
-    public Task<bool> ConfirmLeaveAsync() => PromptEditor.ConfirmLeaveAsync();
+    public async Task<bool> ConfirmLeaveAsync()
+    {
+        if (HasUnsavedSettings && !await ConfirmDiscardSettingsAsync()) return false;
+        return await PromptEditor.ConfirmLeaveAsync();
+    }
 
     private readonly StartupTaskService _startupTaskService;
     private readonly UserSettingsService _userSettingsService;
     private bool _isSynchronizing;
     private bool _isBusy;
+
+    /// <summary>
+    /// Los campos tal como quedaron al cargarse o al último guardado. Se toma de
+    /// los controles y no de la configuración, para que normalizaciones como el
+    /// proveedor por defecto no cuenten como un cambio del usuario.
+    /// </summary>
+    private UserSettings? _savedFields;
+
+    private bool HasUnsavedSettings => _savedFields is not null && ReadFields() != _savedFields;
+
+    private UserSettings ReadFields() => new()
+    {
+        VaultPath = VaultPathBox.Text,
+        SubFolder = SubFolderBox.Text,
+        LlmProvider = SelectedProvider,
+        DeepgramApiKey = DeepgramKeyBox.Password,
+        GeminiApiKey = GeminiKeyBox.Password,
+        GeminiModel = GeminiModelBox.Text,
+        AzureEndpoint = AzureEndpointBox.Text,
+        AzureDeployment = AzureDeploymentBox.Text,
+        AzureApiKey = AzureKeyBox.Password
+    };
+
+    /// <summary>Mismo criterio que el editor de prompts: si el diálogo no se puede mostrar, no se pierde nada.</summary>
+    private async Task<bool> ConfirmDiscardSettingsAsync()
+    {
+        if (XamlRoot is null) return false;
+
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "Hay ajustes sin guardar",
+                Content = "Cambiaste ajustes y no pulsaste «Guardar cambios». Si sigues, se pierden.",
+                PrimaryButtonText = "Descartar cambios",
+                CloseButtonText = "Seguir editando",
+                DefaultButton = ContentDialogButton.Close
+            };
+
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+        catch (Exception exception)
+        {
+            App.LogStartupFailure("SettingsPage.ConfirmDiscardSettings", exception);
+            return false;
+        }
+    }
 
     public SettingsPage()
     {
@@ -73,6 +125,8 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
             // claves ilegibles y hay que volver a escribirlas.
             SettingsFilePathText.Text =
                 $"Se guarda en: {App.MeetingDatabasePath} (las API keys, cifradas para este usuario de Windows)";
+
+            _savedFields = ReadFields();
         }
         finally
         {
@@ -159,20 +213,10 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
         SaveErrorPanel.Details = null;
         try
         {
-            var settings = new UserSettings
-            {
-                VaultPath = VaultPathBox.Text,
-                SubFolder = SubFolderBox.Text,
-                LlmProvider = SelectedProvider,
-                DeepgramApiKey = DeepgramKeyBox.Password,
-                GeminiApiKey = GeminiKeyBox.Password,
-                GeminiModel = GeminiModelBox.Text,
-                AzureEndpoint = AzureEndpointBox.Text,
-                AzureDeployment = AzureDeploymentBox.Text,
-                AzureApiKey = AzureKeyBox.Password
-            };
+            UserSettings settings = ReadFields();
 
             await _userSettingsService.SaveAsync(settings);
+            _savedFields = settings;
             SaveStatusText.Text =
                 $"Guardado {DateTime.Now:HH:mm:ss}. Reinicia la app para que los cambios tengan efecto.";
         }

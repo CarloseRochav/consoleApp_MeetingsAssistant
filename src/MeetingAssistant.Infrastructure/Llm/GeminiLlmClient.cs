@@ -30,10 +30,14 @@ public sealed class GeminiLlmClient : ILlmClient
             config: new GenerateContentConfig { MaxOutputTokens = request.MaxOutputTokens },
             cancellationToken: cancellationToken);
 
+        // Gemini cuenta el razonamiento aparte de la respuesta
+        // (CandidatesTokenCount no lo incluye) pero lo cobra al precio de
+        // salida. Se suma para que la salida signifique lo mismo que en Foundry.
+        int thinkingTokens = response.UsageMetadata?.ThoughtsTokenCount ?? 0;
         return new LlmProviderResponse(
             response.Text,
             response.UsageMetadata?.PromptTokenCount ?? 0,
-            response.UsageMetadata?.CandidatesTokenCount ?? 0,
-            response.UsageMetadata?.ThoughtsTokenCount ?? 0);
+            (response.UsageMetadata?.CandidatesTokenCount ?? 0) + thinkingTokens,
+            thinkingTokens);
     }
 }

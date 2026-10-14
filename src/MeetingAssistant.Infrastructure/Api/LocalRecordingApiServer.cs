@@ -25,12 +25,17 @@ public sealed class LocalRecordingApiServer : IDisposable
     private readonly IRecordingTrigger _recordings;
     private readonly string _authToken;
     private readonly HttpListener _listener;
+    private readonly Action<string, Exception>? _onFailure;
     private CancellationTokenSource? _cts;
     private Task? _listenLoop;
 
-    public LocalRecordingApiServer(IRecordingTrigger recordings, IConfiguration configuration)
+    public LocalRecordingApiServer(
+        IRecordingTrigger recordings,
+        IConfiguration configuration,
+        Action<string, Exception>? onFailure = null)
     {
         _recordings = recordings;
+        _onFailure = onFailure;
 
         _authToken = configuration["Api:AuthToken"]
             ?? throw new InvalidOperationException(
@@ -135,15 +140,18 @@ public sealed class LocalRecordingApiServer : IDisposable
                     break;
             }
         }
+        // Sin la traza en la respuesta: lleva rutas locales y nombres internos, y
+        // a quien llama le alcanza con el mensaje. La traza completa va al log.
         catch (InvalidOperationException ex)
         {
             // Guard clauses del coordinador (doble start, stop sin start, o una
             // operación de la ventana todavía en curso) llegan aquí.
-            await WriteJsonAsync(response, 409, new { error = ex.Message, details = ex.ToString() });
+            await WriteJsonAsync(response, 409, new { error = ex.Message });
         }
         catch (Exception ex)
         {
-            await WriteJsonAsync(response, 500, new { error = ex.Message, details = ex.ToString() });
+            _onFailure?.Invoke($"LocalRecordingApiServer {request.HttpMethod} {request.Url?.AbsolutePath}", ex);
+            await WriteJsonAsync(response, 500, new { error = ex.Message, type = ex.GetType().Name });
         }
     }
 

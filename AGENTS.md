@@ -66,8 +66,9 @@ the other way around.
 - When isolating a test in its own Postgres schema, never rely on the
   `search_path` connection-string parameter: Neon's proxy drops it silently and
   the test writes to `public`. `PostgresDatabase` sets it per connection and
-  verifies `current_schema()`. `--verify-db` inspects the REAL database
-  read-only; `--set-setting <key> [value]` writes one setting into it (omit the
+  verifies `current_schema()`. `--verify-db` inspects the REAL databases
+  read-only (the local SQLite, where settings always live, and the Postgres
+  history if a connection string is configured); `--set-setting <key> [value]` writes one setting into it (omit the
   value to delete the key).
 
 **Use `dotnet run` — not `dotnet build` — to test a change in the real app.**
