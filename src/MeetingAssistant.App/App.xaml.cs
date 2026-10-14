@@ -38,6 +38,7 @@ public partial class App : Application
     private static string? _settingsImportDiagnostic;
     private static string? _historyStoreDiagnostic;
     private static string? _settingsSourceDiagnostic;
+    private static string? _promptsDiagnostic;
 
     public App()
     {
@@ -135,6 +136,7 @@ public partial class App : Application
         if (_settingsImportDiagnostic is not null) LogDiagnostic(_settingsImportDiagnostic);
         if (_historyStoreDiagnostic is not null) LogDiagnostic(_historyStoreDiagnostic);
         if (_settingsSourceDiagnostic is not null) LogDiagnostic(_settingsSourceDiagnostic);
+        if (_promptsDiagnostic is not null) LogDiagnostic(_promptsDiagnostic);
 
         // Si el historial está en Postgres, se lo despierta en segundo plano: la
         // primera consulta tras un rato sin uso tarda, y es mejor que esa espera
@@ -525,7 +527,25 @@ public partial class App : Application
         services.AddSingleton<ILlmClient>(_ => CreateLlmClient(configuration));
         services.AddSingleton<ICostEstimator, ConfigPricingCostEstimator>();
         services.AddSingleton<ITranscriptionCostEstimator, ConfigPricingCostEstimator>();
-        services.AddSingleton<IPromptCatalog, BuiltInPromptCatalog>();
+        // Prompts editables (Fase 2, paso 6): el texto del código más las
+        // ediciones guardadas desde Configuración, en la misma base que el
+        // historial. Se leen acá, con plazo, para que la primera grabación ya
+        // use la versión activa; si la base no contesta, quedan los originales.
+        IPromptStore promptStore = historyInPostgres && postgres is not null
+            ? new PostgresPromptStore(postgres)
+            : new Infrastructure.Storage.Sqlite.SqlitePromptStore(connectionFactory);
+        var promptCatalog = new EditablePromptCatalog(new BuiltInPromptCatalog(), promptStore, LogStartupFailure);
+        // Task.Run y no la llamada directa: este método corre en el hilo de la
+        // UI, y esperar acá una tarea que quiere volver a ese mismo hilo se
+        // bloquearía hasta agotar el plazo, en cada arranque con Postgres.
+        Task promptRefresh = Task.Run(() => promptCatalog.RefreshAsync());
+        bool promptsInTime = promptRefresh.Wait(TimeSpan.FromSeconds(5));
+        _promptsDiagnostic = promptsInTime && promptCatalog.LoadedFromStore
+            ? $"Prompts: activos {string.Join(", ", promptCatalog.GetAll().Select(prompt => $"{prompt.Id} {prompt.Version}"))}."
+            : "Prompts: no se pudieron leer las ediciones a tiempo; se usan los originales del código.";
+        services.AddSingleton(promptCatalog);
+        services.AddSingleton<IPromptCatalog>(promptCatalog);
+        services.AddTransient<PromptEditorViewModel>();
         services.AddSingleton<ILlmReportExtractor, LlmReportExtractor>();
         services.AddSingleton<IReportStorage, MarkdownReportStorage>();
         services.AddSingleton<IMeetingPipeline>(provider => new MeetingPipeline(

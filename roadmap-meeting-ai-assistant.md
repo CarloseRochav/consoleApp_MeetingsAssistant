@@ -83,8 +83,66 @@ Tray/HTTP siguen auto-extrayendo con el prompt por defecto.
 **Pasos 4 y 5 cerrados desde Fase 5 (2026-08-28).** `HistoryPage` con lista y
 detalle existe, leyendo de la base en vez de escanear un directorio — que es por
 lo que se absorbieron a Fase 5 en vez de construirlos dos veces. Lo único que
-sigue abierto de esta fase es **editar el system prompt desde Configuración**
-(paso 6): el catálogo sigue siendo de sólo lectura, definido en código.
+seguía abierto de esta fase era **editar el system prompt desde Configuración**
+(paso 6).
+
+**Paso 6, editar los prompts: CONSTRUIDO 2026-10-12, SIN VERIFICAR EN LA APP —
+la fase no se cierra todavía.**
+
+Sección **Prompts** al final de Configuración, con su propio ViewModel
+(`PromptEditorViewModel`) dentro de un control (`PromptEditorPanel`).
+
+**Decisiones:**
+- **Guardar no pisa: crea una versión nueva** (`v1.1`, `v1.2`...) y la deja
+  activa. Los reportes ya generados siguen diciendo con qué texto exacto
+  salieron, y Costos agrupa por versión sin cambiar nada. Guardar el mismo texto
+  que el activo no crea versión.
+- **El original queda en el código** y siempre se puede volver a él ("Volver al
+  original"); las ediciones quedan en el historial. Elegir una versión vieja del
+  historial la carga en el editor, y hay que guardarla para que vuelva a mandar.
+- **Las ediciones viven en la misma base que el historial**: con Postgres, las
+  ven todas las máquinas al reiniciar la app.
+- **Una versión nueva en el código gana** sobre ediciones hechas a la vieja: cada
+  edición guarda la versión del código sobre la que se hizo, y sólo cuentan las
+  de la versión actual. Un cambio del código no queda tapado en silencio.
+- **Sólo se editan los tres prompts que existen.** Crear prompts nuevos queda
+  fuera.
+- **El prompt de asignación devuelve JSON** que la app interpreta. Se puede
+  editar, con un aviso fijo: si cambia el formato de salida, el próximo reporte
+  falla al interpretarse.
+
+**Cómo encaja:** `EditablePromptCatalog` (Core) implementa `IPromptCatalog`,
+así que el extractor, Grabar e Historial no cambiaron: piden un prompt por id y
+reciben el texto activo. Las ediciones se leen a una caché al arrancar —con
+plazo de 5 s, fuera del hilo de la UI— y después de cada guardado. Si la base no
+contesta, quedan los originales y se registra; no lanza. Tabla
+`prompt_version`: SQLite v3, Postgres v2. Una etiqueta de versión no puede
+repetirse con otro texto: índice único.
+
+**Verificado:**
+- Build en 0 warnings / 0 errores; `Core.csproj` con 0 `PackageReference`.
+- **`--verify-prompts`, nuevo: 47/47**, el mismo recorrido contra SQLite y
+  contra Neon en un esquema descartable, más la base inalcanzable. Cubre la
+  numeración, el texto idéntico que no crea versión, dos instancias guardando
+  por turnos sin repetir número, volver al original, la etiqueta duplicada
+  rechazada por la base, la versión nueva del código ganándole a ediciones
+  viejas, y **el extractor mandándole al modelo el texto activo y marcando el
+  reporte con esa versión**.
+- Los nueve autotests anteriores siguen en verde. Uno necesitó un ajuste del
+  propio test: `--verify-archive` arma una base "v1" a mano y ahora tiene que
+  quitar también la tabla nueva.
+
+**Revisión 2026-10-14, antes de probarlo en pantalla:** el aviso del prompt de
+asignación nombraba un esquema que no existe ("tasks"); ahora lista las claves
+que exige el parser (`summary`, `insights`, `taskList`, `requirements`,
+`indications`, `openQuestions`). Y en `SqliteSchemaMigrator` cada comentario
+`v1`/`v2`/`v3` quedó sobre su propia constante (venían apilados sobre la
+primera desde v2).
+
+**Lo que NO se verificó:** nada en la app. Falta ver la sección en pantalla,
+guardar una versión, generar un reporte con ella y volver al original. Un
+detalle conocido para esa prueba: cambiar de prompt en el desplegable, o salir
+de Configuración, descarta sin avisar lo que no se guardó.
 
 ### Criterio de salida
 - Puedes grabar una reunión completa desde la UI, sin tocar consola, y ver el reporte generado en pantalla

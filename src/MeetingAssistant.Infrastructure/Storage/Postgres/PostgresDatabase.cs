@@ -247,8 +247,32 @@ public sealed partial class PostgresDatabase : IAsyncDisposable
     /// </summary>
     private static readonly (int Version, string Sql)[] Migrations =
     [
-        (1, Version1Sql)
+        (1, Version1Sql),
+        (2, Version2Sql)
     ];
+
+    /// <summary>
+    /// v2 — 
+    /// Las ediciones de prompts hechas desde Configuración. Una fila por
+    /// versión guardada; nada se pisa. <c>version</c> y <c>system_prompt</c> en
+    /// null marcan una vuelta al original del código. El índice único impide
+    /// dos textos distintos con la misma etiqueta de versión, que harían mentir
+    /// a los reportes que la citan.
+    /// </summary>
+    private const string Version2Sql =
+        """
+        create table prompt_version (
+            id              bigint generated always as identity primary key,
+            prompt_id       text not null,
+            base_version    text not null,
+            version         text,
+            system_prompt   text,
+            note            text,
+            created_at_utc  timestamptz not null
+        );
+
+        create unique index ux_prompt_version on prompt_version(prompt_id, version) where version is not null;
+        """;
 
     /// <summary>
     /// v1 — lo mismo que el esquema v2 de SQLite, con tipos de Postgres.

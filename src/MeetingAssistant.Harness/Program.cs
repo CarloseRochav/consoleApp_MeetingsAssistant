@@ -129,6 +129,16 @@ if (positional.Count >= 1 &&
     }
 }
 
+// Prompts editables: SQLite temporal y Postgres en un esquema descartable.
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-prompts", StringComparison.OrdinalIgnoreCase))
+{
+    return await PromptCommands.VerifyAsync(new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile(appSettingsFileName, optional: false, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .Build());
+}
+
 if (positional.Count == 1 && string.Equals(positional[0], "--verify-retention", StringComparison.OrdinalIgnoreCase))
 {
     return await RetentionCommands.VerifyAsync();

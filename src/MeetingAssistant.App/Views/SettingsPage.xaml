@@ -124,6 +124,17 @@
                 IsTextSelectionEnabled="True"
                 Opacity="0.5"
                 TextWrapping="Wrap" />
+
+            <!--
+                Prompts. Van al final y con sus propios botones: no los guarda el
+                "Guardar cambios" de arriba, y a diferencia del resto de esta
+                página se aplican al instante, sin reiniciar.
+            -->
+            <TextBlock
+                Margin="0,24,0,0"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                Text="Prompts" />
+            <views:PromptEditorPanel />
         </StackPanel>
     </ScrollViewer>
 </Page>

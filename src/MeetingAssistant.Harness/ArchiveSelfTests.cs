@@ -211,7 +211,7 @@ internal static class ArchiveSelfTests
 
             // --- Migracion sobre una base v1 con datos ------------------------------
             Console.WriteLine($"{Environment.NewLine}--- Migracion v1 a v2 ---");
-            Check("el esquema del codigo es v2", SqliteSchemaMigrator.LatestVersion == 2);
+            Check("el esquema del codigo es v2 o posterior", SqliteSchemaMigrator.LatestVersion >= 2);
             Check("borrar la sesion arrastra sus subidas (cascade)", await CascadeDeletesUploadsAsync(factory, sessionId));
 
             // Una base como las que ya existen: v1, con datos y sin la tabla
@@ -227,6 +227,7 @@ internal static class ArchiveSelfTests
                 command.CommandText =
                     """
                     drop table cloud_upload;
+                    drop table if exists prompt_version;
                     pragma user_version = 1;
                     insert into session(started_at_utc, source) values ('2026-08-27T09:00:00.000Z', 'hotkey');
                     insert into transcript(session_id, text, created_at_utc) values (1, 'texto viejo', '2026-08-27T09:05:00.000Z');
@@ -237,7 +238,7 @@ internal static class ArchiveSelfTests
             string migration = legacyMigrator.Migrate();
             IMeetingHistoryStore legacyHistory = new SqliteMeetingHistoryStore(legacyFactory);
             IReadOnlyList<SessionSummary> legacySessions = await legacyHistory.ListSessionsAsync(10);
-            Check("una base v1 con datos migra a v2", migration.Contains("de v1 a v2", StringComparison.Ordinal));
+            Check("una base v1 con datos migra a la ultima version", migration.Contains($"de v1 a v{SqliteSchemaMigrator.LatestVersion}", StringComparison.Ordinal));
             Check("conserva sus filas, y el listado funciona con la tabla nueva vacia",
                 legacySessions is [{ TranscriptPreview: "texto viejo", AudioArchiveState: null }]);
             Check("y despues acepta subidas",

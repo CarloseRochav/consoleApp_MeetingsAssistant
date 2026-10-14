@@ -30,7 +30,8 @@ public sealed class SqliteSchemaMigrator
     private static readonly (int Version, string Sql)[] Migrations =
     [
         (1, Version1Sql),
-        (2, Version2Sql)
+        (2, Version2Sql),
+        (3, Version3Sql)
     ];
 
     public static int LatestVersion => Migrations[^1].Version;
@@ -77,29 +78,28 @@ public sealed class SqliteSchemaMigrator
     }
 
     /// <summary>
-    /// v1 — sesiones, transcripts, reportes y ajustes.
+    /// v3 — las ediciones de prompts (Fase 2, paso 6).
     ///
-    /// Notas de diseño que no se ven en el SQL:
-    ///
-    /// - <b>Las fechas van en TEXT ISO-8601 UTC.</b> Ordenan bien
-    ///   lexicográficamente y se leen a ojo en DB Browser, que fue parte de por
-    ///   qué se eligió SQLite. Y son UTC a propósito: hoy el .wav se nombra en
-    ///   hora local y el reporte en UTC, así que una reunión de la noche parece
-    ///   del día siguiente. Guardar UTC y convertir sólo al mostrar corta eso de
-    ///   raíz.
-    /// - <b>El costo va en micro-dólares enteros</b>, no en REAL. Guardar dinero
-    ///   en punto flotante es pedir deriva justo en la métrica que Fase 4 quiere
-    ///   sumar. La granularidad de 1e-6 no pierde nada: es exactamente la que ya
-    ///   muestra el frontmatter (<c>cost-usd</c> se renderiza con F6).
-    /// - <b>Una sesión puede tener varios reportes.</b> El catálogo ya permite
-    ///   re-correr el mismo transcript con otro prompt, y hoy eso se pierde.
-    /// - <b>structured_json es una columna, no un juego de tablas.</b> Sólo
-    ///   assignment-meeting produce un MeetingReport estructurado; los demás
-    ///   prompts dan Markdown suelto. Normalizar TaskItem/Insights pelearía con
-    ///   el diseño del catálogo.
-    /// - <b>vault_path deja el .md del vault como lo que es</b>: una
-    ///   exportación, no el registro. El vault sigue siendo el producto.
+    /// Una fila por versión guardada desde Configuración; nada se pisa. <c>version</c> y <c>system_prompt</c> en
+    /// null marcan una vuelta al original del código. El índice único impide
+    /// dos textos distintos con la misma etiqueta de versión, que harían mentir
+    /// a los reportes que la citan.
     /// </summary>
+    private const string Version3Sql =
+        """
+        create table prompt_version (
+            id              integer primary key autoincrement,
+            prompt_id       text not null,
+            base_version    text not null,
+            version         text,
+            system_prompt   text,
+            note            text,
+            created_at_utc  text not null
+        );
+
+        create unique index ux_prompt_version on prompt_version(prompt_id, version) where version is not null;
+        """;
+
     /// <summary>
     /// v2 — la cola de subidas a la nube (Fase 6, paso 1).
     ///
@@ -132,6 +132,30 @@ public sealed class SqliteSchemaMigrator
         create index ix_cloud_upload_state   on cloud_upload(state);
         """;
 
+    /// <summary>
+    /// v1 — sesiones, transcripts, reportes y ajustes.
+    ///
+    /// Notas de diseño que no se ven en el SQL:
+    ///
+    /// - <b>Las fechas van en TEXT ISO-8601 UTC.</b> Ordenan bien
+    ///   lexicográficamente y se leen a ojo en DB Browser, que fue parte de por
+    ///   qué se eligió SQLite. Y son UTC a propósito: hoy el .wav se nombra en
+    ///   hora local y el reporte en UTC, así que una reunión de la noche parece
+    ///   del día siguiente. Guardar UTC y convertir sólo al mostrar corta eso de
+    ///   raíz.
+    /// - <b>El costo va en micro-dólares enteros</b>, no en REAL. Guardar dinero
+    ///   en punto flotante es pedir deriva justo en la métrica que Fase 4 quiere
+    ///   sumar. La granularidad de 1e-6 no pierde nada: es exactamente la que ya
+    ///   muestra el frontmatter (<c>cost-usd</c> se renderiza con F6).
+    /// - <b>Una sesión puede tener varios reportes.</b> El catálogo ya permite
+    ///   re-correr el mismo transcript con otro prompt, y hoy eso se pierde.
+    /// - <b>structured_json es una columna, no un juego de tablas.</b> Sólo
+    ///   assignment-meeting produce un MeetingReport estructurado; los demás
+    ///   prompts dan Markdown suelto. Normalizar TaskItem/Insights pelearía con
+    ///   el diseño del catálogo.
+    /// - <b>vault_path deja el .md del vault como lo que es</b>: una
+    ///   exportación, no el registro. El vault sigue siendo el producto.
+    /// </summary>
     private const string Version1Sql =
         """
         create table session (

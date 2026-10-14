@@ -1,0 +1,93 @@
+<UserControl
+    x:Class="MeetingAssistant.App.Views.PromptEditorPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:MeetingAssistant.App.ViewModels"
+    xmlns:views="using:MeetingAssistant.App.Views"
+    mc:Ignorable="d">
+
+    <!--
+        Editor de prompts, dentro de Configuración. Tiene su propio ViewModel:
+        el resto de SettingsPage es code-behind con un único botón Guardar, y
+        los prompts se guardan aparte, versión por versión.
+    -->
+    <StackPanel Spacing="12">
+        <TextBlock Text="{Binding StorageHint}"
+                   TextWrapping="Wrap"
+                   Opacity="0.75" />
+
+        <ComboBox Header="Prompt"
+                  ItemsSource="{Binding Prompts}"
+                  SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
+                  DisplayMemberPath="DisplayName"
+                  HorizontalAlignment="Stretch" />
+        <TextBlock Text="{Binding SelectedPrompt.Description}"
+                   TextWrapping="Wrap"
+                   Opacity="0.8" />
+        <TextBlock Text="{Binding ActiveVersionText}"
+                   TextWrapping="Wrap"
+                   FontWeight="SemiBold" />
+
+        <InfoBar x:Name="StructuredWarning"
+                 Severity="Warning"
+                 IsClosable="False"
+                 Title="Formato de salida"
+                 Message="{Binding StructuredOutputWarning}" />
+
+        <TextBox Header="Texto del prompt"
+                 Text="{Binding EditorText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 FontFamily="Consolas"
+                 FontSize="13"
+                 Height="360"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 IsSpellCheckEnabled="False" />
+        <TextBlock Text="{Binding DirtyHint}"
+                   TextWrapping="Wrap"
+                   Opacity="0.75" />
+
+        <TextBox Header="Qué cambió (opcional)"
+                 Text="{Binding Note, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 PlaceholderText="Por ejemplo: pide los riesgos aparte de las tareas" />
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Guardar como versión nueva"
+                    Command="{Binding SaveCommand}"
+                    Style="{StaticResource AccentButtonStyle}" />
+            <Button Content="Descartar cambios"
+                    Command="{Binding DiscardCommand}" />
+            <Button Content="Volver al original"
+                    Command="{Binding RestoreOriginalCommand}" />
+        </StackPanel>
+
+        <TextBlock Text="{Binding StatusMessage}"
+                   TextWrapping="Wrap"
+                   Opacity="0.8" />
+        <views:ErrorPanel Details="{Binding ErrorDetails}" />
+
+        <TextBlock Text="Versiones"
+                   Style="{StaticResource BodyStrongTextBlockStyle}" />
+        <TextBlock Text="Elegir una versión la carga en el editor; para volver a usarla, guárdala."
+                   TextWrapping="Wrap"
+                   Opacity="0.75" />
+        <ListView ItemsSource="{Binding Versions}"
+                  SelectedItem="{Binding SelectedVersion, Mode=TwoWay}"
+                  SelectionMode="Single"
+                  MaxHeight="220">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="vm:PromptVersionItem">
+                    <StackPanel Padding="0,6" Spacing="2">
+                        <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                        <TextBlock Text="{x:Bind Subtitle}"
+                                   TextWrapping="Wrap"
+                                   Opacity="0.75"
+                                   FontSize="12" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </StackPanel>
+</UserControl>

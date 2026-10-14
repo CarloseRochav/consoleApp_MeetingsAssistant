@@ -50,7 +50,7 @@ the other way around.
   Developer Mode enabled on Windows)
 - Self-tests, all in the harness, all safe to run (temp DBs, never the real
   one): `--verify-render`, `--verify-db-selftest`, `--verify-settings-config`,
-  `--verify-reextraction`, `--verify-archive`,
+  `--verify-reextraction`, `--verify-archive`, `--verify-prompts`,
   `--verify-pipeline-history <wav>` (this last one makes real Deepgram and LLM
   calls). `--verify-blob-upload` uploads two small files to the configured
   Azure Storage account, reads them back and deletes them. `--verify-postgres`
