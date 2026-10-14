@@ -30,6 +30,7 @@ public partial class App : Application
     private StartupErrorWindow? _errorWindow;
     private Exception? _configurationFailure;
     private bool _isExiting;
+    private bool _exitPromptOpen;
 
     // Estáticos porque los escribe ConfigureServices, que es estático y corre
     // antes de que haya log donde escribir de forma ordenada. Se vuelcan en
@@ -38,7 +39,6 @@ public partial class App : Application
     private static string? _settingsImportDiagnostic;
     private static string? _historyStoreDiagnostic;
     private static string? _settingsSourceDiagnostic;
-    private static string? _promptsDiagnostic;
 
     public App()
     {
@@ -136,7 +136,6 @@ public partial class App : Application
         if (_settingsImportDiagnostic is not null) LogDiagnostic(_settingsImportDiagnostic);
         if (_historyStoreDiagnostic is not null) LogDiagnostic(_historyStoreDiagnostic);
         if (_settingsSourceDiagnostic is not null) LogDiagnostic(_settingsSourceDiagnostic);
-        if (_promptsDiagnostic is not null) LogDiagnostic(_promptsDiagnostic);
 
         // Si el historial está en Postgres, se lo despierta en segundo plano: la
         // primera consulta tras un rato sin uso tarda, y es mejor que esa espera
@@ -484,6 +483,30 @@ public partial class App : Application
             (true, not null) => $"Historial: Postgres en {postgres.Description}."
         };
 
+        // Prompts editables (Fase 2, paso 6): el texto del código más las
+        // ediciones guardadas desde Configuración, en la misma base que el
+        // historial. **No se espera esta lectura.** Antes se esperaba hasta 5 s,
+        // en serie con los 5 s de los ajustes de la nube: con Neon dormido, el
+        // arranque podía quedarse unos 10 s sin ventana. Arranca acá, antes de
+        // los ajustes de la nube, para que las dos lecturas esperen juntas a que
+        // la base despierte. Mientras no termine, el catálogo sirve los
+        // originales del código: lo que se pierde es que algo extraído en esos
+        // primeros segundos —antes de que pueda terminar una grabación— use el
+        // original y no la versión editada.
+        IPromptStore promptStore = historyInPostgres && postgres is not null
+            ? new PostgresPromptStore(postgres)
+            : new Infrastructure.Storage.Sqlite.SqlitePromptStore(connectionFactory);
+        var promptCatalog = new EditablePromptCatalog(new BuiltInPromptCatalog(), promptStore, LogStartupFailure);
+        var promptClock = System.Diagnostics.Stopwatch.StartNew();
+        _ = Task.Run(async () =>
+        {
+            await promptCatalog.RefreshAsync();
+            LogDiagnostic(promptCatalog.LoadedFromStore
+                ? $"Prompts: activos {string.Join(", ", promptCatalog.GetAll().Select(prompt => $"{prompt.Id} {prompt.Version}"))} " +
+                  $"(leídos en {promptClock.ElapsedMilliseconds} ms)."
+                : "Prompts: no se pudieron leer las ediciones; se usan los originales del código.");
+        });
+
         // Después, si Configuration:Source lo pide, se intercala la capa de la
         // nube: empaquetado -> archivo de usuario -> SQLite local -> **nube** ->
         // entorno. Primero la base compartida; si no contesta dentro del plazo,
@@ -496,6 +519,10 @@ public partial class App : Application
             TimeSpan timeout = TimeSpan.FromSeconds(
                 localConfiguration.GetValue<double?>("Configuration:CloudTimeoutSeconds") is > 0 and var seconds ? seconds : 5);
 
+            // Esta espera sí bloquea el arranque, hasta el plazo: los servicios se
+            // construyen con lo que diga la nube (proveedor, modelo). Se mide
+            // para que el log diga cuánto costó, sobre todo con Neon dormido.
+            var cloudClock = System.Diagnostics.Stopwatch.StartNew();
             IConfigurationRoot withCloud = LocalLayers()
                 .AddCloudSettings(cloudSettings, timeout, LogStartupFailure)
                 .AddEnvironmentVariables()
@@ -503,9 +530,10 @@ public partial class App : Application
             configuration = withCloud;
 
             _settingsSourceDiagnostic =
-                withCloud.Providers.OfType<CloudSettingsConfigurationProvider>().Single().LoadedFromCloud
+                (withCloud.Providers.OfType<CloudSettingsConfigurationProvider>().Single().LoadedFromCloud
                     ? "Ajustes: primero la nube (Postgres), después lo local."
-                    : "Ajustes: la nube no respondió a tiempo; en este arranque se usan sólo los locales.";
+                    : "Ajustes: la nube no respondió a tiempo; en este arranque se usan sólo los locales.") +
+                $" Espera del arranque: {cloudClock.ElapsedMilliseconds} ms.";
         }
         else
         {
@@ -527,22 +555,6 @@ public partial class App : Application
         services.AddSingleton<ILlmClient>(_ => CreateLlmClient(configuration));
         services.AddSingleton<ICostEstimator, ConfigPricingCostEstimator>();
         services.AddSingleton<ITranscriptionCostEstimator, ConfigPricingCostEstimator>();
-        // Prompts editables (Fase 2, paso 6): el texto del código más las
-        // ediciones guardadas desde Configuración, en la misma base que el
-        // historial. Se leen acá, con plazo, para que la primera grabación ya
-        // use la versión activa; si la base no contesta, quedan los originales.
-        IPromptStore promptStore = historyInPostgres && postgres is not null
-            ? new PostgresPromptStore(postgres)
-            : new Infrastructure.Storage.Sqlite.SqlitePromptStore(connectionFactory);
-        var promptCatalog = new EditablePromptCatalog(new BuiltInPromptCatalog(), promptStore, LogStartupFailure);
-        // Task.Run y no la llamada directa: este método corre en el hilo de la
-        // UI, y esperar acá una tarea que quiere volver a ese mismo hilo se
-        // bloquearía hasta agotar el plazo, en cada arranque con Postgres.
-        Task promptRefresh = Task.Run(() => promptCatalog.RefreshAsync());
-        bool promptsInTime = promptRefresh.Wait(TimeSpan.FromSeconds(5));
-        _promptsDiagnostic = promptsInTime && promptCatalog.LoadedFromStore
-            ? $"Prompts: activos {string.Join(", ", promptCatalog.GetAll().Select(prompt => $"{prompt.Id} {prompt.Version}"))}."
-            : "Prompts: no se pudieron leer las ediciones a tiempo; se usan los originales del código.";
         services.AddSingleton(promptCatalog);
         services.AddSingleton<IPromptCatalog>(promptCatalog);
         services.AddTransient<PromptEditorViewModel>();
@@ -651,27 +663,20 @@ public partial class App : Application
 
     private async Task ExitApplicationAsync()
     {
-        if (_isExiting || _window is null || _apiServer is null) return;
+        // _exitPromptOpen: un segundo "Salir" de la bandeja con la pregunta
+        // todavía abierta intentaría abrir otro ContentDialog, y WinUI sólo
+        // admite uno a la vez (lanza).
+        if (_isExiting || _exitPromptOpen || _window is null || _apiServer is null) return;
 
-        RecordingCoordinator coordinator = Services.GetRequiredService<RecordingCoordinator>();
-        if (coordinator.IsRecording || coordinator.IsProcessing)
+        _exitPromptOpen = true;
+        try
         {
-            var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
-            {
-                XamlRoot = ((FrameworkElement)_window.Content).XamlRoot,
-                Title = "Hay una grabación en curso",
-                Content = "¿Salir de todas formas? Se perderá la grabación.",
-                PrimaryButtonText = "Salir sin guardar",
-                CloseButtonText = "Cancelar",
-                DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close
-            };
-
-            if (await dialog.ShowAsync() != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
+            if (!await ConfirmExitAsync(_window)) return;
         }
-
-        // Un prompt editado y sin guardar en Configuración se perdería igual que
-        // al cambiar de página.
-        if (!await _window.ConfirmLeaveCurrentPageAsync()) return;
+        finally
+        {
+            _exitPromptOpen = false;
+        }
 
         _isExiting = true;
         _apiServer.Stop();
@@ -691,6 +696,45 @@ public partial class App : Application
         _trayIconService?.Dispose();
         _window.BeginExitFromTray();
         Exit();
+    }
+
+    /// <summary>true si se puede salir: no hay nada en curso, o el usuario aceptó perderlo.</summary>
+    private static async Task<bool> ConfirmExitAsync(MainWindow window)
+    {
+        RecordingCoordinator coordinator = Services.GetRequiredService<RecordingCoordinator>();
+        if (coordinator.IsRecording || coordinator.IsProcessing)
+        {
+            // "Salir" llega desde la bandeja, casi siempre con la ventana
+            // oculta, y un ContentDialog se dibuja dentro de la ventana: sin
+            // mostrarla, la pregunta queda invisible y parece que Salir no hizo
+            // nada.
+            window.ShowFromTray();
+            var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+            {
+                XamlRoot = ((FrameworkElement)window.Content).XamlRoot,
+                Title = "Hay una grabación en curso",
+                Content = "¿Salir de todas formas? Se perderá la grabación.",
+                PrimaryButtonText = "Salir sin guardar",
+                CloseButtonText = "Cancelar",
+                DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close
+            };
+
+            try
+            {
+                if (await dialog.ShowAsync() != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return false;
+            }
+            catch (Exception exception)
+            {
+                // Otro ContentDialog abierto en la ventana. Ante la duda no se
+                // sale: se perdería la grabación sin que nadie lo aceptara.
+                LogStartupFailure("App.ConfirmExit", exception);
+                return false;
+            }
+        }
+
+        // Un prompt editado y sin guardar en Configuración se perdería igual que
+        // al cambiar de página.
+        return await window.ConfirmLeaveCurrentPageAsync();
     }
 
     private static ILlmClient CreateLlmClient(IConfiguration configuration)

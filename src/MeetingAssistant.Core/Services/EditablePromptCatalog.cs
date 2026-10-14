@@ -66,17 +66,31 @@ public sealed class EditablePromptCatalog : IPromptCatalog
         return _active[original.Id];
     }
 
-    /// <summary>Relee las ediciones de la base. Nunca lanza.</summary>
+    /// <summary>
+    /// Relee las ediciones de la base. Nunca lanza.
+    ///
+    /// Toma el mismo candado que guardar: la app ya no espera esta lectura al
+    /// arrancar, así que puede terminar después de un guardado, y una lectura
+    /// empezada antes que él pisaría la versión recién activada con la vieja.
+    /// </summary>
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         if (_store is null) return;
 
         try
         {
-            IReadOnlyList<PromptEdit> edits = await _store.GetAllAsync(cancellationToken);
-            _edits = edits;
-            _active = Resolve(edits);
-            LoadedFromStore = true;
+            await _writeLock.WaitAsync(cancellationToken);
+            try
+            {
+                IReadOnlyList<PromptEdit> edits = await _store.GetAllAsync(cancellationToken);
+                _edits = edits;
+                _active = Resolve(edits);
+                LoadedFromStore = true;
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
         catch (Exception exception)
         {

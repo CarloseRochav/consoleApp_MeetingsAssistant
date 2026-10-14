@@ -62,6 +62,32 @@ internal static class PromptCommands
             saveThrew && broken.Default.Version == ReportExtractionPrompt.Version);
         failures += unreachableFailures;
 
+        // --- La lectura del arranque no pisa un guardado ----------------------
+        // La app ya no espera la lectura de las ediciones al arrancar, asi que
+        // puede terminar despues de que el usuario guarde. Aca se fuerza el peor
+        // orden: la lectura toma su foto de la base (vacia), se queda colgada,
+        // se guarda una version y recien despues la lectura termina.
+        Console.WriteLine($"{Environment.NewLine}=== Prompts editables: lectura lenta del arranque ===");
+        int raceFailures = 0;
+        void CheckRace(string description, bool passed)
+        {
+            Console.WriteLine($"  [{(passed ? "OK " : "MAL")}] {description}");
+            if (!passed) raceFailures++;
+        }
+        var slowStore = new SlowFirstReadPromptStore();
+        var raced = new EditablePromptCatalog(new BuiltInPromptCatalog(), slowStore);
+        Task startupRefresh = raced.RefreshAsync();
+        await slowStore.FirstReadStarted.Task;
+        Task<PromptDefinition> save = raced.SaveEditAsync(ReportExtractionPrompt.Id, "Guardado durante el arranque.", null);
+        await Task.Delay(200);
+        CheckRace("guardar espera a que termine la lectura del arranque", !save.IsCompleted);
+        slowStore.ReleaseFirstRead.SetResult();
+        await Task.WhenAll(startupRefresh, save);
+        CheckRace("y la version guardada sigue activa cuando la lectura vieja termina",
+            raced.Default.Version == $"{ReportExtractionPrompt.Version}.1" &&
+            raced.Default.SystemPrompt == "Guardado durante el arranque.");
+        failures += raceFailures;
+
         // --- Postgres -------------------------------------------------------
         string? connectionString = configuration["Postgres:ConnectionString"];
         Console.WriteLine($"{Environment.NewLine}=== Prompts editables: Postgres ===");
@@ -244,6 +270,40 @@ internal static class PromptCommands
         public PromptDefinition GetById(string id) =>
             _all.FirstOrDefault(prompt => string.Equals(prompt.Id, id, StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException($"No existe un prompt con id '{id}'.", nameof(id));
+    }
+
+    /// <summary>
+    /// Ediciones en memoria. La primera lectura toma su foto al entrar y no
+    /// devuelve hasta que la suelten, como una base que tarda en despertar.
+    /// </summary>
+    private sealed class SlowFirstReadPromptStore : IPromptStore
+    {
+        private readonly List<PromptEdit> _edits = [];
+        private int _reads;
+
+        public TaskCompletionSource FirstReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReleaseFirstRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<IReadOnlyList<PromptEdit>> GetAllAsync(CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<PromptEdit> snapshot;
+            lock (_edits) snapshot = _edits.ToList();
+
+            if (Interlocked.Increment(ref _reads) == 1)
+            {
+                FirstReadStarted.SetResult();
+                await ReleaseFirstRead.Task;
+            }
+
+            return snapshot;
+        }
+
+        public Task SaveAsync(PromptEdit edit, CancellationToken cancellationToken = default)
+        {
+            lock (_edits) _edits.Add(edit);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class CapturingLlmClient : ILlmClient

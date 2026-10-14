@@ -718,7 +718,11 @@ las interfaces de Core no cambiarían.
    "desconocido" y el total como incompleto. No es un pendiente: la página está
    diciendo exactamente lo que se sabe.
 
-### Pendiente de confirmación manual — sólo lo puede cerrar el usuario
+### ~~Pendiente de confirmación manual — sólo lo puede cerrar el usuario~~
+
+**✅ Cerrado 2026-10-14:** el usuario dio por buenos los dos botones al repasar
+la lista de pendientes (respuesta textual: "well"). Se deja lo de abajo como
+registro.
 
 Anotado el 2026-08-28. **No hay trabajo de código pendiente aquí**: las dos
 cosas están construidas y probadas por debajo, pero el último clic requiere GUI
@@ -1069,6 +1073,18 @@ tiene su propia base.
 
    **Lo que sigue sin medirse:** cuánto tarda el arranque con Neon dormido.
 
+   **Cambio del 2026-10-14:** el arranque esperaba dos veces en serie a la
+   misma base —hasta 5 s los ajustes de la nube y después hasta 5 s más la
+   lectura de los prompts editados—, o sea unos 10 s sin ventana en el peor
+   caso. Ahora la lectura de prompts **no se espera**: arranca antes que la de
+   ajustes, en segundo plano, y las dos esperan juntas a que Neon despierte. El
+   techo queda en el plazo de la nube (`Configuration:CloudTimeoutSeconds`, 5 s
+   por defecto). El log de arranque ahora dice cuánto se esperó ("Espera del
+   arranque: N ms") y cuánto tardaron los prompts ("leídos en N ms"). Primer
+   arranque medido, con Neon despierto: 1774 ms de espera; prompts en 1166 ms,
+   en paralelo. Con Neon dormido **sigue sin medirse**: el próximo arranque en
+   frío lo deja en el log.
+
    **Lo que cuesta, para que no sorprenda:** con la nube activada el arranque
    **espera** a Neon, hasta el plazo. Es el precio de leer la configuración antes
    de construir los servicios. Y la tabla de la nube está **vacía**: hasta que se
@@ -1178,10 +1194,17 @@ tiene su propia base.
 - **Secretos en texto plano en `appsettings.json`.** Es la consecuencia de
   descartar Key Vault: la cadena de conexión de Neon y la credencial de Storage
   se suman a las API keys que ya están ahí.
-- **La contraseña de Neon se pegó en el chat del agente (2026-10-10).** Riesgo
-  aceptado por el usuario el 2026-10-12; la rotación queda para otro momento.
-  Rotarla obliga a actualizar `Postgres:ConnectionString` en los dos
-  `appsettings.json` reales.
+- ~~**La contraseña de Neon se pegó en el chat del agente (2026-10-10).**~~
+  **✅ Rotada por el usuario el 2026-10-14.** Quedó actualizada en el
+  `appsettings.json` de la app; el del harness seguía con la vieja (los
+  autotests de Postgres fallaban con `28P01`) y el agente lo sincronizó.
+- **Rotar una credencial: mirar también la base local.** Lo que se guardó desde
+  Configuración vive en la tabla `setting` del SQLite (cifrado con DPAPI) y
+  **pisa** al `appsettings.json`. El 2026-10-14 la clave nueva de Deepgram
+  estaba en el JSON pero la app seguía usando la vieja guardada desde
+  Configuración el día anterior (Deepgram respondía 401). Al rotar, cambiarla
+  desde Configuración, o con `--set-setting <clave> <valor>`; `--verify-db`
+  muestra qué claves están guardadas ahí.
 
 ---
 
