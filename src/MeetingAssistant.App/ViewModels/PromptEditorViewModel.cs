@@ -72,8 +72,13 @@ public partial class PromptEditorViewModel : ObservableObject
     [ObservableProperty]
     private string? activeVersionText;
 
-    [ObservableProperty]
-    private PromptVersionItem? selectedVersion;
+    /// <summary>
+    /// El texto que el editor tenía al cargarse (la versión activa o una del
+    /// historial). Lo que el usuario escribió de verdad es la diferencia contra
+    /// esto, no contra la activa: cargar una versión vieja no es un cambio que
+    /// haya que proteger.
+    /// </summary>
+    private string? _loadedText;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
@@ -107,6 +112,52 @@ public partial class PromptEditorViewModel : ObservableObject
     public bool IsDirty =>
         ActivePrompt is not null && Normalize(EditorText) != Normalize(ActivePrompt.SystemPrompt);
 
+    /// <summary>Hay texto escrito a mano que se perdería al cargar otra cosa en el editor.</summary>
+    public bool HasUnsavedEdits => _loadedText is not null && Normalize(EditorText) != Normalize(_loadedText);
+
+    /// <summary>
+    /// Pregunta si se pueden descartar los cambios; recibe el nombre del prompt.
+    /// La pone la vista, que es la que sabe mostrar un diálogo. Sin vista no hay
+    /// a quién preguntar y se descarta.
+    /// </summary>
+    public Func<string, Task<bool>>? ConfirmDiscard { get; set; }
+
+    /// <summary>
+    /// true si no hay nada que perder o el usuario aceptó perderlo. Lo usan los
+    /// cuatro caminos que reemplazan el texto del editor y la vista al salir de
+    /// Configuración.
+    /// </summary>
+    public async Task<bool> ConfirmLeaveAsync()
+    {
+        if (!HasUnsavedEdits || ConfirmDiscard is null) return true;
+        return await ConfirmDiscard(SelectedPrompt?.DisplayName ?? "el prompt");
+    }
+
+    /// <summary>Cambiar de prompt, preguntando antes si hay cambios sin guardar.</summary>
+    public async Task<bool> TrySelectPromptAsync(PromptDefinition prompt)
+    {
+        if (string.Equals(prompt.Id, SelectedPrompt?.Id, StringComparison.OrdinalIgnoreCase)) return true;
+        if (!await ConfirmLeaveAsync()) return false;
+
+        SelectedPrompt = prompt;
+        return true;
+    }
+
+    /// <summary>
+    /// Elegir una versión del historial la carga en el editor, sin activarla.
+    /// Pregunta antes si hay cambios sin guardar.
+    /// </summary>
+    public async Task LoadVersionAsync(PromptVersionItem item)
+    {
+        if (!await ConfirmLeaveAsync()) return;
+
+        EditorText = item.Entry.SystemPrompt;
+        _loadedText = item.Entry.SystemPrompt;
+        StatusMessage = item.Entry.IsActive
+            ? null
+            : $"Cargada {item.Entry.Version} en el editor. No está activa: para usarla, guárdala.";
+    }
+
     public string DirtyHint => IsDirty
         ? "Hay cambios sin guardar. Guardar crea una versión nueva y la deja activa para los reportes que se generen desde ahora."
         : "Sin cambios: el editor muestra la versión activa.";
@@ -130,17 +181,6 @@ public partial class PromptEditorViewModel : ObservableObject
         StatusMessage = null;
         ErrorDetails = null;
         LoadActive();
-    }
-
-    /// <summary>Elegir una versión del historial la carga en el editor, sin activarla.</summary>
-    partial void OnSelectedVersionChanged(PromptVersionItem? value)
-    {
-        if (value is null) return;
-
-        EditorText = value.Entry.SystemPrompt;
-        StatusMessage = value.Entry.IsActive
-            ? null
-            : $"Cargada {value.Entry.Version} en el editor. No está activa: para usarla, guárdala.";
     }
 
     private bool CanSave() => IsDirty && !IsBusy && _catalog.CanEdit && !string.IsNullOrWhiteSpace(EditorText);
@@ -188,6 +228,7 @@ public partial class PromptEditorViewModel : ObservableObject
     private async Task RestoreOriginalAsync()
     {
         if (SelectedPrompt is not { } prompt) return;
+        if (!await ConfirmLeaveAsync()) return;
 
         IsBusy = true;
         ErrorDetails = null;
@@ -215,6 +256,7 @@ public partial class PromptEditorViewModel : ObservableObject
 
         ActivePrompt = _catalog.GetById(SelectedPrompt.Id);
         EditorText = ActivePrompt.SystemPrompt;
+        _loadedText = ActivePrompt.SystemPrompt;
 
         IReadOnlyList<PromptVersionEntry> history = _catalog.GetHistory(SelectedPrompt.Id);
         Versions.Clear();
@@ -225,10 +267,6 @@ public partial class PromptEditorViewModel : ObservableObject
             ? $"Versión activa: {active.Version} (original, definida en el código)."
             : $"Versión activa: {active.Version}, editada el " +
               $"{active.CreatedAtUtc!.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture)}.";
-
-        // Sin selección en el historial: así elegir de nuevo la misma fila
-        // vuelve a disparar la carga.
-        SelectedVersion = null;
     }
 
     private static string Normalize(string? text) => (text ?? string.Empty).Replace("\r\n", "\n").Trim();

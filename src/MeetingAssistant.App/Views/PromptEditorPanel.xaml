@@ -18,10 +18,16 @@
                    TextWrapping="Wrap"
                    Opacity="0.75" />
 
-        <ComboBox Header="Prompt"
-                  ItemsSource="{Binding Prompts}"
-                  SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
+        <!--
+            Sin binding en SelectedItem a propósito: con TwoWay el cambio ya
+            llegó al ViewModel (y borró el editor) antes de poder preguntar si
+            hay cambios sin guardar. La selección la maneja el code-behind, y
+            también ItemsSource, para que los ítems existan antes de elegir uno.
+        -->
+        <ComboBox x:Name="PromptCombo"
+                  Header="Prompt"
                   DisplayMemberPath="DisplayName"
+                  SelectionChanged="PromptCombo_SelectionChanged"
                   HorizontalAlignment="Stretch" />
         <TextBlock Text="{Binding SelectedPrompt.Description}"
                    TextWrapping="Wrap"
@@ -73,9 +79,11 @@
         <TextBlock Text="Elegir una versión la carga en el editor; para volver a usarla, guárdala."
                    TextWrapping="Wrap"
                    Opacity="0.75" />
+        <!-- Clic y no selección: la misma fila se puede volver a cargar, y se pregunta antes de pisar el editor. -->
         <ListView ItemsSource="{Binding Versions}"
-                  SelectedItem="{Binding SelectedVersion, Mode=TwoWay}"
-                  SelectionMode="Single"
+                  SelectionMode="None"
+                  IsItemClickEnabled="True"
+                  ItemClick="Versions_ItemClick"
                   MaxHeight="220">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:PromptVersionItem">

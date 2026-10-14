@@ -134,7 +134,7 @@
                 Margin="0,24,0,0"
                 Style="{StaticResource SubtitleTextBlockStyle}"
                 Text="Prompts" />
-            <views:PromptEditorPanel />
+            <views:PromptEditorPanel x:Name="PromptEditor" />
         </StackPanel>
     </ScrollViewer>
 </Page>

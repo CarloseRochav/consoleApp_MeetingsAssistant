@@ -669,6 +669,10 @@ public partial class App : Application
             if (await dialog.ShowAsync() != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
         }
 
+        // Un prompt editado y sin guardar en Configuración se perdería igual que
+        // al cambiar de página.
+        if (!await _window.ConfirmLeaveCurrentPageAsync()) return;
+
         _isExiting = true;
         _apiServer.Stop();
         _activityNotificationService?.Dispose();

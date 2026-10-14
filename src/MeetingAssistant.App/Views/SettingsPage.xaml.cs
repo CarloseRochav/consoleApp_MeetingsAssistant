@@ -6,8 +6,16 @@ using Windows.ApplicationModel;
 
 namespace MeetingAssistant.App.Views;
 
-public sealed partial class SettingsPage : Page
+public sealed partial class SettingsPage : Page, IConfirmNavigation
 {
+    /// <summary>
+    /// Sólo el editor de prompts. Los campos de ajustes de arriba siguen como
+    /// antes: si se sale sin "Guardar cambios", se pierden sin preguntar.
+    /// </summary>
+    public bool HasUnsavedChanges => PromptEditor.HasUnsavedEdits;
+
+    public Task<bool> ConfirmLeaveAsync() => PromptEditor.ConfirmLeaveAsync();
+
     private readonly StartupTaskService _startupTaskService;
     private readonly UserSettingsService _userSettingsService;
     private bool _isSynchronizing;

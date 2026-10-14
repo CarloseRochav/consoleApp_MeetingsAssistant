@@ -140,9 +140,16 @@ que exige el parser (`summary`, `insights`, `taskList`, `requirements`,
 primera desde v2).
 
 **Lo que NO se verificó:** nada en la app. Falta ver la sección en pantalla,
-guardar una versión, generar un reporte con ella y volver al original. Un
-detalle conocido para esa prueba: cambiar de prompt en el desplegable, o salir
-de Configuración, descarta sin avisar lo que no se guardó.
+guardar una versión, generar un reporte con ella y volver al original.
+
+**Cambios sin guardar (2026-10-14, también sin verificar en pantalla):** antes,
+cinco caminos tiraban sin avisar lo escrito en el editor. Ahora los cinco
+preguntan con un diálogo ("Descartar cambios" / "Seguir editando", por defecto
+seguir): cambiar de prompt en el desplegable, elegir una versión del historial,
+"Volver al original", ir a otra página y salir desde la bandeja (que primero
+muestra la ventana). Cuenta como cambio sólo lo escrito a mano: cargar una
+versión vieja no lo es. Si el diálogo no se puede mostrar, se sigue editando.
+Los campos de ajustes de arriba de Configuración siguen sin esta protección.
 
 ### Criterio de salida
 - Puedes grabar una reunión completa desde la UI, sin tocar consola, y ver el reporte generado en pantalla
