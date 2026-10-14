@@ -4,12 +4,17 @@ using MeetingAssistant.Core.Models;
 namespace MeetingAssistant.App.Services;
 
 /// <summary>
-/// Centraliza las operaciones de grabación iniciadas desde la interfaz de la
-/// aplicación (RecordPage, tray, hotkey). Es intencionalmente App-local: expone
-/// eventos de ciclo de vida propios de la UI, mientras que el pipeline de Core
-/// permanece agnóstico a proveedor y a interfaz.
+/// Centraliza las operaciones de grabación de todos los disparadores
+/// (RecordPage, tray, hotkey y, vía <see cref="IRecordingTrigger"/>, el endpoint
+/// HTTP). Es intencionalmente App-local: expone eventos de ciclo de vida propios
+/// de la UI, mientras que el pipeline de Core permanece agnóstico a proveedor y
+/// a interfaz.
+///
+/// Los eventos se levantan en el hilo de quien llamó. Desde HTTP eso es un hilo
+/// del pool, así que todo suscriptor que toque XAML tiene que volver al hilo de
+/// UI por su cuenta (RecordViewModel y TrayIconService lo hacen).
 /// </summary>
-public sealed class RecordingCoordinator
+public sealed class RecordingCoordinator : IRecordingTrigger
 {
     private readonly IMeetingPipeline _pipeline;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
@@ -58,7 +63,9 @@ public sealed class RecordingCoordinator
         {
             if (IsProcessing || _pipeline.IsRecording)
             {
-                throw new InvalidOperationException("Ya hay una grabación en curso.");
+                throw new InvalidOperationException(IsProcessing
+                    ? "Hay una reunión procesándose; espera a que termine para grabar otra."
+                    : "Ya hay una grabación en curso.");
             }
 
             await _pipeline.StartRecordingAsync(source, cancellationToken);
@@ -198,9 +205,25 @@ public sealed class RecordingCoordinator
         }
     }
 
+    /// <summary>
+    /// Registra un transcript adjuntado (.txt) como sesión de importación. Sin
+    /// candado: sólo escribe una fila nueva y no toca la captura ni la sesión de
+    /// ninguna otra operación.
+    /// </summary>
+    public Task<long?> ImportTranscriptAsync(string transcript, CancellationToken cancellationToken = default) =>
+        _pipeline.ImportTranscriptAsync(transcript, cancellationToken);
+
+    /// <summary>
+    /// Genera el reporte del transcript que muestra la ventana.
+    /// <paramref name="sessionId"/> es la reunión a la que pertenece —la que
+    /// devolvió la transcripción o la importación—; null sólo si no hay fila
+    /// (historial apagado o base caída), y entonces el pipeline intenta abrir
+    /// una nueva.
+    /// </summary>
     public async Task<ExtractionSaveResult> ExtractAndSaveAsync(
         string transcript,
         string promptId,
+        long? sessionId,
         CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
@@ -214,7 +237,9 @@ public sealed class RecordingCoordinator
             _isProcessing = true;
             OnStateChanged();
 
-            ExtractionSaveResult result = await _pipeline.ExtractAndSaveAsync(transcript, promptId, cancellationToken);
+            ExtractionSaveResult result = sessionId is { } id
+                ? await _pipeline.ExtractForSessionAsync(id, transcript, promptId, cancellationToken)
+                : await _pipeline.ExtractAndSaveAsync(transcript, promptId, cancellationToken);
             RaiseReportSaved(result.SavedReportPath, result.Prompt);
             return result;
         }
@@ -276,7 +301,13 @@ public sealed class RecordingCoordinator
         }
     }
 
-    private void OnStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
+    /// <summary>
+    /// Con el mismo resguardo que el resto de los eventos. Antes se invocaba
+    /// directo, y un suscriptor que lanzara —p. ej. la bandeja tocando XAML desde
+    /// el hilo de una petición HTTP— convertía una grabación correcta en un
+    /// error.
+    /// </summary>
+    private void OnStateChanged() => RaiseSafely(StateChanged, EventArgs.Empty);
 
     private void RaiseRecordingCompleted(MeetingPipelineResult result) =>
         RaiseSafely(RecordingCompleted, new RecordingCompletedEventArgs(result));
@@ -302,8 +333,27 @@ public sealed class RecordingCoordinator
             {
                 handler(this, args);
             }
-            catch
+            catch (Exception exception)
             {
+                // Se traga, pero no en silencio: un suscriptor que falla en cada
+                // evento (p. ej. por tocar XAML fuera del hilo de UI) tiene que
+                // poder encontrarse en el log.
+                App.LogStartupFailure($"RecordingCoordinator.{typeof(TArgs).Name} ({handler.Method.DeclaringType?.Name})", exception);
+            }
+        }
+    }
+
+    private void RaiseSafely(EventHandler? handlers, EventArgs args)
+    {
+        foreach (EventHandler handler in handlers?.GetInvocationList().Cast<EventHandler>() ?? [])
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch (Exception exception)
+            {
+                App.LogStartupFailure($"RecordingCoordinator.StateChanged ({handler.Method.DeclaringType?.Name})", exception);
             }
         }
     }

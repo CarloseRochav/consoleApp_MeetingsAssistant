@@ -7,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 namespace MeetingAssistant.Infrastructure.Api;
 
 /// <summary>
-/// Expone IMeetingPipeline como dos endpoints HTTP locales:
+/// Expone las grabaciones como dos endpoints HTTP locales:
 ///   POST /recording/start
 ///   POST /recording/stop  (síncrono — responde con transcript + reporte + ruta guardada)
 ///
@@ -22,15 +22,15 @@ namespace MeetingAssistant.Infrastructure.Api;
 /// </summary>
 public sealed class LocalRecordingApiServer : IDisposable
 {
-    private readonly IMeetingPipeline _pipeline;
+    private readonly IRecordingTrigger _recordings;
     private readonly string _authToken;
     private readonly HttpListener _listener;
     private CancellationTokenSource? _cts;
     private Task? _listenLoop;
 
-    public LocalRecordingApiServer(IMeetingPipeline pipeline, IConfiguration configuration)
+    public LocalRecordingApiServer(IRecordingTrigger recordings, IConfiguration configuration)
     {
-        _pipeline = pipeline;
+        _recordings = recordings;
 
         _authToken = configuration["Api:AuthToken"]
             ?? throw new InvalidOperationException(
@@ -116,12 +116,12 @@ public sealed class LocalRecordingApiServer : IDisposable
             switch (request.HttpMethod, request.Url?.AbsolutePath)
             {
                 case ("POST", "/recording/start"):
-                    await _pipeline.StartRecordingAsync(SessionSource.Http, cancellationToken);
+                    await _recordings.StartRecordingAsync(SessionSource.Http, cancellationToken);
                     await WriteJsonAsync(response, 200, new { status = "recording" });
                     break;
 
                 case ("POST", "/recording/stop"):
-                    MeetingPipelineResult result = await _pipeline.StopRecordingAndProcessAsync(cancellationToken);
+                    MeetingPipelineResult result = await _recordings.StopRecordingAndProcessAsync(cancellationToken);
                     await WriteJsonAsync(response, 200, new
                     {
                         transcript = result.Transcription.Transcript,
@@ -137,7 +137,8 @@ public sealed class LocalRecordingApiServer : IDisposable
         }
         catch (InvalidOperationException ex)
         {
-            // Guard clauses de IMeetingPipeline (doble start / stop sin start) llegan aquí.
+            // Guard clauses del coordinador (doble start, stop sin start, o una
+            // operación de la ventana todavía en curso) llegan aquí.
             await WriteJsonAsync(response, 409, new { error = ex.Message, details = ex.ToString() });
         }
         catch (Exception ex)

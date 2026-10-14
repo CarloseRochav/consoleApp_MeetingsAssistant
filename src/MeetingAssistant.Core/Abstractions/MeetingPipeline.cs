@@ -24,6 +24,30 @@ public interface IMeetingPipeline
     Task<MeetingPipelineResult> ProcessAudioFileAsync(string audioPath, CancellationToken cancellationToken = default);
     Task<TranscriptionSession> StopRecordingAndTranscribeAsync(CancellationToken cancellationToken = default);
     Task<TranscriptionSession> TranscribeAudioFileAsync(string audioPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Registra un transcript que llegó sin audio ("Adjuntar transcripción
+    /// (.txt)") como una sesión de importación nueva, y devuelve su id. Es el
+    /// equivalente de <see cref="TranscribeAudioFileAsync"/> para un texto: la
+    /// sesión nace al importar, no al extraer, así que reintentar una extracción
+    /// fallida no abre una segunda sesión.
+    ///
+    /// Devuelve null si no hay historial o si la base falló: lo que sigue
+    /// funciona igual, sólo que sin fila.
+    /// </summary>
+    Task<long?> ImportTranscriptAsync(string transcript, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Transcript suelto, sin sesión conocida: lo importa como sesión nueva
+    /// (<see cref="ImportTranscriptAsync"/>) y extrae. <b>Siempre</b> abre una
+    /// sesión nueva; para colgar el reporte de una sesión que ya existe está
+    /// <see cref="ExtractForSessionAsync"/>.
+    ///
+    /// Hasta 2026-10-14 este método deducía la sesión de un campo con la
+    /// última grabación, y el campo nunca se limpiaba: con la app viva días en
+    /// la bandeja, cada transcript adjuntado después de una grabación quedaba
+    /// colgado de esa reunión y su texto no se guardaba.
+    /// </summary>
     Task<ExtractionSaveResult> ExtractAndSaveAsync(
         string transcript,
         string promptId,
@@ -31,23 +55,9 @@ public interface IMeetingPipeline
 
     /// <summary>
     /// Extrae un reporte para una sesión <b>ya existente</b>, identificada
-    /// explícitamente. Es lo que permite re-generar un reporte desde un
-    /// transcript viejo del historial con otro prompt.
-    ///
-    /// Existe como método aparte, y no como un parámetro opcional de
-    /// <see cref="ExtractAndSaveAsync"/>, porque la diferencia no es cosmética:
-    /// <c>ExtractAndSaveAsync</c> deduce la sesión del estado mutable de la
-    /// última grabación, y para el historial <b>eso está mal de dos formas
-    /// distintas y silenciosas</b> — si hubo una grabación en esta sesión de la
-    /// app, el reporte queda colgado de la reunión equivocada; si no hubo,
-    /// se abre una sesión fantasma marcada como importación. En los dos casos la
-    /// base queda consistente, el <c>.md</c> llega al vault, y el historial
-    /// miente.
-    ///
-    /// Este método <b>no lee ni escribe</b> la sesión en curso. Es lo que lo
-    /// hace seguro frente a una grabación simultánea por HTTP, que sí puede
-    /// pasar: el endpoint llama al pipeline directo, sin pasar por
-    /// <c>RecordingCoordinator</c>.
+    /// explícitamente: la del flujo de dos pasos de la ventana (el id viene en
+    /// <see cref="TranscriptionSession.SessionId"/>), la de un transcript ya
+    /// importado, o una vieja del historial que se re-genera con otro prompt.
     /// </summary>
     Task<ExtractionSaveResult> ExtractForSessionAsync(
         long sessionId,
@@ -62,18 +72,27 @@ public sealed record MeetingPipelineResult(
     AudioCaptureResult Audio,
     TranscriptionResult Transcription,
     string ReportMarkdown,
-    PromptDefinition Prompt);
+    PromptDefinition Prompt,
+    long? SessionId = null);
 
+/// <param name="SessionId">
+/// La fila del historial a la que pertenece esta transcripción, o null si no
+/// hay historial o la base falló. Viaja con el resultado, y no en un campo del
+/// pipeline, para que el reporte que se pida minutos después —tras elegir el
+/// prompt— caiga en esta reunión aunque entre medio haya empezado otra.
+/// </param>
 public sealed record TranscriptionSession(
     AudioCaptureResult Audio,
-    TranscriptionResult Transcription);
+    TranscriptionResult Transcription,
+    long? SessionId = null);
 
 public sealed record ExtractionSaveResult(
     string SavedReportPath,
     string ReportMarkdown,
     MeetingReport? StructuredReport,
     PromptDefinition Prompt,
-    MeetingReportMetadata Metadata);
+    MeetingReportMetadata Metadata,
+    long? SessionId = null);
 
 public sealed class MeetingPipeline : IMeetingPipeline
 {
@@ -95,17 +114,18 @@ public sealed class MeetingPipeline : IMeetingPipeline
     public const string TranscriptionProviderName = "Deepgram";
 
     /// <summary>
-    /// Id de la sesión en curso. Es estado mutable, igual que ya lo es la
-    /// captura de audio (<see cref="IsRecording"/> consulta al servicio), y por
-    /// la misma razón: el flujo de dos pasos de la ventana transcribe primero y
-    /// extrae después, con minutos de por medio mientras se elige el prompt, así
-    /// que algo tiene que recordar a qué reunión pertenece ese reporte.
+    /// Id de la sesión de la grabación en curso, 0 si no hay. Es el único estado
+    /// de sesión que guarda el pipeline, y sólo vive mientras el micrófono está
+    /// abierto: <see cref="StopRecordingAndTranscribeAsync"/> lo toma y lo
+    /// limpia de una vez, y a partir de ahí el id viaja en los resultados
+    /// (<see cref="TranscriptionSession.SessionId"/>). Ninguna extracción lo lee.
     ///
-    /// Vale para un solo flujo a la vez, que es lo que hay:
-    /// <c>RecordingCoordinator</c> serializa las operaciones y la app es de
-    /// instancia única desde T4.1.
+    /// Tiene la misma vida que la captura de audio, que ya impide dos
+    /// grabaciones a la vez. Que un start y un stop no se crucen lo garantiza
+    /// <c>RecordingCoordinator</c>, por el que pasan todos los disparadores,
+    /// HTTP incluido.
     /// </summary>
-    private long? _currentSessionId;
+    private long _recordingSessionId;
 
     public MeetingPipeline(
         IAudioCaptureService audioCaptureService,
@@ -147,11 +167,11 @@ public sealed class MeetingPipeline : IMeetingPipeline
         // micrófono.
         await _audioCaptureService.StartAsync(_audioOutputDirectory, cancellationToken);
 
-        _currentSessionId = null;
-        await RecordHistoryAsync(
+        Interlocked.Exchange(ref _recordingSessionId, 0);
+        long? sessionId = await RecordHistoryAsync(
             "CreateSession",
-            async store => _currentSessionId =
-                await store.CreateSessionAsync(DateTimeOffset.UtcNow, source, cancellationToken));
+            store => store.CreateSessionAsync(DateTimeOffset.UtcNow, source, cancellationToken));
+        Interlocked.Exchange(ref _recordingSessionId, sessionId ?? 0);
     }
 
     public async Task<MeetingPipelineResult> StopRecordingAndProcessAsync(CancellationToken cancellationToken = default)
@@ -170,43 +190,43 @@ public sealed class MeetingPipeline : IMeetingPipeline
     {
         AudioCaptureResult audio = await _audioCaptureService.StopAsync(cancellationToken);
 
+        // Se toma y se limpia en un solo paso: desde acá el id viaja en los
+        // resultados, y la próxima grabación empieza sin rastro de ésta.
+        long taken = Interlocked.Exchange(ref _recordingSessionId, 0);
+        long? sessionId = taken == 0 ? null : taken;
+
         // Se cierra la sesión acá, ANTES de transcribir, y no al final con la
         // duración exacta que devuelve el proveedor. El motivo es concreto: si
         // la transcripción falla —credencial vencida, red caída, audio en
         // silencio—, lo que hay que no perder es **dónde quedó el .wav**, porque
         // con eso la reunión se puede re-transcribir más tarde. Una duración de
         // captura un poco menos precisa es un precio barato por eso.
-        await RecordHistoryAsync(
-            "CompleteSession",
-            store => store.CompleteSessionAsync(
-                _currentSessionId!.Value, DateTimeOffset.UtcNow, audio.AudioPath, audio.Duration, cancellationToken),
-            requiresSession: true);
+        if (sessionId is { } id)
+        {
+            await RecordHistoryAsync(
+                "CompleteSession",
+                store => store.CompleteSessionAsync(id, DateTimeOffset.UtcNow, audio.AudioPath, audio.Duration, cancellationToken));
+        }
 
-        return await TranscribeThenArchiveAsync(audio, cancellationToken);
+        return await TranscribeThenArchiveAsync(audio, sessionId, cancellationToken);
     }
 
-    /// <summary>
-    /// El audio se manda a archivar <b>después</b> de transcribir, para no
-    /// competir por el ancho de banda con la subida a la transcripción — y en un
-    /// <c>finally</c>, porque el caso en que más importa conservar el WAV es
-    /// justo cuando la transcripción falló: es lo único con lo que esa reunión
-    /// se puede recuperar.
-    /// </summary>
     private async Task<TranscriptionSession> TranscribeThenArchiveAsync(
         AudioCaptureResult audio,
+        long? sessionId,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await TranscribeAudioAsync(audio, cancellationToken);
+            return await TranscribeAudioAsync(audio, sessionId, cancellationToken);
         }
         finally
         {
             // Sin sesión no hay fila contra la cual registrar la subida: pasa
             // sólo si la base falló al abrir la sesión.
-            if (_currentSessionId is { } sessionId)
+            if (sessionId is { } id)
             {
-                _archiveQueue?.Enqueue(sessionId, ArchiveKind.Audio, audio.AudioPath);
+                _archiveQueue?.Enqueue(id, ArchiveKind.Audio, audio.AudioPath);
             }
         }
     }
@@ -222,18 +242,32 @@ public sealed class MeetingPipeline : IMeetingPipeline
         // Un audio importado no pasó por StartRecordingAsync, así que abre su
         // propia sesión. Sin esto, procesar un archivo existente no dejaría
         // ningún rastro en el historial.
-        _currentSessionId = null;
-        await RecordHistoryAsync(
+        long? sessionId = await RecordHistoryAsync(
             "CreateSession(import)",
             async store =>
             {
-                _currentSessionId = await store.CreateSessionAsync(
-                    DateTimeOffset.UtcNow, SessionSource.Import, cancellationToken);
-                await store.CompleteSessionAsync(
-                    _currentSessionId.Value, DateTimeOffset.UtcNow, audioPath, null, cancellationToken);
+                long id = await store.CreateSessionAsync(DateTimeOffset.UtcNow, SessionSource.Import, cancellationToken);
+                await store.CompleteSessionAsync(id, DateTimeOffset.UtcNow, audioPath, null, cancellationToken);
+                return id;
             });
 
-        return await TranscribeThenArchiveAsync(audio, cancellationToken);
+        return await TranscribeThenArchiveAsync(audio, sessionId, cancellationToken);
+    }
+
+    public async Task<long?> ImportTranscriptAsync(string transcript, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(transcript);
+
+        return await RecordHistoryAsync(
+            "CreateSession(transcript suelto)",
+            async store =>
+            {
+                long id = await store.CreateSessionAsync(DateTimeOffset.UtcNow, SessionSource.Import, cancellationToken);
+                await store.SaveTranscriptAsync(
+                    new TranscriptRecord(id, transcript, null, null, null, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                return id;
+            });
     }
 
     public async Task<ExtractionSaveResult> ExtractAndSaveAsync(
@@ -244,24 +278,8 @@ public sealed class MeetingPipeline : IMeetingPipeline
         ArgumentException.ThrowIfNullOrWhiteSpace(transcript);
         ArgumentException.ThrowIfNullOrWhiteSpace(promptId);
 
-        // Un transcript pegado a mano ("Adjuntar transcripción (.txt)") nunca
-        // pasó por el pipeline, así que no hay sesión. Se abre una para que el
-        // reporte igual quede registrado.
-        if (_currentSessionId is null)
-        {
-            await RecordHistoryAsync(
-                "CreateSession(transcript suelto)",
-                async store =>
-                {
-                    _currentSessionId = await store.CreateSessionAsync(
-                        DateTimeOffset.UtcNow, SessionSource.Import, cancellationToken);
-                    await store.SaveTranscriptAsync(
-                        new TranscriptRecord(_currentSessionId.Value, transcript, null, null, null, DateTimeOffset.UtcNow),
-                        cancellationToken);
-                });
-        }
-
-        return await ExtractAndRecordAsync(_currentSessionId, transcript, promptId, cancellationToken);
+        long? sessionId = await ImportTranscriptAsync(transcript, cancellationToken);
+        return await ExtractAndRecordAsync(sessionId, transcript, promptId, cancellationToken);
     }
 
     public async Task<ExtractionSaveResult> ExtractForSessionAsync(
@@ -274,18 +292,9 @@ public sealed class MeetingPipeline : IMeetingPipeline
         ArgumentException.ThrowIfNullOrWhiteSpace(transcript);
         ArgumentException.ThrowIfNullOrWhiteSpace(promptId);
 
-        // Ni una línea que toque _currentSessionId. Ver el comentario de la
-        // interfaz: es justo lo que hace correcto a este camino.
         return await ExtractAndRecordAsync(sessionId, transcript, promptId, cancellationToken);
     }
 
-    /// <summary>
-    /// El tramo común de las dos extracciones: extraer, escribir el
-    /// <c>.md</c> en el vault y registrar el reporte contra la sesión que le
-    /// corresponda. La sesión entra <b>por parámetro</b>, y ese es todo el
-    /// punto: quien llama declara a qué reunión pertenece el reporte, en vez de
-    /// heredarlo de un campo.
-    /// </summary>
     private async Task<ExtractionSaveResult> ExtractAndRecordAsync(
         long? sessionId,
         string transcript,
@@ -303,11 +312,13 @@ public sealed class MeetingPipeline : IMeetingPipeline
             extraction.MarkdownBody,
             extraction.StructuredReport,
             extraction.Prompt,
-            extraction.Metadata);
+            extraction.Metadata,
+            sessionId);
     }
 
     private async Task<TranscriptionSession> TranscribeAudioAsync(
         AudioCaptureResult audio,
+        long? sessionId,
         CancellationToken cancellationToken)
     {
         TranscriptionResult transcription = await _transcriptionClient.TranscribeAsync(
@@ -328,31 +339,25 @@ public sealed class MeetingPipeline : IMeetingPipeline
         //
         // CostUsd sale de los minutos de audio por el precio configurado. Si no
         // hay precio queda en null: preferible a un cero que parezca medido.
-        await RecordHistoryAsync(
-            "SaveTranscript",
-            store => store.SaveTranscriptAsync(
-                new TranscriptRecord(
-                    _currentSessionId!.Value,
-                    transcription.Transcript,
-                    Provider: TranscriptionProviderName,
-                    Model: null,
-                    CostUsd: _transcriptionCostEstimator?.EstimateTranscriptionCostUsd(
-                        TranscriptionProviderName, transcription.AudioDuration),
-                    CreatedAtUtc: DateTimeOffset.UtcNow),
-                cancellationToken),
-            requiresSession: true);
+        if (sessionId is { } id)
+        {
+            await RecordHistoryAsync(
+                "SaveTranscript",
+                store => store.SaveTranscriptAsync(
+                    new TranscriptRecord(
+                        id,
+                        transcription.Transcript,
+                        Provider: TranscriptionProviderName,
+                        Model: null,
+                        CostUsd: _transcriptionCostEstimator?.EstimateTranscriptionCostUsd(
+                            TranscriptionProviderName, transcription.AudioDuration),
+                        CreatedAtUtc: DateTimeOffset.UtcNow),
+                    cancellationToken));
+        }
 
-        return new TranscriptionSession(audio with { Duration = transcription.AudioDuration }, transcription);
+        return new TranscriptionSession(audio with { Duration = transcription.AudioDuration }, transcription, sessionId);
     }
 
-    /// <summary>
-    /// <paramref name="sessionId"/> nulo significa que la sesión nunca llegó a
-    /// crearse porque la base falló antes. Se sale sin hacer nada: el registro
-    /// de esa reunión ya estaba perdido y encadenar un segundo error sólo
-    /// ensucia el log. Es el mismo criterio que <c>requiresSession</c> en
-    /// <see cref="RecordHistoryAsync"/>, pero decidido acá porque ahora la
-    /// sesión es un parámetro y no un campo.
-    /// </summary>
     private async Task RecordReportAsync(
         long? sessionId,
         ExtractionResult extraction,
@@ -386,11 +391,6 @@ public sealed class MeetingPipeline : IMeetingPipeline
                     VaultPath: savedVaultPath,
                     CreatedAtUtc: extraction.Metadata.GeneratedAtUtc),
                 cancellationToken));
-        // Sin requiresSession a propósito: ese flag consulta _currentSessionId, y
-        // en la re-extracción desde el historial ese campo puede estar en null
-        // con un sessionId perfectamente válido en el parámetro. Dejarlo habría
-        // hecho que el reporte NO se registrara, en silencio y sólo por el camino
-        // nuevo. El guard equivalente es el `if (sessionId is null)` de arriba.
 
         // El .md también va a la nube. Se encola aunque la fila del reporte no
         // se haya podido guardar: el archivo existe en el vault igual.
@@ -398,35 +398,32 @@ public sealed class MeetingPipeline : IMeetingPipeline
     }
 
     /// <summary>
-    /// Ejecuta una escritura de historial de forma que <b>nunca</b> pueda
-    /// tumbar una grabación.
-    ///
-    /// Es la regla que manda en este paso, y viene de un precedente caro: en
-    /// T4.4 una excepción no atrapada se llevó puesta la app entera y costó
-    /// nueve días encontrarla. Si la base falla, la reunión tiene que seguir
-    /// hasta el vault igual — se pierde el historial de esa reunión, no la
-    /// reunión.
-    ///
-    /// <paramref name="requiresSession"/> marca las operaciones que necesitan
-    /// una sesión abierta. Si la creación de la sesión falló antes, se saltan en
-    /// silencio en vez de reventar con un null: el registro de esa reunión ya
-    /// estaba perdido, y encadenar un segundo error sólo ensucia el log.
+    /// Corre una operación de historial sin dejar que un fallo de la base
+    /// tumbe la reunión: el error va a <c>_onHistoryFailure</c> y sigue todo.
     /// </summary>
-    private async Task RecordHistoryAsync(
-        string operation,
-        Func<IMeetingHistoryStore, Task> action,
-        bool requiresSession = false)
+    private async Task RecordHistoryAsync(string operation, Func<IMeetingHistoryStore, Task> action)
     {
-        if (_historyStore is null) return;
-        if (requiresSession && _currentSessionId is null) return;
+        await RecordHistoryAsync<bool>(operation, async store =>
+        {
+            await action(store);
+            return true;
+        });
+    }
+
+    /// <returns>Lo que devolvió la operación, o null si no hay historial o falló.</returns>
+    private async Task<T?> RecordHistoryAsync<T>(string operation, Func<IMeetingHistoryStore, Task<T>> action)
+        where T : struct
+    {
+        if (_historyStore is null) return null;
 
         try
         {
-            await action(_historyStore);
+            return await action(_historyStore);
         }
         catch (Exception exception)
         {
             _onHistoryFailure?.Invoke($"MeetingPipeline.{operation}", exception);
+            return null;
         }
     }
 
@@ -442,9 +439,9 @@ public sealed class MeetingPipeline : IMeetingPipeline
 
         // Este es el camino de una sola pasada — hotkey, bandeja, HTTP e
         // importación —, distinto del de dos pasos de la ventana que pasa por
-        // ExtractAndSaveAsync. Los dos tienen que registrar el reporte: olvidar
+        // ExtractForSessionAsync. Los dos tienen que registrar el reporte: olvidar
         // éste dejaba sin fila justo a los caminos que más se usan.
-        await RecordReportAsync(_currentSessionId, extraction, savedPath, cancellationToken);
+        await RecordReportAsync(session.SessionId, extraction, savedPath, cancellationToken);
 
         return new MeetingPipelineResult(
             extraction.StructuredReport,
@@ -452,6 +449,7 @@ public sealed class MeetingPipeline : IMeetingPipeline
             session.Audio,
             session.Transcription,
             extraction.MarkdownBody,
-            extraction.Prompt);
+            extraction.Prompt,
+            session.SessionId);
     }
 }

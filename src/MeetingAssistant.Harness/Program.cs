@@ -511,8 +511,8 @@ static async Task<int> VerifyPipelineHistoryAsync(string audioPath, string? requ
 /// proveedores para comprobar a que fila apunta una foreign key seria absurdo.
 ///
 /// El defecto, que la lectura de codigo si mostro pero solo mirandolo a proposito:
-/// <c>MeetingPipeline.ExtractAndSaveAsync</c> deduce la sesion de
-/// <c>_currentSessionId</c>, un campo de instancia de un singleton. Re-extraer una
+/// <c>MeetingPipeline.ExtractAndSaveAsync</c> deducia la sesion de
+/// <c>_currentSessionId</c>, un campo de instancia de un singleton (retirado el 2026-10-14). Re-extraer una
 /// reunion vieja por ese camino la habria colgado de la ultima grabacion —o
 /// habria creado una sesion fantasma— y en los dos casos <b>sin sintoma</b>: base
 /// consistente, .md en el vault, historial que miente.
@@ -564,7 +564,7 @@ static async Task<int> VerifyReextractionAsync()
             oldSessionId, "Transcript de la reunion de la semana pasada.",
             "Deepgram", "nova-3", null, DateTimeOffset.UtcNow.AddDays(-7)));
 
-        // --- Y una grabacion de HOY, que es la que deja _currentSessionId ----
+        // --- Y una grabacion de HOY, la que dejaba el campo de sesion ---
         // Esta es la condicion que hace visible el defecto. Sin grabar primero,
         // el bug se manifiesta de la otra forma (sesion fantasma), y se comprueba
         // mas abajo.
@@ -613,7 +613,7 @@ static async Task<int> VerifyReextractionAsync()
             File.Exists(todayResult.SavedReportPath));
 
         // --- La otra cara del defecto: sin grabacion previa -------------------
-        // Un pipeline nuevo tiene _currentSessionId en null. Por el camino viejo
+        // Un pipeline nuevo, sin grabacion previa. Por el camino viejo
         // eso abria una sesion marcada como importacion; el camino nuevo no puede.
         Console.WriteLine($"{Environment.NewLine}--- Re-extraer sin ninguna grabacion previa ---");
 
@@ -649,6 +649,85 @@ static async Task<int> VerifyReextractionAsync()
             .Single();
         Check("y esa sesion queda marcada como importacion",
             (await history.GetSessionAsync(pastedSessionId))?.Source == SessionSource.Import);
+
+        // --- Transcript adjuntado DESPUES de una grabacion (audit 2026-10-14) -
+        // El caso que el bloque anterior no cubria: `pipeline` ya grabo hoy.
+        // Antes del arreglo este reporte caia en todaySessionId y el texto
+        // adjuntado no se guardaba en ningun lado.
+        Console.WriteLine($"{Environment.NewLine}--- Transcript adjuntado despues de grabar ---");
+
+        const string attachedText = "Transcript adjuntado despues de grabar.";
+        ExtractionSaveResult attached = await pipeline.ExtractAndSaveAsync(attachedText, "assignment-meeting");
+        Check("el transcript adjuntado abrio su propia sesion",
+            attached.SessionId is { } attachedId && attachedId != todaySessionId && attachedId != oldSessionId);
+        Check("y NO se colgo de la grabacion de hoy",
+            (await history.GetReportsAsync(todaySessionId)).Count == 1);
+        Check("el texto adjuntado quedo guardado en su sesion",
+            attached.SessionId is { } withText &&
+            (await history.GetTranscriptAsync(withText))?.Text == attachedText);
+        Check("y su reporte tambien",
+            attached.SessionId is { } withReport && (await history.GetReportsAsync(withReport)).Count == 1);
+
+        // Importar primero y extraer despues (lo que hace la ventana): un
+        // reintento tras una extraccion fallida no abre otra sesion.
+        int sessionsBeforeImport = (await history.ListSessionsAsync(50)).Count;
+        long? importedId = await pipeline.ImportTranscriptAsync("Otro transcript adjuntado.");
+        await pipeline.ExtractForSessionAsync(importedId!.Value, "Otro transcript adjuntado.", "assignment-meeting");
+        await pipeline.ExtractForSessionAsync(importedId.Value, "Otro transcript adjuntado.", "feature-handoff");
+        Check("importar y extraer dos veces deja UNA sesion con dos reportes",
+            (await history.ListSessionsAsync(50)).Count == sessionsBeforeImport + 1 &&
+            (await history.GetReportsAsync(importedId.Value)).Count == 2);
+
+        // --- Dos pasos con una grabacion HTTP en medio -------------------------
+        // La ventana transcribe; mientras se elige el prompt, empieza otra
+        // grabacion. El reporte tiene que ir a la reunion de la ventana.
+        Console.WriteLine($"{Environment.NewLine}--- Flujo de dos pasos con otra grabacion en medio ---");
+
+        await pipeline.StartRecordingAsync(SessionSource.Window);
+        TranscriptionSession windowSession = await pipeline.StopRecordingAndTranscribeAsync();
+        Check("la transcripcion de la ventana trae su sesion", windowSession.SessionId is not null);
+
+        await pipeline.StartRecordingAsync(SessionSource.Http);
+        await pipeline.ExtractForSessionAsync(
+            windowSession.SessionId!.Value, windowSession.Transcription.Transcript, "assignment-meeting");
+        MeetingPipelineResult httpResult = await pipeline.StopRecordingAndProcessAsync();
+
+        Check("el reporte de la ventana quedo en la reunion de la ventana",
+            (await history.GetReportsAsync(windowSession.SessionId.Value)).Count == 1);
+        Check("la grabacion HTTP tiene su propia sesion con su propio reporte",
+            httpResult.SessionId is { } httpId && httpId != windowSession.SessionId &&
+            (await history.GetReportsAsync(httpId)).Count == 1);
+
+        // --- Una transcripcion lenta cruzada con una grabacion nueva -----------
+        // Lo que podia pasar cuando HTTP llamaba al pipeline sin el candado del
+        // coordinador: mientras Deepgram tarda, empieza otra reunion. Antes, el
+        // transcript de la primera se guardaba en la sesion de la segunda.
+        Console.WriteLine($"{Environment.NewLine}--- Transcripcion lenta cruzada con otra grabacion ---");
+
+        var gate = new GatedTranscriptionClient("Transcript de la reunion lenta.");
+        IMeetingPipeline slowPipeline = new MeetingPipeline(
+            new FakeAudioCapture(temporaryVault),
+            gate,
+            new FakeReportExtractor(),
+            new FakeReportStorage(temporaryVault),
+            temporaryVault,
+            history,
+            (operation, exception) => historyFailures.Add($"{operation}: {exception.Message}"));
+
+        await slowPipeline.StartRecordingAsync(SessionSource.Window);
+        Task<TranscriptionSession> slowTranscription = slowPipeline.StopRecordingAndTranscribeAsync();
+        await gate.Entered;
+        await slowPipeline.StartRecordingAsync(SessionSource.Http);
+        gate.Release();
+        TranscriptionSession slow = await slowTranscription;
+        TranscriptionSession second = await slowPipeline.StopRecordingAndTranscribeAsync();
+
+        Check("las dos reuniones cruzadas tienen sesiones distintas",
+            slow.SessionId is not null && second.SessionId is not null && slow.SessionId != second.SessionId);
+        Check("el transcript lento quedo en SU sesion",
+            (await history.GetTranscriptAsync(slow.SessionId!.Value))?.Text == "Transcript de la reunion lenta.");
+        Check("no hubo fallos de historial en todo el recorrido", historyFailures.Count == 0);
+        if (historyFailures.Count > 0) historyFailures.ForEach(f => Console.WriteLine($"        {f}"));
 
         // --- Resiliencia: la regla que manda en toda la fase -----------------
         Console.WriteLine($"{Environment.NewLine}--- Base rota: la re-extraccion igual llega al vault ---");
@@ -1671,6 +1750,37 @@ internal sealed class FakeAudioCapture : IAudioCaptureService
         string path = Path.Combine(_directory, $"fake-{Guid.NewGuid():N}.wav");
         File.WriteAllBytes(path, []);
         return Task.FromResult(new AudioCaptureResult(path, TimeSpan.FromMinutes(3), "loopback falso", "mic falso"));
+    }
+}
+
+/// <summary>
+/// Transcripcion que se queda esperando hasta que el test la suelta, para
+/// cruzar a proposito una transcripcion lenta con una grabacion nueva. La
+/// primera llamada espera; las siguientes contestan en el acto.
+/// </summary>
+internal sealed class GatedTranscriptionClient : ITranscriptionClient
+{
+    private readonly string _transcript;
+    private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _calls;
+
+    public GatedTranscriptionClient(string transcript) => _transcript = transcript;
+
+    public Task Entered => _entered.Task;
+
+    public void Release() => _released.TrySetResult();
+
+    public async Task<TranscriptionResult> TranscribeAsync(string audioPath, CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.Increment(ref _calls) == 1)
+        {
+            _entered.TrySetResult();
+            await _released.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            return new TranscriptionResult(_transcript, TimeSpan.FromMinutes(3), TimeSpan.FromSeconds(2), "es", []);
+        }
+
+        return new TranscriptionResult("Transcript de la otra reunion.", TimeSpan.FromMinutes(1), TimeSpan.Zero, "es", []);
     }
 }
 

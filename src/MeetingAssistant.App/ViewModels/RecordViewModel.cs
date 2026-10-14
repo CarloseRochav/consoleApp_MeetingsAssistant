@@ -22,6 +22,15 @@ public partial class RecordViewModel : ObservableObject
     /// </summary>
     private int _localOperationDepth;
 
+    /// <summary>
+    /// La reunión del historial a la que pertenece <see cref="LastTranscript"/>.
+    /// Se fija cada vez que cambia el transcript que muestra la vista y se pasa
+    /// al generar el reporte: así el reporte cae en esa reunión y no en la que
+    /// el pipeline haya tocado por última vez. Null si no hay fila (historial
+    /// apagado o base caída).
+    /// </summary>
+    private long? _transcriptSessionId;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ButtonText))]
     [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
@@ -133,6 +142,7 @@ public partial class RecordViewModel : ObservableObject
         RunOnUiThread(() =>
         {
             LastTranscript = result.Transcription.Transcript;
+            _transcriptSessionId = result.SessionId;
             LastGeneratedReport = result.ReportMarkdown;
             LastSavedReportPath = result.SavedReportPath;
             SelectedPrompt = Prompts.FirstOrDefault(p => p.Id == result.Prompt.Id) ?? SelectedPrompt;
@@ -194,6 +204,7 @@ public partial class RecordViewModel : ObservableObject
             StatusMessage = "Grabando...";
             LastSavedReportPath = null;
             LastTranscript = null;
+            _transcriptSessionId = null;
             LastGeneratedReport = null;
             ErrorDetails = null;
         }
@@ -219,6 +230,7 @@ public partial class RecordViewModel : ObservableObject
             TranscriptionSession session = await _recordingCoordinator.StopRecordingAndTranscribeAsync();
             IsRecording = _recordingCoordinator.IsRecording;
             LastTranscript = session.Transcription.Transcript;
+            _transcriptSessionId = session.SessionId;
             LastGeneratedReport = null;
             LastSavedReportPath = null;
             ErrorDetails = null;
@@ -250,6 +262,7 @@ public partial class RecordViewModel : ObservableObject
         {
             TranscriptionSession session = await _recordingCoordinator.TranscribeExistingAudioAsync(audioPath);
             LastTranscript = session.Transcription.Transcript;
+            _transcriptSessionId = session.SessionId;
             StatusMessage = "Transcripción lista. Elige un prompt y genera el reporte.";
         }
         catch (Exception ex)
@@ -291,6 +304,9 @@ public partial class RecordViewModel : ObservableObject
                 throw new InvalidOperationException("El archivo de transcripción está vacío.");
             }
 
+            // La reunión nace al adjuntar, igual que con un audio importado: si
+            // la primera extracción falla, reintentar no abre otra sesión.
+            _transcriptSessionId = await _recordingCoordinator.ImportTranscriptAsync(transcript);
             LastTranscript = transcript;
             StatusMessage = $"Transcripción cargada desde {Path.GetFileName(transcriptPath)}. Elige un prompt y genera el reporte.";
         }
@@ -320,7 +336,10 @@ public partial class RecordViewModel : ObservableObject
         try
         {
             ExtractionSaveResult result = await _recordingCoordinator.ExtractAndSaveAsync(
-                LastTranscript, SelectedPrompt.Id);
+                LastTranscript, SelectedPrompt.Id, _transcriptSessionId);
+            // Si no había fila y el pipeline pudo abrir una, los próximos
+            // reportes de este mismo transcript van a ella.
+            _transcriptSessionId ??= result.SessionId;
             LastGeneratedReport = result.ReportMarkdown;
             LastSavedReportPath = result.SavedReportPath;
             StatusMessage = $"Reporte guardado en el vault de Obsidian: {result.SavedReportPath}";

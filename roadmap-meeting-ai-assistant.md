@@ -443,6 +443,26 @@ las interfaces de Core no cambiarían.
    pasa por `RecordingCoordinator` para heredar su `_operationLock` —lo que de
    verdad serializa— y para disparar el toast de reporte guardado.
 
+   **Seguimiento 2026-10-14 (auditoría):** dejar `ExtractAndSaveAsync` igual
+   resultó ser el mismo defecto por otro camino. El campo nunca se limpiaba, así
+   que con la app viva en la bandeja, todo transcript adjuntado (.txt) después de
+   una grabación se colgaba de esa reunión y su texto no se guardaba. Y el
+   endpoint HTTP seguía saltándose el candado del coordinador: un start por HTTP
+   mientras la ventana transcribía pisaba la sesión. Arreglo:
+   - El id de sesión viaja en los resultados (`TranscriptionSession.SessionId`,
+     `ExtractionSaveResult.SessionId`, `MeetingPipelineResult.SessionId`).
+     `_currentSessionId` desapareció; el único estado es la sesión de la
+     grabación en curso, que `StopRecordingAndTranscribeAsync` toma y limpia.
+   - `ExtractAndSaveAsync` ahora **siempre** abre una sesión de importación
+     nueva. Nuevo `ImportTranscriptAsync`: la ventana registra el .txt al
+     adjuntarlo (como un audio importado) y después extrae con
+     `ExtractForSessionAsync`, así que reintentar no duplica sesiones.
+   - El endpoint HTTP entra por `IRecordingTrigger` (Core), que implementa
+     `RecordingCoordinator`: mismo candado, y ahora también toasts y estado de la
+     bandeja para las grabaciones por HTTP. `StateChanged` se levanta con el
+     mismo resguardo que los demás eventos, y la bandeja vuelve al hilo de UI.
+   - `--verify-reextraction` suma 13 comprobaciones para estos casos.
+
    **Verificado:**
    - Build en 0 warnings / 0 errores; los tres autotests anteriores siguen en
      verde (`--verify-render`, `--verify-db-selftest` 29/29,

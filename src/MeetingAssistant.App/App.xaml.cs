@@ -111,8 +111,7 @@ public partial class App : Application
         catch (Exception exception)
         {
             // El endpoint HTTP local es un disparador opcional: la bandeja y el
-            // hotkey son los caminos principales, y una grabación disparada por
-            // HTTP hoy ni siquiera levanta los eventos del coordinador. Aun así
+            // hotkey son los caminos principales. Aun así
             // esto era la primera sentencia de LaunchCore y estaba fuera de todo
             // try/catch, así que un puerto que no se puede escuchar abortaba el
             // arranque entero: sin Register() de notificaciones, sin ventana, sin
@@ -537,15 +536,17 @@ public partial class App : Application
             MeetingOutputDirectory,
             // El historial se engancha en el pipeline y no en RecordingCoordinator
             // porque el pipeline es el único punto por el que pasan **todos** los
-            // caminos. LocalRecordingApiServer llama a IMeetingPipeline directo,
-            // sin pasar por el coordinador, así que engancharlo allá dejaría sin
-            // registrar justo las grabaciones por HTTP — las que más se usan sin
-            // ventana. Un solo punto, sin filas duplicadas.
+            // caminos, incluido el harness, que lo usa sin coordinador. Un solo
+            // punto, sin filas duplicadas.
             provider.GetRequiredService<IMeetingHistoryStore>(),
             LogStartupFailure,
             provider.GetRequiredService<ITranscriptionCostEstimator>(),
             provider.GetRequiredService<ArchiveUploadService>()));
         services.AddSingleton<RecordingCoordinator>();
+        // El endpoint HTTP vive en Infrastructure y no puede ver App: entra por
+        // esta interfaz de Core, que es el mismo coordinador. Así comparte el
+        // candado y los avisos con la ventana, la bandeja y el hotkey.
+        services.AddSingleton<IRecordingTrigger>(provider => provider.GetRequiredService<RecordingCoordinator>());
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
         services.AddSingleton<GlobalHotkeyService>();

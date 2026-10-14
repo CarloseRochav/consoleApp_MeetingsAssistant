@@ -2,6 +2,7 @@ using MeetingAssistant.Core.Models;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -14,6 +15,7 @@ public sealed class TrayIconService : IDisposable
     private readonly RecordingCoordinator _coordinator;
     private TaskbarIcon? _trayIcon;
     private MenuFlyoutItem? _toggleRecordingItem;
+    private DispatcherQueue? _dispatcherQueue;
 
     public TrayIconService(RecordingCoordinator coordinator)
     {
@@ -29,13 +31,14 @@ public sealed class TrayIconService : IDisposable
         ArgumentNullException.ThrowIfNull(mainWindow);
         if (_trayIcon is not null) return;
 
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         var menu = new MenuFlyout();
 
-        // El label se refresca por StateChanged del coordinador, pero el
-        // endpoint HTTP llama a IMeetingPipeline directo y no levanta ese
-        // evento (hueco documentado en T1). Releer el estado vivo cada vez que
-        // se abre el menu es lo que lo mantiene correcto tras un start por
-        // HTTP; se valido en T2 y se perdio al migrar los Click a Command.
+        // El label se refresca por StateChanged del coordinador, que desde
+        // 2026-10-14 también levantan las grabaciones por HTTP (antes llamaban
+        // al pipeline directo: hueco documentado en T1). Releer el estado vivo
+        // cada vez que se abre el menu queda como red de seguridad; se valido
+        // en T2 y se perdio al migrar los Click a Command.
         // Con ContextMenuMode.PopupMenu (el default de H.NotifyIcon, y la
         // razon por la que los Click eran inertes) el MenuFlyout nunca se
         // muestra como flyout XAML, asi que Opening por si solo no basta; de
@@ -125,7 +128,20 @@ public sealed class TrayIconService : IDisposable
         }
     }
 
-    private void OnCoordinatorStateChanged(object? sender, EventArgs e) => RefreshToggleLabel();
+    /// <summary>
+    /// Una grabación por HTTP levanta StateChanged en un hilo del pool, y el
+    /// label es XAML: hay que volver al hilo de UI antes de tocarlo.
+    /// </summary>
+    private void OnCoordinatorStateChanged(object? sender, EventArgs e)
+    {
+        if (_dispatcherQueue is null || _dispatcherQueue.HasThreadAccess)
+        {
+            RefreshToggleLabel();
+            return;
+        }
+
+        _dispatcherQueue.TryEnqueue(RefreshToggleLabel);
+    }
 
     private void RefreshToggleLabel()
     {
