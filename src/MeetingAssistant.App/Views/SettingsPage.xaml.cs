@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.App.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
@@ -68,7 +69,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("SettingsPage.ConfirmDiscardSettings", exception);
+            AppLog.Failure("SettingsPage.ConfirmDiscardSettings", exception);
             return false;
         }
     }
@@ -124,7 +125,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
             // usuario tiene que conocer: copiar la base a otro perfil deja las
             // claves ilegibles y hay que volver a escribirlas.
             SettingsFilePathText.Text =
-                $"Se guarda en: {App.MeetingDatabasePath} (las API keys, cifradas para este usuario de Windows)";
+                $"Se guarda en: {AppPaths.DatabasePath} (las API keys, cifradas para este usuario de Windows)";
 
             _savedFields = ReadFields();
         }
@@ -222,7 +223,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("SettingsPage.Save", exception);
+            AppLog.Failure("SettingsPage.Save", exception);
             SaveStatusText.Text = "No se pudo guardar.";
             SaveErrorPanel.Details = exception.ToString();
         }

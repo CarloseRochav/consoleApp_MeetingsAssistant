@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using System.ComponentModel;
 using MeetingAssistant.App.ViewModels;
 using MeetingAssistant.Core.Models;
@@ -98,7 +99,7 @@ public sealed partial class PromptEditorPanel : UserControl
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("PromptEditorPanel.ShowDiscardDialog", exception);
+            AppLog.Failure("PromptEditorPanel.ShowDiscardDialog", exception);
             return false;
         }
     }

@@ -1,17 +1,7 @@
 using MeetingAssistant.App.Services;
-using MeetingAssistant.App.ViewModels;
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.App.Views;
-using MeetingAssistant.Core.Abstractions;
-using MeetingAssistant.Core.Services;
 using MeetingAssistant.Infrastructure.Api;
-using MeetingAssistant.Infrastructure.Audio;
-using MeetingAssistant.Infrastructure.Cost;
-using MeetingAssistant.Infrastructure.Llm;
-using MeetingAssistant.Infrastructure.Storage;
-using MeetingAssistant.Infrastructure.Storage.Postgres;
-using MeetingAssistant.Infrastructure.Storage.Sqlite;
-using MeetingAssistant.Infrastructure.Transcription;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
@@ -19,6 +9,13 @@ using Microsoft.Windows.AppNotifications;
 
 namespace MeetingAssistant.App;
 
+/// <summary>
+/// El ciclo de vida de la app: arrancar, mostrar los errores de arranque y
+/// salir. Cómo se arma la configuración está en
+/// <see cref="ConfigurationBootstrapper"/>, qué va detrás de cada abstracción en
+/// <see cref="ServiceRegistration"/>, y el trabajo en segundo plano en
+/// <see cref="BackgroundMaintenance"/>.
+/// </summary>
 public partial class App : Application
 {
     private MainWindow? _window;
@@ -32,13 +29,11 @@ public partial class App : Application
     private bool _isExiting;
     private bool _exitPromptOpen;
 
-    // Estáticos porque los escribe ConfigureServices, que es estático y corre
-    // antes de que haya log donde escribir de forma ordenada. Se vuelcan en
-    // LaunchCore.
-    private static string? _databaseDiagnostic;
-    private static string? _settingsImportDiagnostic;
-    private static string? _historyStoreDiagnostic;
-    private static string? _settingsSourceDiagnostic;
+    /// <summary>
+    /// Lo que hizo el arranque antes de que hubiera ventana. Se vuelca al log en
+    /// LaunchCore, que es donde se revisa qué hizo un arranque.
+    /// </summary>
+    private IReadOnlyList<string> _startupDiagnostics = [];
 
     public App()
     {
@@ -47,23 +42,22 @@ public partial class App : Application
         // exception" (0xc000027b) que el sistema entrega al depurador JIT.
         RegisterGlobalExceptionHandlers();
 
-        // ConfigureServices no puede lanzar desde el constructor: aquí todavía
-        // no existe UI donde mostrar el error y la excepción escaparía al
-        // framework XAML. Se guarda y se reporta en OnLaunched.
+        // El arranque no puede lanzar desde el constructor: aquí todavía no
+        // existe UI donde mostrar el error y la excepción escaparía al framework
+        // XAML. Se guarda y se reporta en OnLaunched.
         try
         {
-            Services = ConfigureServices();
+            BootstrapResult bootstrap = ConfigurationBootstrapper.Run();
+            _startupDiagnostics = bootstrap.Diagnostics;
+            Services = new ServiceCollection().AddMeetingAssistant(bootstrap).BuildServiceProvider();
         }
         catch (Exception exception)
         {
             _configurationFailure = exception;
-            LogStartupFailure("App.ConfigureServices", exception);
+            AppLog.Failure("App.ConfigureServices", exception);
             Services = new ServiceCollection().BuildServiceProvider();
         }
 
-        // El manejador de Application.UnhandledException ya lo suscribió
-        // RegisterGlobalExceptionHandlers; acá había un segundo que escribía
-        // cada excepción dos veces en el log.
         InitializeComponent();
     }
 
@@ -89,7 +83,7 @@ public partial class App : Application
             // en 0xc000027b y Windows la entrega al depurador JIT: el usuario
             // ve un diálogo de depurador y una segunda instancia de Visual
             // Studio en lugar de un mensaje de error accionable.
-            LogStartupFailure("App.OnLaunched", exception);
+            AppLog.Failure("App.OnLaunched", exception);
             ShowStartupError("App.OnLaunched", exception);
         }
     }
@@ -105,108 +99,42 @@ public partial class App : Application
         catch (Exception exception)
         {
             // El endpoint HTTP local es un disparador opcional: la bandeja y el
-            // hotkey son los caminos principales. Aun así
-            // esto era la primera sentencia de LaunchCore y estaba fuera de todo
-            // try/catch, así que un puerto que no se puede escuchar abortaba el
-            // arranque entero: sin Register() de notificaciones, sin ventana, sin
-            // bandeja y sin hotkey — la app muerta por una conveniencia. Mismo
-            // criterio que TrayIconService: se registra y se sigue.
-            LogStartupFailure("LocalRecordingApiServer.Start", exception);
+            // hotkey son los caminos principales. Un puerto que no se puede
+            // escuchar no puede abortar el arranque entero. Mismo criterio que
+            // TrayIconService: se registra y se sigue.
+            AppLog.Failure("LocalRecordingApiServer.Start", exception);
         }
 
         // Spike de Fase 5: deja constancia en cada arranque de si el binario
         // nativo de SQLite cargó bajo esta forma de ejecución. Instalada, la app
         // corre desde WindowsApps, y un paquete nativo por RID es justo el tipo
-        // de cosa que funciona suelta y falla empaquetada — ya pasó con la ruta
-        // del log y con el directorio de audio. Describe() nunca lanza.
-        LogDiagnostic(MeetingAssistant.Infrastructure.Storage.SqliteEnvironmentProbe.Describe());
-
-        // La migración y el import de ajustes ya corrieron en ConfigureServices:
-        // desde el paso 5 de Fase 5 la configuración se lee en parte de la base,
-        // así que no pueden esperar hasta acá. Lo que queda es dejarlo en el log,
-        // que es donde se revisa qué hizo un arranque.
-        if (_databaseDiagnostic is not null) LogDiagnostic($"Base de reuniones: {_databaseDiagnostic}");
-        if (_settingsImportDiagnostic is not null) LogDiagnostic(_settingsImportDiagnostic);
-        if (_historyStoreDiagnostic is not null) LogDiagnostic(_historyStoreDiagnostic);
-        if (_settingsSourceDiagnostic is not null) LogDiagnostic(_settingsSourceDiagnostic);
-
-        // Si el historial está en Postgres, se lo despierta en segundo plano: la
-        // primera consulta tras un rato sin uso tarda, y es mejor que esa espera
-        // ocurra acá y no cuando se abre Historial. No se espera ni puede lanzar.
-        if (Services.GetService<PostgresDatabase>() is { } postgres)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    LogDiagnostic($"Postgres: {await postgres.MigrateAsync()}");
-                }
-                catch (Exception exception)
-                {
-                    LogStartupFailure("PostgresDatabase.Migrate", exception);
-                }
-            });
-        }
+        // de cosa que funciona suelta y falla empaquetada. Describe() nunca lanza.
+        AppLog.Diagnostic(MeetingAssistant.Infrastructure.Storage.SqliteEnvironmentProbe.Describe());
+        foreach (string diagnostic in _startupDiagnostics) AppLog.Diagnostic(diagnostic);
 
         try
         {
             _activityNotificationService = Services.GetRequiredService<ActivityNotificationService>();
             AppNotificationManager.Default.Register();
             _appNotificationsRegistered = true;
-            LogDiagnostic("AppNotificationManager.Register OK; ActivityNotificationService suscrito.");
+            AppLog.Diagnostic("AppNotificationManager.Register OK; ActivityNotificationService suscrito.");
         }
         catch (Exception exception)
         {
             _activityNotificationService?.Dispose();
             _activityNotificationService = null;
-            LogStartupFailure("AppNotificationManager.Register", exception);
+            AppLog.Failure("AppNotificationManager.Register", exception);
         }
 
-        // Retoma las subidas a la nube que quedaron pendientes o fallidas. En
-        // segundo plano y sin esperar: no lanza, y el arranque no depende de la
-        // red. Dentro de su propio try porque resolver el servicio sí puede
-        // fallar, y un respaldo opcional no puede impedir abrir la ventana.
+        // En su propio try porque resolver los servicios sí puede fallar, y un
+        // respaldo opcional no puede impedir abrir la ventana.
         try
         {
-            ICloudArchive archive = Services.GetRequiredService<ICloudArchive>();
-            LogDiagnostic(archive.IsConfigured
-                ? "Archivo en la nube: configurado; se retoman las subidas pendientes."
-                : "Archivo en la nube: sin AzureStorage:ConnectionString, apagado.");
-            ArchiveUploadService uploads = Services.GetRequiredService<ArchiveUploadService>();
-            LocalAudioRetentionService retention = Services.GetRequiredService<LocalAudioRetentionService>();
-            double retentionDays = Services.GetRequiredService<IConfiguration>()
-                .GetValue<double?>("AzureStorage:LocalAudioRetentionDays") ?? 0;
-            LogDiagnostic(retentionDays > 0
-                ? $"Retención de audio local: {retentionDays:0.##} días."
-                : "Retención de audio local: apagada (AzureStorage:LocalAudioRetentionDays sin valor). No se borra nada.");
-
-            // Primero las subidas pendientes y después la retención, en ese
-            // orden y una vez por día: la app vive días en la bandeja. Nada de
-            // esto se espera ni puede lanzar hacia el arranque.
-            _ = Task.Run(async () =>
-            {
-                while (true)
-                {
-                    await uploads.ResumeUnfinishedAsync();
-
-                    if (retentionDays > 0)
-                    {
-                        AudioRetentionResult result = await retention.RunAsync(TimeSpan.FromDays(retentionDays), apply: true);
-                        if (result.Deleted.Count > 0 || result.Kept.Count > 0)
-                        {
-                            LogDiagnostic(
-                                $"Retención de audio local: {result.Deleted.Count} borrados ({result.BytesFreed / 1048576.0:F1} MB); " +
-                                $"{result.Kept.Count} cumplieron el plazo y se conservaron por no poder confirmarse en la nube.");
-                        }
-                    }
-
-                    await Task.Delay(TimeSpan.FromHours(24));
-                }
-            });
+            Services.GetRequiredService<BackgroundMaintenance>().Start();
         }
         catch (Exception exception)
         {
-            LogStartupFailure("ArchiveUploadService.ResumeUnfinished", exception);
+            AppLog.Failure("BackgroundMaintenance.Start", exception);
         }
 
         _window = Services.GetRequiredService<MainWindow>();
@@ -235,67 +163,19 @@ public partial class App : Application
             // usable desde la ventana principal en vez de crashear por
             // completo. Se registra en texto plano porque este código corre
             // antes de que exista cualquier UI para mostrar el error.
-            LogStartupFailure("TrayIconService.AttachTo", exception);
+            AppLog.Failure("TrayIconService.AttachTo", exception);
         }
 
         _globalHotkeyService = Services.GetRequiredService<GlobalHotkeyService>();
         _globalHotkeyService.Register(_window);
     }
 
-    /// <summary>
-    /// Ruta del log de diagnóstico. Deliberadamente NO usa
-    /// <see cref="AppContext.BaseDirectory"/>: cuando la app corre empaquetada
-    /// el directorio base queda bajo WindowsApps, donde la escritura falla o se
-    /// redirige de forma opaca, y el log se perdía justo en el escenario que
-    /// más importa depurar.
-    ///
-    /// Ojo con dónde buscarlo, porque depende de CÓMO esté registrada la app y
-    /// no de esta ruta. Hay que mirar los dos lados antes de concluir que no hay
-    /// log:
-    ///
-    ///   - MSIX firmado e instalado: %LOCALAPPDATA%\MeetingAssistant\
-    ///     (la ruta plana, tal cual la arma este Path.Combine). Medido en T6a y
-    ///     confirmado de nuevo en T5.
-    ///   - Registro de desarrollo (`dotnet run`): LocalApplicationData está
-    ///     redirigido y el archivo aparece bajo
-    ///     %LOCALAPPDATA%\Packages\{PackageFamilyName}\LocalCache\Local\MeetingAssistant.
-    ///
-    /// Buscar en el lado equivocado ya costó caro dos veces: el 2026-08-23 hizo
-    /// dar por bueno un Register() que llevaba fallando en cada arranque desde
-    /// que se implementó T4. Este comentario decía que la ruta plana nunca se
-    /// usaba, lo cual dejó de ser cierto al instalar el paquete firmado en T6a.
-    /// </summary>
-    public static string StartupErrorLogPath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MeetingAssistant",
-        "startup-errors.log");
-
-    public static string MeetingOutputDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MeetingAssistant",
-        "meeting-output");
-
-    /// <summary>
-    /// Base local de reuniones (Fase 5). Mismo destino y mismo criterio que el
-    /// log, el audio y la configuración de usuario: lo que la app necesita
-    /// escribir no puede vivir dentro del paquete instalado, que es de sólo
-    /// lectura.
-    ///
-    /// Ojo: <b>sobrevive a la desinstalación</b>, igual que el resto de la
-    /// carpeta. Esa decisión se tomó cuando ahí sólo había un log y unos .wav;
-    /// con la base pasa a haber además todos los transcripts.
-    /// </summary>
-    public static string MeetingDatabasePath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MeetingAssistant",
-        "meetings.db");
-
     private void RegisterGlobalExceptionHandlers()
     {
         // Excepciones no manejadas en el hilo de UI de XAML.
         UnhandledException += (_, e) =>
         {
-            LogStartupFailure("Application.UnhandledException", e.Exception);
+            AppLog.Failure("Application.UnhandledException", e.Exception);
             e.Handled = true;
 
             // La ventana de error solo tiene sentido si la app aún no llegó a
@@ -315,7 +195,7 @@ public partial class App : Application
         {
             if (e.ExceptionObject is Exception exception)
             {
-                LogStartupFailure("AppDomain.UnhandledException", exception);
+                AppLog.Failure("AppDomain.UnhandledException", exception);
             }
         };
 
@@ -323,7 +203,7 @@ public partial class App : Application
         // async void o un Task descartado durante el arranque).
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
-            LogStartupFailure("TaskScheduler.UnobservedTaskException", e.Exception);
+            AppLog.Failure("TaskScheduler.UnobservedTaskException", e.Exception);
             e.SetObserved();
         };
     }
@@ -344,7 +224,7 @@ public partial class App : Application
         {
             // Si ni siquiera se puede abrir la ventana de error, el log ya
             // escrito por el llamador es el único registro que queda.
-            LogStartupFailure("App.ShowStartupError", windowException);
+            AppLog.Failure("App.ShowStartupError", windowException);
         }
     }
 
@@ -352,309 +232,6 @@ public partial class App : Application
     {
         // Llega en un hilo del runtime, no en el de UI.
         _window?.DispatcherQueue.TryEnqueue(() => _window?.ShowFromTray());
-    }
-
-    internal static void LogStartupFailure(string context, Exception exception)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(StartupErrorLogPath)!);
-            string entry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{context}] {exception}\n\n";
-            File.AppendAllText(StartupErrorLogPath, entry);
-        }
-        catch
-        {
-            // Si ni siquiera se puede escribir el log de diagnóstico, no hay
-            // nada más que hacer aquí sin arriesgar un segundo crash.
-        }
-    }
-
-    /// <summary>
-    /// Traza de diagnóstico, en el mismo archivo que
-    /// <see cref="LogStartupFailure"/>. Existe porque una notificación no tiene
-    /// ninguna superficie donde depurarse: cuando no aparece un toast, sin esto
-    /// no hay forma de distinguir "el evento nunca llegó al servicio" de "Show
-    /// se llamó y Windows no lo mostró", que son problemas opuestos.
-    /// </summary>
-    internal static void LogDiagnostic(string message)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(StartupErrorLogPath)!);
-            File.AppendAllText(
-                StartupErrorLogPath,
-                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [diag] {message}\n");
-        }
-        catch
-        {
-            // Mismo criterio que LogStartupFailure: si no se puede escribir el
-            // diagnóstico, no vale arriesgar un segundo fallo por dejar rastro.
-        }
-    }
-
-    private static IServiceProvider ConfigureServices()
-    {
-        // La base tiene que estar migrada ANTES de construir la configuración,
-        // porque desde el paso 5 la configuración se lee en parte de ella. Estos
-        // tres no dependen de IConfiguration — la ruta la impone
-        // MeetingDatabasePath —, así que se construyen a mano y después se
-        // registran como instancias: no hay forma de resolverlos por DI si el
-        // contenedor todavía no existe.
-        var connectionFactory = new Infrastructure.Storage.Sqlite.SqliteConnectionFactory(MeetingDatabasePath);
-        ISecretProtector secretProtector = new Infrastructure.Storage.Sqlite.DpapiSecretProtector();
-        var schemaMigrator = new Infrastructure.Storage.Sqlite.SqliteSchemaMigrator(connectionFactory);
-        ISettingsStore settingsStore =
-            new Infrastructure.Storage.Sqlite.SqliteSettingsStore(connectionFactory, secretProtector);
-
-        // Ninguno de los dos try/catch es decorativo. Regla escrita al planificar
-        // Fase 5: **una base rota no puede impedir arrancar la app**, y ahora la
-        // base está en el camino crítico de la configuración, no sólo en el del
-        // historial. El precedente es T4.4, donde una excepción de arranque se
-        // llevó puesta la app entera y costó nueve días encontrarla. Si esto
-        // falla, se cae a empaquetado + archivo de usuario + entorno.
-        try
-        {
-            _databaseDiagnostic = schemaMigrator.Migrate();
-        }
-        catch (Exception exception)
-        {
-            LogStartupFailure("SqliteSchemaMigrator.Migrate", exception);
-            _databaseDiagnostic = $"NO se pudo migrar ni leer: {exception.Message}";
-        }
-
-        // Migración de una sola vez del appsettings.json de usuario que creó T9.
-        // Nunca lanza: devuelve el resultado, y si falló deja el archivo original
-        // intacto — que es lo que hace que un fallo acá no pierda nada, porque
-        // mientras ese archivo exista su capa sigue alimentando a la app.
-        _settingsImportDiagnostic = new Infrastructure.Storage.Sqlite.UserSettingsImporter(settingsStore)
-            .ImportOnceAsync(UserSettingsService.LegacyFilePath)
-            .GetAwaiter()
-            .GetResult()
-            .Describe();
-
-        // El orden es la regla (regla de diseño 4 de Fase 5): empaquetado
-        // (valores de fábrica) -> archivo del usuario (legado de T9) -> base
-        // SQLite (lo que edita SettingsPage) -> variables de entorno. Cada capa
-        // pisa a la anterior.
-        //
-        // Las variables de entorno **siguen arriba de todo**, y eso no es un
-        // detalle: es la vía de escape que queda cuando un ajuste guardado mal
-        // impide arrancar. Ya salvó una validación una vez (se usó para forzar el
-        // fallo de Deepgram). Si la base pisara al entorno, un valor malo en la
-        // base sería irreparable desde afuera de la app.
-        //
-        // La capa de usuario se conserva por debajo de SQLite, aunque el
-        // importador se lleve el archivo en el primer arranque: es lo que sostiene
-        // el caso en que la base NO abrió — el import no ocurrió, el archivo sigue
-        // ahí, y la app arranca con la configuración del usuario igual que antes.
-        // SetBasePath no le afecta: LegacyFilePath es una ruta absoluta.
-        IConfigurationBuilder LocalLayers() => new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
-            .AddJsonFile(UserSettingsService.LegacyFilePath, optional: true, reloadOnChange: false)
-            .AddSqliteSettings(settingsStore, LogStartupFailure);
-
-        // La configuración se arma en dos tiempos (Fase 6, paso 3). Primero sólo
-        // con lo local, porque de ahí sale **dónde está la nube**: los dos
-        // conmutadores y la cadena de conexión no se pueden leer de la base que
-        // describen.
-        IConfiguration localConfiguration = LocalLayers().AddEnvironmentVariables().Build();
-
-        bool historyInPostgres = string.Equals(
-            localConfiguration["Database:Provider"], "Postgres", StringComparison.OrdinalIgnoreCase);
-        bool settingsFromCloud = string.Equals(
-            localConfiguration["Configuration:Source"], "Database", StringComparison.OrdinalIgnoreCase);
-
-        PostgresDatabase? postgres = historyInPostgres || settingsFromCloud
-            ? TryCreatePostgres(localConfiguration)
-            : null;
-
-        _historyStoreDiagnostic = (historyInPostgres, postgres) switch
-        {
-            (false, _) => "Historial: SQLite local.",
-            (true, null) => "Historial: Database:Provider pide Postgres pero no hay una Postgres:ConnectionString utilizable. Se usa SQLite local.",
-            (true, not null) => $"Historial: Postgres en {postgres.Description}."
-        };
-
-        // Prompts editables (Fase 2, paso 6): el texto del código más las
-        // ediciones guardadas desde Configuración, en la misma base que el
-        // historial. **No se espera esta lectura.** Antes se esperaba hasta 5 s,
-        // en serie con los 5 s de los ajustes de la nube: con Neon dormido, el
-        // arranque podía quedarse unos 10 s sin ventana. Arranca acá, antes de
-        // los ajustes de la nube, para que las dos lecturas esperen juntas a que
-        // la base despierte. Mientras no termine, el catálogo sirve los
-        // originales del código: lo que se pierde es que algo extraído en esos
-        // primeros segundos —antes de que pueda terminar una grabación— use el
-        // original y no la versión editada.
-        IPromptStore promptStore = historyInPostgres && postgres is not null
-            ? new PostgresPromptStore(postgres)
-            : new Infrastructure.Storage.Sqlite.SqlitePromptStore(connectionFactory);
-        var promptCatalog = new EditablePromptCatalog(new BuiltInPromptCatalog(), promptStore, LogStartupFailure);
-        var promptClock = System.Diagnostics.Stopwatch.StartNew();
-        _ = Task.Run(async () =>
-        {
-            await promptCatalog.RefreshAsync();
-            LogDiagnostic(promptCatalog.LoadedFromStore
-                ? $"Prompts: activos {string.Join(", ", promptCatalog.GetAll().Select(prompt => $"{prompt.Id} {prompt.Version}"))} " +
-                  $"(leídos en {promptClock.ElapsedMilliseconds} ms)."
-                : "Prompts: no se pudieron leer las ediciones; se usan los originales del código.");
-        });
-
-        // Después, si Configuration:Source lo pide, se intercala la capa de la
-        // nube: empaquetado -> archivo de usuario -> SQLite local -> **nube** ->
-        // entorno. Primero la base compartida; si no contesta dentro del plazo,
-        // esa capa queda vacía y manda lo local. El entorno sigue arriba de todo.
-        IConfiguration configuration = localConfiguration;
-        ICloudSettingsStore? cloudSettings = null;
-        if (settingsFromCloud && postgres is not null)
-        {
-            cloudSettings = new PostgresSettingsStore(postgres);
-            TimeSpan timeout = TimeSpan.FromSeconds(
-                localConfiguration.GetValue<double?>("Configuration:CloudTimeoutSeconds") is > 0 and var seconds ? seconds : 5);
-
-            // Esta espera sí bloquea el arranque, hasta el plazo: los servicios se
-            // construyen con lo que diga la nube (proveedor, modelo). Se mide
-            // para que el log diga cuánto costó, sobre todo con Neon dormido.
-            var cloudClock = System.Diagnostics.Stopwatch.StartNew();
-            IConfigurationRoot withCloud = LocalLayers()
-                .AddCloudSettings(cloudSettings, timeout, LogStartupFailure)
-                .AddEnvironmentVariables()
-                .Build();
-            configuration = withCloud;
-
-            _settingsSourceDiagnostic =
-                (withCloud.Providers.OfType<CloudSettingsConfigurationProvider>().Single().LoadedFromCloud
-                    ? "Ajustes: primero la nube (Postgres), después lo local."
-                    : "Ajustes: la nube no respondió a tiempo; en este arranque se usan sólo los locales.") +
-                $" Espera del arranque: {cloudClock.ElapsedMilliseconds} ms.";
-        }
-        else
-        {
-            _settingsSourceDiagnostic = settingsFromCloud
-                ? "Ajustes: Configuration:Source pide la nube pero no hay una Postgres:ConnectionString utilizable. Se usan los locales."
-                : "Ajustes: locales.";
-        }
-
-        // Antes de registrar nada: si falta configuración, es preferible una
-        // lista completa aquí que ir descubriéndola clave a clave según cada
-        // servicio se construya bajo demanda.
-        StartupConfigurationValidator.Validate(configuration);
-
-        var services = new ServiceCollection();
-        services.AddSingleton(configuration);
-        services.AddSingleton<IAudioCaptureService, AudioCaptureService>();
-        services.AddSingleton<ITranscriptionClient>(_ => new DeepgramTranscriptionClient(
-            ReadRequiredSetting(configuration, "Deepgram", "ApiKey", "DEEPGRAM_API_KEY")));
-        services.AddSingleton<ILlmClient>(_ => CreateLlmClient(configuration));
-        services.AddSingleton<ICostEstimator, ConfigPricingCostEstimator>();
-        services.AddSingleton<ITranscriptionCostEstimator, ConfigPricingCostEstimator>();
-        services.AddSingleton(promptCatalog);
-        services.AddSingleton<IPromptCatalog>(promptCatalog);
-        services.AddTransient<PromptEditorViewModel>();
-        services.AddSingleton<ILlmReportExtractor, LlmReportExtractor>();
-        services.AddSingleton<IReportStorage, MarkdownReportStorage>();
-        services.AddSingleton<IMeetingPipeline>(provider => new MeetingPipeline(
-            provider.GetRequiredService<IAudioCaptureService>(),
-            provider.GetRequiredService<ITranscriptionClient>(),
-            provider.GetRequiredService<ILlmReportExtractor>(),
-            provider.GetRequiredService<IReportStorage>(),
-            MeetingOutputDirectory,
-            // El historial se engancha en el pipeline y no en RecordingCoordinator
-            // porque el pipeline es el único punto por el que pasan **todos** los
-            // caminos, incluido el harness, que lo usa sin coordinador. Un solo
-            // punto, sin filas duplicadas.
-            provider.GetRequiredService<IMeetingHistoryStore>(),
-            LogStartupFailure,
-            provider.GetRequiredService<ITranscriptionCostEstimator>(),
-            provider.GetRequiredService<ArchiveUploadService>()));
-        services.AddSingleton<RecordingCoordinator>();
-        // El endpoint HTTP vive en Infrastructure y no puede ver App: entra por
-        // esta interfaz de Core, que es el mismo coordinador. Así comparte el
-        // candado y los avisos con la ventana, la bandeja y el hotkey.
-        services.AddSingleton<IRecordingTrigger>(provider => provider.GetRequiredService<RecordingCoordinator>());
-        services.AddSingleton<ActivityNotificationService>();
-        services.AddSingleton<TrayIconService>();
-        services.AddSingleton<GlobalHotkeyService>();
-        services.AddSingleton<StartupTaskService>();
-        services.AddSingleton<UserSettingsService>();
-        // Las mismas instancias que ya se usaron para migrar el esquema y para
-        // alimentar la capa de configuración. Registrarlas, en vez de dejar que
-        // el contenedor construya unas segundas, es lo que garantiza que la
-        // configuración y la UI hablen con la misma base.
-        services.AddSingleton(connectionFactory);
-        services.AddSingleton(schemaMigrator);
-        services.AddSingleton(secretProtector);
-        services.AddSingleton(settingsStore);
-        // Dónde vive el historial (Fase 6, paso 2): Database:Provider elige entre
-        // el SQLite local y Postgres. Los ajustes tienen su propio conmutador
-        // (Configuration:Source), así que la base de Postgres puede existir por
-        // cualquiera de los dos motivos.
-        if (postgres is not null) services.AddSingleton(postgres);
-        if (cloudSettings is not null) services.AddSingleton(cloudSettings);
-
-        if (historyInPostgres && postgres is not null)
-        {
-            services.AddSingleton<IMeetingHistoryStore, PostgresMeetingHistoryStore>();
-            services.AddSingleton<IArchiveUploadStore, PostgresArchiveUploadStore>();
-        }
-        else
-        {
-            services.AddSingleton<IMeetingHistoryStore, Infrastructure.Storage.Sqlite.SqliteMeetingHistoryStore>();
-            services.AddSingleton<IArchiveUploadStore, Infrastructure.Storage.Sqlite.SqliteArchiveUploadStore>();
-        }
-
-        // Subida en segundo plano del audio y los reportes (Fase 6, paso 1). Sin
-        // AzureStorage:ConnectionString queda apagada y no hace nada.
-        services.AddSingleton<ICloudArchive, AzureBlobCloudArchive>();
-        services.AddSingleton(provider => new ArchiveUploadService(
-            provider.GetRequiredService<ICloudArchive>(),
-            provider.GetRequiredService<IArchiveUploadStore>(),
-            LogStartupFailure));
-        // Fase 6, paso 5. Sólo mira MeetingOutputDirectory: un audio importado
-        // desde otra carpeta del usuario no se borra nunca.
-        services.AddSingleton(provider => new LocalAudioRetentionService(
-            provider.GetRequiredService<ICloudArchive>(),
-            provider.GetRequiredService<IArchiveUploadStore>(),
-            MeetingOutputDirectory,
-            LogStartupFailure));
-        services.AddSingleton(provider => new LocalRecordingApiServer(
-            provider.GetRequiredService<IRecordingTrigger>(),
-            provider.GetRequiredService<IConfiguration>(),
-            LogStartupFailure));
-        services.AddTransient<RecordViewModel>();
-        // Transient, igual que RecordViewModel y por el mismo motivo: el Frame
-        // reconstruye la página en cada navegación, así que un singleton acá sólo
-        // conservaría estado que la página ya no puede mostrar.
-        services.AddTransient<HistoryViewModel>();
-        services.AddTransient<CostViewModel>();
-        services.AddSingleton<MainWindow>();
-
-        return services.BuildServiceProvider();
-    }
-
-    /// <summary>
-    /// Devuelve la base de Postgres, o null si no hay una cadena de conexión
-    /// utilizable. <b>No abre ninguna conexión</b>: el esquema se asegura la
-    /// primera vez que algo la usa.
-    ///
-    /// Una cadena ausente o que no se puede interpretar devuelve null y queda en
-    /// el log, y quien llama cae a lo local: un valor mal escrito no puede
-    /// impedir abrir la app.
-    /// </summary>
-    private static PostgresDatabase? TryCreatePostgres(IConfiguration configuration)
-    {
-        string? connectionString = configuration["Postgres:ConnectionString"];
-        if (string.IsNullOrWhiteSpace(connectionString)) return null;
-
-        try
-        {
-            return new PostgresDatabase(connectionString);
-        }
-        catch (Exception exception)
-        {
-            LogStartupFailure("PostgresDatabase", exception);
-            return null;
-        }
     }
 
     private async Task ExitApplicationAsync()
@@ -685,7 +262,7 @@ public partial class App : Application
             }
             catch (Exception exception)
             {
-                LogStartupFailure("AppNotificationManager.Unregister", exception);
+                AppLog.Failure("AppNotificationManager.Unregister", exception);
             }
         }
         _globalHotkeyService?.Dispose();
@@ -723,7 +300,7 @@ public partial class App : Application
             {
                 // Otro ContentDialog abierto en la ventana. Ante la duda no se
                 // sale: se perdería la grabación sin que nadie lo aceptara.
-                LogStartupFailure("App.ConfirmExit", exception);
+                AppLog.Failure("App.ConfirmExit", exception);
                 return false;
             }
         }
@@ -731,36 +308,5 @@ public partial class App : Application
         // Un prompt editado y sin guardar en Configuración se perdería igual que
         // al cambiar de página.
         return await window.ConfirmLeaveCurrentPageAsync();
-    }
-
-    private static ILlmClient CreateLlmClient(IConfiguration configuration)
-    {
-        string provider = ReadSetting(configuration, "Llm", "Provider") ?? "Gemini";
-        return provider.ToLowerInvariant() switch
-        {
-            // Gemini:Model es opcional: sin él manda el default del cliente
-            // (gemini-3.5-flash-lite). Se lee para que SettingsPage pueda
-            // cambiarlo sin tocar código, igual que Deployment hace de "modelo"
-            // del lado de Azure.
-            "gemini" => ReadSetting(configuration, "Gemini", "Model") is { } geminiModel
-                ? new GeminiLlmClient(ReadRequiredSetting(configuration, "Gemini", "ApiKey", "GEMINI_API_KEY"), geminiModel)
-                : new GeminiLlmClient(ReadRequiredSetting(configuration, "Gemini", "ApiKey", "GEMINI_API_KEY")),
-            "azurefoundry" => new AzureFoundryLlmClient(
-                ReadRequiredSetting(configuration, "AzureFoundry", "Endpoint"),
-                ReadRequiredSetting(configuration, "AzureFoundry", "Deployment"),
-                ReadSetting(configuration, "AzureFoundry", "ApiKey")),
-            _ => throw new InvalidOperationException($"Proveedor '{provider}' no soportado. Usa 'Gemini' o 'AzureFoundry'.")
-        };
-    }
-
-    private static string ReadRequiredSetting(IConfiguration configuration, string section, string property, string? environmentVariable = null) =>
-        ReadSetting(configuration, section, property, environmentVariable) ?? throw new InvalidOperationException(
-            $"Falta configurar {section}:{property} en appsettings.json o la variable de entorno {environmentVariable}.");
-
-    private static string? ReadSetting(IConfiguration configuration, string section, string property, string? environmentVariable = null)
-    {
-        string? value = configuration[$"{section}:{property}"] ??
-            (environmentVariable is null ? null : configuration[environmentVariable]);
-        return string.IsNullOrWhiteSpace(value) || value.StartsWith("<", StringComparison.Ordinal) ? null : value;
     }
 }

@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -134,7 +135,7 @@ public partial class CostViewModel : ObservableObject
         catch (Exception exception)
         {
             // Regla de la fase: un fallo de la base no puede tumbar nada.
-            App.LogStartupFailure("CostViewModel.Refresh", exception);
+            AppLog.Failure("CostViewModel.Refresh", exception);
             HasData = false;
             Caveats.Clear();
             PromptRows.Clear();

@@ -20,6 +20,18 @@ using Microsoft.Extensions.Configuration;
 /// </summary>
 internal static class MigrationCommands
 {
+    /// <summary>Valida <c>[--apply]</c> y corre <see cref="MigrateToPostgresAsync"/>.</summary>
+    public static Task<int> MigrateFromArgumentsAsync(IConfiguration configuration, IReadOnlyList<string> arguments)
+    {
+        if (arguments.Count == 1 && !string.Equals(arguments[0], "--apply", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("Uso: --migrate-to-postgres [--apply]");
+            return Task.FromResult(1);
+        }
+
+        return MigrateToPostgresAsync(configuration, apply: arguments.Count == 1);
+    }
+
     public static async Task<int> MigrateToPostgresAsync(IConfiguration configuration, bool apply)
     {
         string localRoot = Path.Combine(

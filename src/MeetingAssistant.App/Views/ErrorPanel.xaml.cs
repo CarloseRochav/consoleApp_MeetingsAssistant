@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -89,7 +90,7 @@ public sealed partial class ErrorPanel : UserControl
         {
             // El portapapeles puede estar tomado por otra app. El texto sigue
             // seleccionable a mano en el detalle.
-            App.LogStartupFailure("ErrorPanel.Copy", exception);
+            AppLog.Failure("ErrorPanel.Copy", exception);
             CopiedText.Text = "No se pudo copiar. Puedes seleccionar el texto a mano.";
         }
     }

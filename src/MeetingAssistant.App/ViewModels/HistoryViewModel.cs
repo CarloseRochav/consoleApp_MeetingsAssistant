@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -400,7 +401,7 @@ public partial class HistoryViewModel : ObservableObject
             // Regla de la fase: un fallo de la base no puede tumbar nada. Grabar,
             // transcribir y guardar en el vault no dependen del historial, así
             // que esta página avisa y el resto de la app sigue.
-            App.LogStartupFailure("HistoryViewModel.Refresh", exception);
+            AppLog.Failure("HistoryViewModel.Refresh", exception);
             _allSessions.Clear();
             Sessions.Clear();
             SearchSummary = null;
@@ -462,7 +463,7 @@ public partial class HistoryViewModel : ObservableObject
         {
             if (version != _searchVersion) return;
 
-            App.LogStartupFailure("HistoryViewModel.Search", exception);
+            AppLog.Failure("HistoryViewModel.Search", exception);
             ShowSessions(_allSessions, snippets: null, sessionToKeepSelected);
             SearchSummary = "No se pudo buscar en las transcripciones. Se muestra la lista completa, sin filtrar.";
             ErrorDetails = exception.ToString();
@@ -605,7 +606,7 @@ public partial class HistoryViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("HistoryViewModel.LoadSessionDetail", exception);
+            AppLog.Failure("HistoryViewModel.LoadSessionDetail", exception);
             TranscriptDetails = "No se pudo leer el detalle de esta reunión.";
             ErrorDetails = exception.ToString();
         }

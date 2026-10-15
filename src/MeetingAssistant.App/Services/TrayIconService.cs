@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Models;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
@@ -119,7 +120,7 @@ public sealed class TrayIconService : IDisposable
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("TrayIconService.ToggleRecording", exception);
+            AppLog.Failure("TrayIconService.ToggleRecording", exception);
             _trayIcon?.ShowNotification("Meeting Assistant", exception.Message, NotificationIcon.Error);
         }
         finally

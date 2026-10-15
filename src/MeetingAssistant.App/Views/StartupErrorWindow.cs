@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -77,7 +78,7 @@ public sealed class StartupErrorWindow : Window
 
         var logHint = new TextBlock
         {
-            Text = $"Copia guardada en: {App.StartupErrorLogPath}",
+            Text = $"Copia guardada en: {AppLog.FilePath}",
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Opacity = 0.7,
@@ -95,7 +96,7 @@ public sealed class StartupErrorWindow : Window
         $"""
          Contexto : {context}
          Fecha    : {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
-         Log      : {App.StartupErrorLogPath}
+         Log      : {AppLog.FilePath}
 
          {exception}
          """;

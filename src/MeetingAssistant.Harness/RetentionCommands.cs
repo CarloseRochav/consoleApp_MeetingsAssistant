@@ -16,6 +16,19 @@ using Microsoft.Extensions.Configuration;
 /// </summary>
 internal static class RetentionCommands
 {
+    /// <summary>Valida <c>&lt;dias&gt; [--apply]</c> y corre <see cref="RunAsync"/>.</summary>
+    public static Task<int> RunFromArgumentsAsync(IConfiguration configuration, IReadOnlyList<string> arguments)
+    {
+        if (!int.TryParse(arguments[0], out int days) || days <= 0 ||
+            (arguments.Count == 2 && !string.Equals(arguments[1], "--apply", StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.Error.WriteLine("Uso: --audio-retention <dias> [--apply]   (dias mayor que cero)");
+            return Task.FromResult(1);
+        }
+
+        return RunAsync(configuration, days, apply: arguments.Count == 2);
+    }
+
     public static async Task<int> RunAsync(IConfiguration configuration, int days, bool apply)
     {
         string localRoot = Path.Combine(

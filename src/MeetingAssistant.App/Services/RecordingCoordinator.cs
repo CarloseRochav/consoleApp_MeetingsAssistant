@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Models;
 
@@ -351,7 +352,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
                 // Se traga, pero no en silencio: un suscriptor que falla en cada
                 // evento (p. ej. por tocar XAML fuera del hilo de UI) tiene que
                 // poder encontrarse en el log.
-                App.LogStartupFailure($"RecordingCoordinator.{typeof(TArgs).Name} ({handler.Method.DeclaringType?.Name})", exception);
+                AppLog.Failure($"RecordingCoordinator.{typeof(TArgs).Name} ({handler.Method.DeclaringType?.Name})", exception);
             }
         }
     }
@@ -366,7 +367,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
             }
             catch (Exception exception)
             {
-                App.LogStartupFailure($"RecordingCoordinator.StateChanged ({handler.Method.DeclaringType?.Name})", exception);
+                AppLog.Failure($"RecordingCoordinator.StateChanged ({handler.Method.DeclaringType?.Name})", exception);
             }
         }
     }

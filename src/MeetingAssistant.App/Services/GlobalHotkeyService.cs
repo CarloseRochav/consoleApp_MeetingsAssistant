@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Models;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -71,7 +72,7 @@ public sealed class GlobalHotkeyService : IDisposable
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("GlobalHotkeyService.Register", exception);
+            AppLog.Failure("GlobalHotkeyService.Register", exception);
             _trayIcon.ShowError("Hotkey no disponible", exception.Message);
             return false;
         }
@@ -83,7 +84,7 @@ public sealed class GlobalHotkeyService : IDisposable
         {
             if (_isRegistered && !UnregisterHotKey(_windowHandle, HotkeyId))
             {
-                App.LogStartupFailure("GlobalHotkeyService.Unregister",
+                AppLog.Failure("GlobalHotkeyService.Unregister",
                     new Win32Exception(Marshal.GetLastWin32Error(), "No se pudo liberar el hotkey global."));
             }
 
@@ -125,7 +126,7 @@ public sealed class GlobalHotkeyService : IDisposable
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("GlobalHotkeyService.ToggleRecording", exception);
+            AppLog.Failure("GlobalHotkeyService.ToggleRecording", exception);
             _trayIcon.ShowError("Error de hotkey", exception.Message);
         }
         finally

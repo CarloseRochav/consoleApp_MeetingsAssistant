@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -201,7 +202,7 @@ public partial class PromptEditorViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("PromptEditor.Save", exception);
+            AppLog.Failure("PromptEditor.Save", exception);
             StatusMessage = "No se pudo guardar. El prompt activo no cambió.";
             ErrorDetails = exception.ToString();
         }
@@ -240,7 +241,7 @@ public partial class PromptEditorViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            App.LogStartupFailure("PromptEditor.RestoreOriginal", exception);
+            AppLog.Failure("PromptEditor.RestoreOriginal", exception);
             StatusMessage = "No se pudo volver al original. El prompt activo no cambió.";
             ErrorDetails = exception.ToString();
         }

@@ -34,8 +34,15 @@ Core/Abstractions    → interfaces + pure orchestration. ILlmClient,
                        break the rule)
 Infrastructure       → concrete adapters: Llm/, Transcription/, Audio/,
                        Storage/, Api/, Cost/
-App                  → WinUI 3 shell (MVVM, CommunityToolkit.Mvvm)
-Harness              → end-to-end test console
+App                  → WinUI 3 shell (MVVM, CommunityToolkit.Mvvm).
+                       App/Startup: ConfigurationBootstrapper (the config
+                       layers), ServiceRegistration (composition root, one
+                       method per area), BackgroundMaintenance, AppLog,
+                       AppPaths. App.xaml.cs is only the lifecycle.
+Harness              → end-to-end test console. Every command is an entry in
+                       Commands/CommandCatalog.cs (Command pattern); `--help`
+                       lists them. Provider clients for App and Harness come
+                       from Infrastructure/ProviderClientFactory.cs.
 ```
 
 `Infrastructure` references `Core`. `App`/`Harness` reference both. Never

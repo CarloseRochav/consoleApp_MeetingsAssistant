@@ -1,3 +1,4 @@
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Services;
 using Microsoft.Windows.AppNotifications;
@@ -36,7 +37,7 @@ public sealed class ActivityNotificationService : IDisposable
         _coordinator.TranscriptReady += OnTranscriptReady;
         _coordinator.ReportSaved += OnReportSaved;
         _coordinator.RecordingFailed += OnRecordingFailed;
-        App.LogDiagnostic("ActivityNotificationService suscrito al coordinador.");
+        AppLog.Diagnostic("ActivityNotificationService suscrito al coordinador.");
     }
 
     private void OnRecordingStarted(object? sender, EventArgs e) =>
@@ -86,14 +87,14 @@ public sealed class ActivityNotificationService : IDisposable
             }
 
             AppNotificationManager.Default.Show(builder.BuildNotification());
-            App.LogDiagnostic($"Toast mostrado por {eventName}.");
+            AppLog.Diagnostic($"Toast mostrado por {eventName}.");
         }
         catch (Exception exception)
         {
             // Una notificación es conveniencia, no dependencia crítica: si el
             // canal de toasts falla, la operación que la disparó sigue siendo
             // válida y lo único que se pierde es el aviso.
-            App.LogStartupFailure($"ActivityNotificationService.Show({eventName})", exception);
+            AppLog.Failure($"ActivityNotificationService.Show({eventName})", exception);
         }
     }
 
