@@ -24,9 +24,9 @@ jobs:
         shell: pwsh
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
@@ -65,3 +65,6 @@ jobs:
             if (-not $acceptable) { $failed += $test }
           }
           if ($failed) { throw "Fallaron: $($failed -join ', ')" }
+          # pwsh en Actions termina con el codigo del ultimo comando nativo, que
+          # aca puede ser el 2 aceptado de --verify-prompts.
+          exit 0
