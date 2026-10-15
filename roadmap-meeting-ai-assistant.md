@@ -1235,6 +1235,7 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 | Acceso al Blob | Contenedor `releases` **privado** + enlace SAS de sólo lectura atado a una directiva de acceso | La cuenta de Storage tiene el acceso público apagado y guarda el audio de las reuniones: no se tocó. Borrar la directiva `meeting-assistant-install` revoca todos los enlaces sin rotar la clave. Vence a los 2 años y cada publicación lo renueva. |
 | Historial en la máquina nueva | Compartido (Neon + Azure) | Las dos cadenas de conexión se pegan en Configuración y se guardan cifradas con DPAPI. |
 | Secretos | Siguen en texto plano en el `appsettings.json` de desarrollo | Decisión del usuario. Lo que sí cambió: ese archivo **ya no entra en el paquete**. |
+| Forma de instalar (revisada 2026-10-15) | **Se mantiene:** un comando de PowerShell + un permiso de administrador por máquina | Comparadas: firma de confianza (~US$10/mes, doble clic), Microsoft Store sin listar (certificación por versión), `.exe` clásico (pierde la identidad del paquete: toasts, autoarranque, actualizaciones). Ninguna compensa para uso personal en máquinas propias. Precios y requisitos no verificados contra la web del proveedor. Revisar si alguien más necesita instalarla. Pendiente sin decidir: exportar/importar los ajustes para no reescribir las claves. |
 
 ### Hecho
 
