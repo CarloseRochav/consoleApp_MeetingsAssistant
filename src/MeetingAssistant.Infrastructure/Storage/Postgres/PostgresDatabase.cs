@@ -77,7 +77,10 @@ public sealed partial class PostgresDatabase : IAsyncDisposable
     /// </summary>
     private async Task<NpgsqlConnection> OpenInSchemaAsync(bool requireSchema, CancellationToken cancellationToken)
     {
-        NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        NpgsqlConnection connection = await ConnectionRetry.ExecuteAsync(
+            async token => await _dataSource.OpenConnectionAsync(token),
+            ConnectionRetry.DefaultDelays,
+            cancellationToken);
         if (_schema is null) return connection;
 
         try

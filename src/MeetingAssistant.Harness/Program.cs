@@ -137,6 +137,12 @@ if (positional.Count >= 1 &&
     }
 }
 
+// Reintentos al abrir conexiones con Postgres. Offline.
+if (positional.Count == 1 && string.Equals(positional[0], "--verify-retry", StringComparison.OrdinalIgnoreCase))
+{
+    return await RetryCommands.VerifyAsync();
+}
+
 // Prompts editables: SQLite temporal y Postgres en un esquema descartable.
 if (positional.Count == 1 && string.Equals(positional[0], "--verify-prompts", StringComparison.OrdinalIgnoreCase))
 {

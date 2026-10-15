@@ -1,0 +1,67 @@
+# Compila la solucion y corre los autotests offline del harness.
+#
+# Sin secretos a proposito: el repo es publico, y los autotests que tocan la
+# nube (Postgres, Blob, Deepgram, LLM) cobran o escriben en recursos reales.
+# Esos se siguen corriendo a mano. El appsettings.json de cada proyecto no esta
+# en git; aca se arma desde el ejemplo, que solo tiene marcadores.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Configuracion de ejemplo (sin secretos)
+        run: |
+          foreach ($project in 'MeetingAssistant.App', 'MeetingAssistant.Harness') {
+            Copy-Item "src/$project/appsettings.example.json" "src/$project/appsettings.json"
+          }
+
+      # Regla de AGENTS.md: Core no referencia ningun paquete.
+      - name: Core sin paquetes
+        run: |
+          $references = Select-String -Path src/MeetingAssistant.Core/MeetingAssistant.Core.csproj -Pattern '<PackageReference'
+          if ($references) { $references; throw 'MeetingAssistant.Core no puede referenciar paquetes.' }
+
+      - name: Compilar
+        run: dotnet build MeetingAssistant.sln -c Debug -warnaserror
+
+      # --verify-prompts devuelve 2 cuando no hay Postgres: corrio la parte de
+      # SQLite pero no la de Postgres. Aca eso es lo esperado, no un fallo,
+      # siempre que ninguna comprobacion haya salido mal.
+      - name: Autotests offline
+        run: |
+          $tests = '--verify-render', '--verify-db-selftest', '--verify-settings-config', '--verify-reextraction',
+                   '--verify-archive', '--verify-migration', '--verify-retention', '--verify-retry', '--verify-prompts'
+          $failed = @()
+          foreach ($test in $tests) {
+            Write-Host "::group::$test"
+            $output = dotnet run --project src/MeetingAssistant.Harness --no-build -- $test 2>&1
+            $code = $LASTEXITCODE
+            $output | Write-Host
+            Write-Host '::endgroup::'
+            $bad = @($output | Select-String -SimpleMatch '[MAL]').Count
+            $acceptable = $code -eq 0 -or ($test -eq '--verify-prompts' -and $code -eq 2 -and $bad -eq 0)
+            Write-Host ("{0,-26} exit {1}  MAL={2}" -f $test, $code, $bad)
+            if (-not $acceptable) { $failed += $test }
+          }
+          if ($failed) { throw "Fallaron: $($failed -join ', ')" }

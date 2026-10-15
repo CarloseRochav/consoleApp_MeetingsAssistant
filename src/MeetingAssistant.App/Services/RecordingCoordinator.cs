@@ -90,7 +90,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         {
             if (!IsRecording)
             {
-                throw new InvalidOperationException("No hay una grabación en curso.");
+                throw new NothingToStopException();
             }
 
             _isProcessing = true;
@@ -152,7 +152,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         {
             if (!IsRecording)
             {
-                throw new InvalidOperationException("No hay una grabación en curso.");
+                throw new NothingToStopException();
             }
 
             _isProcessing = true;
@@ -312,8 +312,21 @@ public sealed class RecordingCoordinator : IRecordingTrigger
     private void RaiseRecordingCompleted(MeetingPipelineResult result) =>
         RaiseSafely(RecordingCompleted, new RecordingCompletedEventArgs(result));
 
-    private void RaiseRecordingFailed(Exception exception, string operation) =>
+    /// <summary>
+    /// Detener sin nada grabando no es un fallo que haya que avisar: no se
+    /// perdió nada, y quien llamó ya recibe la excepción (el endpoint HTTP
+    /// contesta 409). Los otros resguardos sí avisan: "ya hay una grabación" o
+    /// "hay una reunión procesándose" le explican al usuario por qué el hotkey
+    /// no hizo lo que esperaba.
+    /// </summary>
+    private void RaiseRecordingFailed(Exception exception, string operation)
+    {
+        if (exception is NothingToStopException) return;
         RaiseSafely(RecordingFailed, new RecordingFailedEventArgs(exception, operation));
+    }
+
+    /// <summary>Sigue siendo una InvalidOperationException: el contrato hacia afuera no cambia.</summary>
+    private sealed class NothingToStopException() : InvalidOperationException("No hay una grabación en curso.");
 
     private void RaiseReportSaved(string savedReportPath, PromptDefinition prompt) =>
         RaiseSafely(ReportSaved, new ReportSavedEventArgs(savedReportPath, prompt));
