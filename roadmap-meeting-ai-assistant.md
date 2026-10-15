@@ -1278,6 +1278,28 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 
 ---
 
+## Auditoría 2026-10-14 — estado de los 13 puntos
+
+Priorizados por riesgo × impacto ÷ esfuerzo. Las decisiones son del usuario.
+
+| # | Punto | Estado |
+|---|---|---|
+| 1 | Secretos en un solo lugar | **Cerrado por decisión del usuario:** siguen en texto plano en el `appsettings.json` de desarrollo. Mitigado: el log avisa cuando un valor de la base tapa uno distinto del JSON (sólo el nombre de la clave), y el paquete para instalar ya no lleva ese archivo (Fase 7). |
+| 2 | CI en GitHub Actions | **Hecho.** Compila con warnings como errores, comprueba que Core no tiene paquetes y corre los autotests offline. |
+| 3 | Precio de Deepgram | **Hecho:** `Pricing:Deepgram:PerMinute = 0.0052` en la nube (Nova-3 multilingüe, pregrabado, precio oficial). **Pendiente, con el OK del usuario:** ponerle costo a los 20 transcripts viejos sin precio (escribe en Postgres). |
+| 4 | Caída de Postgres pierde la reunión | **Hecho:** `ConnectionRetry` reintenta al abrir ante errores transitorios. Si una caída larga llega a pasar, el plan es caer a SQLite + `HistoryMigrationService`, no un diario nuevo. |
+| 5 | Fase 4: comparar versiones de prompt | **Pendiente.** Continuo por diseño; falta diseñar la comparación lado a lado. |
+| 6 | Medir una reunión de 1 hora | **Cerrado por el usuario.** El riesgo conocido queda anotado: cada segmento de 9 min tiene el plazo de 30 s del SDK. |
+| 7 | Keyterms de Deepgram | **Pendiente, aprobado.** Falta: confirmar que Deepgram los acepta con `language=multi`, la lista de términos (del usuario, o propuesta desde transcripts reales) y el precio nuevo (+US$0.0013/min). Vivirían en la nube sólo si se amplía `SettingKeyPolicy`. |
+| 8 | Retención del audio | **Pendiente, aprobado.** Revisar el log tras el primer borrado real (~2026-11-08). Listar los WAV sin registro de subida y borrarlos sólo si el transcript está en la base y con confirmación explícita, nunca solo. |
+| 9 | Partir archivos grandes | **Hecho:** el harness pasó a comandos (`CommandCatalog`), `App.xaml.cs` quedó en el ciclo de vida (`Startup/`), y los clientes de proveedor salen de `ProviderClientFactory`. Verificado por el usuario en la app. |
+| 10 | Arranque en frío de Neon | **Pasivo:** el log registra "Espera del arranque: N ms". Actuar sólo si se acerca a los 5 s. |
+| 11 | "Detener" sin grabar avisa error | **Hecho y verificado por el usuario.** El HTTP sigue respondiendo 409. |
+| 12 | Instalador firmado | **Construido y publicado (1.0.3.0, Fase 7). Pendiente de la prueba manual del usuario** en otra máquina: instalación desde el enlace, ventana de primer arranque, historial compartido y notificaciones. |
+| 13 | Borrar `audit-2026-10-09.md` | **Hecho.** |
+
+---
+
 ## Resumen de dependencias entre fases
 
 ```
