@@ -32,22 +32,10 @@ public static class StartupConfigurationValidator
     ];
 
     /// <summary>
-    /// Lanza si falta alguna clave obligatoria, enumerándolas todas.
+    /// Todas las claves obligatorias que faltan, cada una con su explicación.
+    /// Vacía si no falta nada. La muestra la ventana de primer arranque.
     /// </summary>
-    public static void Validate(IConfiguration configuration)
-    {
-        List<string> missing = FindMissing(configuration);
-        if (missing.Count == 0) return;
-
-        string detail = string.Join(Environment.NewLine, missing.Select(entry => $"  - {entry}"));
-        throw new InvalidOperationException(
-            $"Faltan {missing.Count} valor(es) de configuración en appsettings.json:" +
-            $"{Environment.NewLine}{detail}{Environment.NewLine}{Environment.NewLine}" +
-            "Compara tu appsettings.json con appsettings.example.json — normalmente " +
-            "significa que el ejemplo ganó una sección nueva que tu copia local no tiene.");
-    }
-
-    private static List<string> FindMissing(IConfiguration configuration)
+    public static IReadOnlyList<string> FindMissing(IConfiguration configuration)
     {
         var missing = new List<string>();
 

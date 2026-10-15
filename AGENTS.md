@@ -83,6 +83,19 @@ the other way around.
   history if a connection string is configured); `--set-setting <key> [value]` writes one setting into it (omit the
   value to delete the key).
 
+- Installer for other machines: `installer/Build-Release.ps1 [-Publish]` bumps
+  the version in `Package.appxmanifest` (commit it), builds a signed,
+  self-contained Release `.msix` into `artifacts/release/<version>/` (ignored),
+  and refuses to continue if the package contains `appsettings.json`.
+  `--publish-release <folder> [--apply]` uploads it to the private `releases`
+  container and writes the `.appinstaller` with a read-only SAS link;
+  `--verify-release` is offline. The install command it prints carries that
+  link: never paste it into a tracked file.
+- The packaged config layer is two files: `appsettings.defaults.json` (tracked,
+  no secrets, ships in every package) and `appsettings.json` (real keys, Debug
+  only, never in a Release package). A machine missing required settings opens
+  `SetupWindow` instead of the startup-error window.
+
 **Use `dotnet run` — not `dotnet build` — to test a change in the real app.**
 The dev-registered package executes the `AppX\` layout under
 `bin\x64\Debug\...\win-x64\AppX`, and `dotnet build` refreshes only the

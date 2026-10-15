@@ -1,0 +1,146 @@
+<UserControl
+    x:Class="MeetingAssistant.App.Views.SettingsForm"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:views="using:MeetingAssistant.App.Views"
+    mc:Ignorable="d">
+    <!--
+        Los ajustes que la app deja editar. Lo usan dos lugares: la página de
+        Configuración y la ventana de primer arranque, que aparece cuando a
+        esta máquina le faltan valores obligatorios (una instalación nueva).
+    -->
+    <StackPanel Spacing="16">
+
+        <!-- Vault -->
+        <TextBlock
+            Style="{StaticResource SubtitleTextBlockStyle}"
+            Text="Vault de Obsidian" />
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox
+                x:Name="VaultPathBox"
+                Header="Carpeta del vault"
+                PlaceholderText="C:\ruta\a\tu\vault"
+                TextChanged="VaultPathBox_TextChanged" />
+            <Button
+                Grid.Column="1"
+                VerticalAlignment="Bottom"
+                Click="BrowseVaultButton_Click"
+                Content="Examinar..." />
+        </Grid>
+        <TextBlock
+            x:Name="VaultPathStatusText"
+            MaxWidth="600"
+            Opacity="0.75"
+            TextWrapping="Wrap" />
+        <TextBox
+            x:Name="SubFolderBox"
+            Header="Subcarpeta para los reportes"
+            PlaceholderText="MeetingReports" />
+
+        <!-- LLM -->
+        <TextBlock
+            Margin="0,16,0,0"
+            Style="{StaticResource SubtitleTextBlockStyle}"
+            Text="Modelo de lenguaje" />
+        <ComboBox
+            x:Name="ProviderCombo"
+            Header="Proveedor"
+            SelectionChanged="ProviderCombo_SelectionChanged">
+            <ComboBoxItem Content="Gemini" Tag="Gemini" />
+            <ComboBoxItem Content="Azure AI Foundry" Tag="AzureFoundry" />
+        </ComboBox>
+
+        <TextBlock
+            MaxWidth="600"
+            Opacity="0.6"
+            TextWrapping="Wrap"
+            Text="Si cambias de modelo y no hay un precio para él en la sección Pricing, el coste de cada reporte se registra como 0,00 en vez de fallar. El reporte sale bien; lo que deja de ser fiable es el coste acumulado." />
+
+        <StackPanel x:Name="GeminiPanel" Spacing="16">
+            <TextBox
+                x:Name="GeminiModelBox"
+                Header="Modelo"
+                PlaceholderText="gemini-3.5-flash-lite (por defecto)" />
+            <PasswordBox x:Name="GeminiKeyBox" Header="API key de Gemini" />
+        </StackPanel>
+
+        <StackPanel x:Name="AzurePanel" Spacing="16">
+            <TextBox
+                x:Name="AzureEndpointBox"
+                Header="Endpoint"
+                PlaceholderText="https://&lt;recurso&gt;.openai.azure.com/openai/v1/" />
+            <TextBox
+                x:Name="AzureDeploymentBox"
+                Header="Deployment (el modelo)"
+                PlaceholderText="nombre-del-deployment" />
+            <PasswordBox
+                x:Name="AzureKeyBox"
+                Header="API key de Azure (opcional)"
+                PlaceholderText="vacío = autenticación con Azure.Identity" />
+        </StackPanel>
+
+        <!-- Transcripción -->
+        <TextBlock
+            Margin="0,16,0,0"
+            Style="{StaticResource SubtitleTextBlockStyle}"
+            Text="Transcripción" />
+        <PasswordBox x:Name="DeepgramKeyBox" Header="API key de Deepgram" />
+
+        <!-- Nube -->
+        <TextBlock
+            Margin="0,16,0,0"
+            Style="{StaticResource SubtitleTextBlockStyle}"
+            Text="Nube (opcional)" />
+        <TextBlock
+            MaxWidth="600"
+            Opacity="0.6"
+            TextWrapping="Wrap"
+            Text="Con la cadena de Postgres, el historial, los prompts y los ajustes compartidos (proveedor, modelo, precios) vienen de la nube y son los mismos en todas tus máquinas. Sin ella, todo queda en esta máquina. Las dos cadenas se prueban antes de guardarse." />
+        <PasswordBox
+            x:Name="PostgresConnectionBox"
+            Header="Cadena de conexión de Postgres (Neon)"
+            PlaceholderText="Host=...;Database=...;Username=...;Password=..." />
+        <PasswordBox
+            x:Name="StorageConnectionBox"
+            Header="Cadena de conexión de Azure Storage (audio y reportes)"
+            PlaceholderText="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..." />
+
+        <!-- Endpoint local -->
+        <TextBlock
+            Margin="0,16,0,0"
+            Style="{StaticResource SubtitleTextBlockStyle}"
+            Text="Endpoint HTTP local" />
+        <PasswordBox
+            x:Name="ApiTokenBox"
+            Header="Token (cabecera X-Api-Token)"
+            PlaceholderText="vacío = se genera uno nuevo al reiniciar" />
+
+        <!-- Guardar -->
+        <Button
+            x:Name="SaveButton"
+            Margin="0,16,0,0"
+            Click="SaveButton_Click"
+            Content="Guardar cambios"
+            Style="{StaticResource AccentButtonStyle}" />
+        <TextBlock
+            x:Name="SaveStatusText"
+            MaxWidth="600"
+            Opacity="0.75"
+            TextWrapping="Wrap" />
+        <views:ErrorPanel x:Name="SaveErrorPanel" />
+
+        <TextBlock
+            x:Name="SettingsFilePathText"
+            MaxWidth="600"
+            FontSize="12"
+            IsTextSelectionEnabled="True"
+            Opacity="0.5"
+            TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

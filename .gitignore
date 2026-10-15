@@ -25,3 +25,7 @@ appsettings.json
 *.log
 log.txt
 *.tmp
+
+# Instaladores armados por installer/Build-Release.ps1 (y el comando de
+# instalacion, que lleva el enlace firmado de Azure Blob).
+artifacts/

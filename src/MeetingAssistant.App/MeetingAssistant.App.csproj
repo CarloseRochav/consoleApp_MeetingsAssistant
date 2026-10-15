@@ -70,8 +70,24 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Sin secretos, en git: es lo unico de configuracion que lleva un paquete Release. -->
+    <None Include="appsettings.defaults.json" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      El appsettings.json real tiene claves y NUNCA viaja en un paquete para
+      instalar en otra maquina: solo Debug (dotnet run) lo copia.
+    -->
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" Condition="'$(Configuration)' == 'Debug' and Exists('appsettings.json')" />
   </ItemGroup>
+
+  <!--
+    Red de seguridad: si un appsettings.json quedo en la salida Release (de una
+    compilacion vieja, o porque alguien quito la condicion de arriba), el
+    paquete lo llevaria adentro con sus claves. Se corta la compilacion.
+  -->
+  <Target Name="BlockSecretsInReleasePackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Error Condition="Exists('$(OutDir)appsettings.json')"
+           Text="$(OutDir)appsettings.json existe en una compilacion Release y terminaria dentro del paquete con sus secretos. Borralo (o haz dotnet clean -c Release) y vuelve a compilar." />
+  </Target>
 
   <!--
     Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
@@ -86,7 +102,21 @@
   <PropertyGroup>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+    <!--
+      Sin recorte en ninguna configuracion: el DI, Npgsql, el SDK de Google y
+      el de Deepgram usan reflexion, y un recorte que rompe algo solo se nota
+      en tiempo de ejecucion, en la maquina donde se instalo.
+    -->
+    <PublishTrimmed>False</PublishTrimmed>
+  </PropertyGroup>
+
+  <!--
+    Paquete para instalar en otras maquinas (installer/Build-Release.ps1). El
+    Windows App SDK va dentro del paquete: asi la maquina nueva no necesita
+    instalar aparte el runtime del Windows App SDK.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 </Project>

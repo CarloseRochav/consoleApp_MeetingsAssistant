@@ -1221,6 +1221,63 @@ tiene su propia base.
 
 ---
 
+## Fase 7 — Instalador para otras máquinas (en curso, 2026-10-14)
+
+**Objetivo:** instalar la app en otra máquina como cualquier app de escritorio,
+con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
+
+### Decisiones tomadas por el usuario (2026-10-14)
+
+| Decisión | Elegido | Nota |
+|---|---|---|
+| Firma | Certificado autofirmado (el de T6a) | Gratis. En cada máquina nueva, `Install.ps1` pide administrador una vez para confiarlo. Azure Trusted Signing (~US$10/mes) descartado para uso personal. |
+| Actualizaciones | `.appinstaller` en Azure Blob | Windows busca versión nueva al abrir la app y cada 8 h en segundo plano. |
+| Acceso al Blob | Contenedor `releases` **privado** + enlace SAS de sólo lectura atado a una directiva de acceso | La cuenta de Storage tiene el acceso público apagado y guarda el audio de las reuniones: no se tocó. Borrar la directiva `meeting-assistant-install` revoca todos los enlaces sin rotar la clave. Vence a los 2 años y cada publicación lo renueva. |
+| Historial en la máquina nueva | Compartido (Neon + Azure) | Las dos cadenas de conexión se pegan en Configuración y se guardan cifradas con DPAPI. |
+| Secretos | Siguen en texto plano en el `appsettings.json` de desarrollo | Decisión del usuario. Lo que sí cambió: ese archivo **ya no entra en el paquete**. |
+
+### Hecho
+
+1. **El paquete no lleva secretos.** Va `appsettings.defaults.json` (en git, sin
+   claves); el `appsettings.json` real sólo se copia en Debug, y un target del
+   csproj corta la compilación Release si lo encuentra en la salida.
+   `Build-Release.ps1` además abre el `.msix` y se niega a seguir si lo trae.
+2. **Ventana de primer arranque** (`SetupWindow`) en vez de la de error cuando
+   faltan ajustes obligatorios. Usa el mismo `SettingsForm` que la página de
+   Configuración (una sola copia de los campos). Al guardar, prueba las cadenas
+   de conexión que cambiaron y reinicia la app (`AppInstance.Restart`).
+3. **Configuración** gana las cadenas de Postgres y Azure Storage y el token
+   del endpoint HTTP. Con la cadena de Postgres se escriben también
+   `Database:Provider = Postgres` y `Configuration:Source = Database`.
+4. **`Api:AuthToken` se genera solo** (aleatorio, cifrado en la base) si
+   ninguna capa lo trae.
+5. **Aviso de valor tapado** (auditoría #1): el log dice qué claves guardadas
+   en la base tapan un valor distinto del appsettings empaquetado. Sólo nombra
+   la clave, nunca el valor.
+6. **Paquete autocontenido**: trae .NET y el Windows App SDK, así que el
+   manifiesto no declara ninguna dependencia que haya que instalar aparte
+   (comprobado en el `AppxManifest.xml` del `.msix`). Sin recorte (trimming):
+   rompería en ejecución, no al compilar.
+7. **`installer/Build-Release.ps1`** (sube la versión, compila, firma,
+   comprueba) e **`installer/Install.ps1`** (confía el certificado y lo instala
+   para el usuario normal). **`--publish-release`** sube a Blob y escribe el
+   `.appinstaller`; **`--verify-release`** (offline, en la CI) prueba el XML.
+8. **Publicada la 1.0.3.0** el 2026-10-14. Comprobado: con el enlace firmado
+   los cuatro archivos responden 200 con su tipo; sin él, 409 (privado).
+
+### Falta, y sólo lo puede cerrar el usuario
+
+- [ ] Correr el comando de `artifacts\release\1.0.3.0\install-command.txt` en
+  la otra máquina: confirma que App Installer acepta el enlace firmado, que la
+  ventana de primer arranque aparece y guarda, y que tras reiniciar la app abre
+  con el historial compartido.
+- [ ] En esta máquina, con `dotnet run`: Configuración muestra las secciones
+  nuevas y guarda igual que antes.
+- [ ] Ver que una notificación (toast) funciona en la versión instalada: es la
+  primera vez que el Windows App SDK va dentro del paquete.
+
+---
+
 ## Resumen de dependencias entre fases
 
 ```

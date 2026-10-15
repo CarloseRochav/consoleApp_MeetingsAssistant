@@ -35,6 +35,11 @@ public partial class App : Application
     /// </summary>
     private IReadOnlyList<string> _startupDiagnostics = [];
 
+    /// <summary>Si no está vacía, se abre <see cref="SetupWindow"/> en vez de la principal.</summary>
+    private IReadOnlyList<string> _missingSettings = [];
+
+    private SetupWindow? _setupWindow;
+
     public App()
     {
         // Los manejadores van primero: cualquier cosa que falle después de
@@ -49,6 +54,10 @@ public partial class App : Application
         {
             BootstrapResult bootstrap = ConfigurationBootstrapper.Run();
             _startupDiagnostics = bootstrap.Diagnostics;
+            _missingSettings = bootstrap.MissingSettings;
+            // Se arma completo aunque falten ajustes: la ventana de primer
+            // arranque usa los mismos servicios de configuración, y lo que
+            // necesita las claves (los clientes) sólo se construye al pedirlo.
             Services = new ServiceCollection().AddMeetingAssistant(bootstrap).BuildServiceProvider();
         }
         catch (Exception exception)
@@ -75,6 +84,12 @@ public partial class App : Application
 
         try
         {
+            if (_missingSettings.Count > 0)
+            {
+                LaunchSetup();
+                return;
+            }
+
             LaunchCore();
         }
         catch (Exception exception)
@@ -86,6 +101,22 @@ public partial class App : Application
             AppLog.Failure("App.OnLaunched", exception);
             ShowStartupError("App.OnLaunched", exception);
         }
+    }
+
+    /// <summary>
+    /// Instalación nueva o ajustes borrados: sólo la ventana de configuración.
+    /// Nada de bandeja, hotkey ni endpoint, que necesitan lo que falta. Cerrarla
+    /// sin guardar cierra la app.
+    /// </summary>
+    private void LaunchSetup()
+    {
+        foreach (string diagnostic in _startupDiagnostics) AppLog.Diagnostic(diagnostic);
+
+        _setupWindow = new SetupWindow(_missingSettings);
+        _setupWindow.Closed += (_, _) => Exit();
+        _setupWindow.Activate();
+        AppInstance.GetCurrent().Activated += (_, _) =>
+            _setupWindow?.DispatcherQueue.TryEnqueue(() => _setupWindow?.Activate());
     }
 
     private void LaunchCore()

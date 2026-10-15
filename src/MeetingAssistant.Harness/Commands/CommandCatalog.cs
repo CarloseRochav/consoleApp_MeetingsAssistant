@@ -15,6 +15,7 @@ internal static class CommandCatalog
         HarnessCommand.Offline("--verify-migration", "Offline. La migracion de SQLite a otro store.", MigrationCommands.VerifyMigrationAsync),
         HarnessCommand.Offline("--verify-retention", "Offline. La retencion de audio local.", RetentionCommands.VerifyAsync),
         HarnessCommand.Offline("--verify-retry", "Offline. Los reintentos al abrir Postgres.", RetryCommands.VerifyAsync),
+        HarnessCommand.Offline("--verify-release", "Offline. El .appinstaller y el comando de instalacion.", ReleaseCommands.Verify),
 
         // --- Autotests que salen a la red, en recursos descartables -------------
         new("--verify-prompts", "--verify-prompts",
@@ -54,6 +55,9 @@ internal static class CommandCatalog
         new("--audio-retention", "--audio-retention <dias> [--apply]",
             "Que WAV locales se borrarian, comprobando contra la nube real. Solo con --apply borra.", 1, 2,
             context => RetentionCommands.RunFromArgumentsAsync(context.Configuration, context.Arguments)),
+        new("--publish-release", "--publish-release <carpeta> [--apply]",
+            "Sube el instalador (la carpeta que deja installer/Build-Release.ps1) a Azure Blob, contenedor privado con enlace de solo lectura. Sin --apply solo simula.", 1, 2,
+            context => ReleaseCommands.PublishFromArgumentsAsync(context.Configuration, context.Arguments)),
         new("--migrate-to-postgres", "--migrate-to-postgres [--apply]",
             "Copia el historial local a Postgres y Azure Blob. Sin --apply solo simula.", 0, 1,
             context => MigrationCommands.MigrateFromArgumentsAsync(context.Configuration, context.Arguments)),

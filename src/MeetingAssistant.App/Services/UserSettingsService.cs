@@ -1,4 +1,5 @@
 using MeetingAssistant.Core.Abstractions;
+using MeetingAssistant.Infrastructure;
 using Microsoft.Extensions.Configuration;
 
 namespace MeetingAssistant.App.Services;
@@ -19,6 +20,9 @@ public sealed record UserSettings
     public string? AzureEndpoint { get; init; }
     public string? AzureDeployment { get; init; }
     public string? AzureApiKey { get; init; }
+    public string? PostgresConnectionString { get; init; }
+    public string? AzureStorageConnectionString { get; init; }
+    public string? ApiAuthToken { get; init; }
 }
 
 /// <summary>
@@ -88,8 +92,48 @@ public sealed class UserSettingsService
         GeminiModel = Read("Gemini:Model"),
         AzureEndpoint = Read("AzureFoundry:Endpoint"),
         AzureDeployment = Read("AzureFoundry:Deployment"),
-        AzureApiKey = Read("AzureFoundry:ApiKey")
+        AzureApiKey = Read("AzureFoundry:ApiKey"),
+        PostgresConnectionString = Read("Postgres:ConnectionString"),
+        AzureStorageConnectionString = Read("AzureStorage:ConnectionString"),
+        ApiAuthToken = Read("Api:AuthToken")
     };
+
+    /// <summary>
+    /// Prueba las cadenas de conexión que cambiaron respecto de
+    /// <paramref name="previous"/>. Devuelve null si todas conectan, o los
+    /// motivos. Una cadena vacía no se prueba: significa "sin nube".
+    /// </summary>
+    public async Task<string?> CheckChangedConnectionsAsync(
+        UserSettings settings,
+        UserSettings? previous,
+        CancellationToken cancellationToken = default)
+    {
+        var problems = new List<string>();
+
+        // Neon dormido tarda unos segundos en despertar; 30 s cubren eso y el
+        // reintento de ConnectionRetry sin dejar el botón colgado para siempre.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+
+        if (Changed(settings.PostgresConnectionString, previous?.PostgresConnectionString) &&
+            await CloudConnectionCheck.CheckPostgresAsync(settings.PostgresConnectionString!.Trim(), timeout.Token) is { } postgresProblem)
+        {
+            problems.Add(postgresProblem);
+        }
+
+        if (Changed(settings.AzureStorageConnectionString, previous?.AzureStorageConnectionString) &&
+            await CloudConnectionCheck.CheckAzureStorageAsync(settings.AzureStorageConnectionString!.Trim(), timeout.Token) is { } storageProblem)
+        {
+            problems.Add(storageProblem);
+        }
+
+        return problems.Count == 0 ? null : string.Join(Environment.NewLine, problems);
+
+        static bool Changed(string? value, string? before) =>
+            HasText(value) && !string.Equals(value!.Trim(), before?.Trim(), StringComparison.Ordinal);
+    }
+
+    private static bool HasText(string? value) => !string.IsNullOrWhiteSpace(value);
 
     /// <summary>
     /// Escribe los overrides en la base. Cada clave se guarda por separado y las
@@ -114,7 +158,15 @@ public sealed class UserSettingsService
             ("Gemini:Model", settings.GeminiModel),
             ("AzureFoundry:Endpoint", settings.AzureEndpoint),
             ("AzureFoundry:Deployment", settings.AzureDeployment),
-            ("AzureFoundry:ApiKey", settings.AzureApiKey)
+            ("AzureFoundry:ApiKey", settings.AzureApiKey),
+            ("Postgres:ConnectionString", settings.PostgresConnectionString),
+            ("AzureStorage:ConnectionString", settings.AzureStorageConnectionString),
+            ("Api:AuthToken", settings.ApiAuthToken),
+            // Con una cadena de Postgres, todo lo compartido sale de la nube:
+            // historial, prompts y ajustes. Sin ella se borran los dos
+            // conmutadores y vuelve a mandar lo empaquetado (SQLite, local).
+            ("Database:Provider", HasText(settings.PostgresConnectionString) ? "Postgres" : null),
+            ("Configuration:Source", HasText(settings.PostgresConnectionString) ? "Database" : null)
         ];
 
         foreach ((string key, string? value) in values)

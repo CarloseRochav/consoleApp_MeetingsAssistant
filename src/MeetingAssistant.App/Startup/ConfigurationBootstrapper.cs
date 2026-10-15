@@ -23,6 +23,7 @@ internal sealed record BootstrapResult(
     ICloudSettingsStore? CloudSettings,
     bool HistoryInPostgres,
     EditablePromptCatalog PromptCatalog,
+    IReadOnlyList<string> MissingSettings,
     IReadOnlyList<string> Diagnostics);
 
 /// <summary>
@@ -31,8 +32,8 @@ internal sealed record BootstrapResult(
 /// -&gt; variables de entorno. Corre antes que cualquier UI, así que todo lo
 /// que pasa queda en <see cref="BootstrapResult.Diagnostics"/> para el log.
 ///
-/// Sólo lanza si falta configuración obligatoria
-/// (<see cref="StartupConfigurationValidator"/>); una base rota o una nube que
+/// No lanza por configuración faltante: la deja en
+/// <see cref="BootstrapResult.MissingSettings"/>. Una base rota o una nube que
 /// no contesta caen a lo local.
 /// </summary>
 internal static class ConfigurationBootstrapper
@@ -84,11 +85,22 @@ internal static class ConfigurationBootstrapper
         // La capa de usuario se conserva por debajo de SQLite aunque el importador
         // se lleve el archivo: es lo que sostiene el caso en que la base NO abrió.
         // SetBasePath no le afecta: LegacyFilePath es una ruta absoluta.
-        IConfigurationBuilder LocalLayers() => new ConfigurationBuilder()
+        //
+        // La capa empaquetada son dos archivos: appsettings.defaults.json, que
+        // está en git y no tiene secretos, y appsettings.json, el real, que sólo
+        // existe en las compilaciones Debug. Un paquete para instalar en otra
+        // máquina no lleva ninguna clave: se escriben en Configuración.
+        IConfigurationBuilder PackagedLayers() => new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+            .AddJsonFile(PackagedDefaultsFile, optional: false, reloadOnChange: false)
+            .AddJsonFile(PackagedSettingsFile, optional: true, reloadOnChange: false);
+
+        IConfigurationBuilder LocalLayers() => PackagedLayers()
             .AddJsonFile(UserSettingsService.LegacyFilePath, optional: true, reloadOnChange: false)
             .AddSqliteSettings(settingsStore, AppLog.Failure);
+
+        EnsureApiToken(LocalLayers().AddEnvironmentVariables().Build(), settingsStore, diagnostics);
+        ReportShadowedPackagedValues(PackagedLayers().Build(), settingsStore, diagnostics);
 
         // En dos tiempos (Fase 6, paso 3). Primero sólo lo local, porque de ahí
         // sale **dónde está la nube**: los conmutadores y la cadena de conexión no
@@ -147,12 +159,72 @@ internal static class ConfigurationBootstrapper
         }
 
         // Antes de registrar nada: si falta configuración, es preferible una
-        // lista completa aquí que ir descubriéndola clave a clave.
-        StartupConfigurationValidator.Validate(configuration);
+        // lista completa aquí que ir descubriéndola clave a clave. No lanza: en
+        // una instalación nueva faltar valores es lo normal, y App abre la
+        // ventana de primer arranque en vez de la de error.
+        IReadOnlyList<string> missingSettings = StartupConfigurationValidator.FindMissing(configuration);
+        if (missingSettings.Count > 0)
+        {
+            diagnostics.Add($"Faltan {missingSettings.Count} ajuste(s) obligatorio(s); se abre la ventana de primer arranque.");
+        }
 
         return new BootstrapResult(
             configuration, connectionFactory, secretProtector, schemaMigrator, settingsStore,
-            postgres, cloudSettings, historyInPostgres, promptCatalog, diagnostics);
+            postgres, cloudSettings, historyInPostgres, promptCatalog, missingSettings, diagnostics);
+    }
+
+    private const string PackagedDefaultsFile = "appsettings.defaults.json";
+    private const string PackagedSettingsFile = "appsettings.json";
+
+    /// <summary>
+    /// El token del endpoint HTTP no es algo que el usuario tenga que inventar:
+    /// si ninguna capa lo trae (una instalación nueva), se genera uno aleatorio
+    /// y se guarda cifrado en la base. Se ve y se cambia en Configuración.
+    /// </summary>
+    private static void EnsureApiToken(IConfiguration configuration, ISettingsStore settingsStore, List<string> diagnostics)
+    {
+        string? current = configuration["Api:AuthToken"];
+        if (!string.IsNullOrWhiteSpace(current) && !current.StartsWith('<')) return;
+
+        try
+        {
+            string token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+            settingsStore.SetAsync("Api:AuthToken", token, SettingKeyPolicy.IsSecret("Api:AuthToken")).GetAwaiter().GetResult();
+            diagnostics.Add("Api:AuthToken no estaba configurado: se generó uno nuevo y se guardó cifrado en la base.");
+        }
+        catch (Exception exception)
+        {
+            // Sin token, el validador lo reporta como faltante: el usuario lo ve.
+            AppLog.Failure("ConfigurationBootstrapper.EnsureApiToken", exception);
+        }
+    }
+
+    /// <summary>
+    /// La base local está por encima del appsettings empaquetado, así que un
+    /// valor guardado alguna vez desde Configuración tapa para siempre al del
+    /// archivo. Ya pasó: se rotó la clave de Deepgram en el appsettings.json y
+    /// la app siguió usando la vieja, guardada en la base, sin decir nada. Esto
+    /// lo deja en el log. Sólo nombra la clave: nunca escribe un valor.
+    /// </summary>
+    private static void ReportShadowedPackagedValues(IConfiguration packaged, ISettingsStore settingsStore, List<string> diagnostics)
+    {
+        try
+        {
+            foreach (SettingEntry entry in settingsStore.GetAllAsync().GetAwaiter().GetResult())
+            {
+                string? packagedValue = packaged[entry.Key];
+                if (string.IsNullOrWhiteSpace(packagedValue) || packagedValue.StartsWith('<')) continue;
+                if (string.Equals(packagedValue, entry.Value, StringComparison.Ordinal)) continue;
+
+                diagnostics.Add(
+                    $"Ojo: {entry.Key} guardado en la base (Configuración) tapa un valor distinto del appsettings empaquetado. " +
+                    "Manda el de la base; para usar el del archivo, cámbialo en Configuración o bórralo con --set-setting.");
+            }
+        }
+        catch (Exception exception)
+        {
+            AppLog.Failure("ConfigurationBootstrapper.ReportShadowedPackagedValues", exception);
+        }
     }
 
     /// <summary>
