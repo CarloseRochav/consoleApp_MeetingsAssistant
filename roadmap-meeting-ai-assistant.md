@@ -671,6 +671,12 @@ las interfaces de Core no cambiarían.
      `dotnet run --project src/MeetingAssistant.Harness -- --set-setting Pricing:Deepgram:PerMinute <precio>`.
      Mientras falte, la página lo dice y muestra la transcripción como
      **desconocida**. Las transcripciones ya guardadas **no se recalculan**.
+     **Precio puesto el 2026-10-14:** 0.0052 USD/min en la nube
+     (`--set-cloud-setting`), la tarifa de lista de Nova-3 pre-grabado
+     multilingüe según deepgram.com/pricing; la app manda `language=multi`. La
+     diarización y el formato inteligente van incluidos en pre-grabado. La cuenta
+     usa los 200 USD de crédito gratis, así que el costo mide crédito consumido.
+     Con keyterms serían 0.0013 USD/min más.
    - **Ceros por precio faltante: el estimador no se tocó, se cuentan.** Sigue
      devolviendo 0 para no tumbar la extracción. La base detecta después "tokens
      > 0 y costo = 0" y la página muestra cuántos reportes son, en el total y en
@@ -1187,6 +1193,11 @@ tiene su propia base.
 
 - **Una caída sólo de Postgres pierde el registro de esa reunión.** El `.md`
   llega al vault y el WAV queda en disco, pero las filas no se reintentan solas.
+  **Desde 2026-10-14** abrir la conexión se reintenta ante errores transitorios
+  (`ConnectionRetry`: Neon despertando, conexión cortada; no los plazos
+  vencidos), lo que cubre los parpadeos. Una caída larga sigue perdiendo las
+  filas; si llega a pasar, el paso siguiente es caer al SQLite local y dejar que
+  `HistoryMigrationService` las suba al arrancar, no un diario nuevo.
   Mitigación barata si llega a doler: reintento en la escritura y volcar la
   escritura fallida a un archivo local para reimportar.
 - **Arranque en frío de Neon.** La primera consulta tras un rato sin uso tarda

@@ -44,6 +44,11 @@ the other way around.
 ## Commands
 
 - Build: `dotnet build MeetingAssistant.sln`
+- CI: `.github/workflows/ci.yml` builds with warnings as errors, checks that
+  Core has no packages, and runs every offline self-test on each push. No
+  secrets: it copies the `*.example.json` files. A new offline self-test goes
+  into its list. Smart App Control on the dev machine can block freshly built
+  harness DLLs (`0x800711C7`); when that happens, CI is where the tests run.
 - Test console (records N seconds, runs the full pipeline):
   `dotnet run --project src/MeetingAssistant.Harness -- 15`
 - Real app: `dotnet run --project src/MeetingAssistant.App` (requires
@@ -56,8 +61,8 @@ the other way around.
   Azure Storage account, reads them back and deletes them. `--verify-postgres`
   runs one store contract against a temp SQLite file and against the configured
   Postgres, in a throwaway schema it drops afterwards; `--verify-cloud-settings`
-  does the same for the settings layer. `--verify-migration` and
-  `--verify-retention` are offline. `--audio-retention <days>` reports which
+  does the same for the settings layer. `--verify-migration`,
+  `--verify-retention` and `--verify-retry` are offline. `--audio-retention <days>` reports which
   local WAVs would be deleted, checking the real cloud; it deletes only with
   `--apply`.
   `--migrate-to-postgres` only simulates unless `--apply` is passed;
