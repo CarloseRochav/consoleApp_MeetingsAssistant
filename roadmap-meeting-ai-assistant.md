@@ -1232,7 +1232,7 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 |---|---|---|
 | Firma | Certificado autofirmado (el de T6a) | Gratis. En cada máquina nueva, `Install.ps1` pide administrador una vez para confiarlo. Azure Trusted Signing (~US$10/mes) descartado para uso personal. |
 | Actualizaciones | `.appinstaller` en Azure Blob | Windows busca versión nueva al abrir la app y cada 8 h en segundo plano. |
-| Acceso al Blob | Contenedor `releases` **privado** + enlace SAS de sólo lectura atado a una directiva de acceso | La cuenta de Storage tiene el acceso público apagado y guarda el audio de las reuniones: no se tocó. Borrar la directiva `meeting-assistant-install` revoca todos los enlaces sin rotar la clave. Vence a los 2 años y cada publicación lo renueva. |
+| Acceso al Blob | Contenedor `releases` **privado** + enlace SAS de sólo lectura atado a una directiva de acceso | La cuenta de Storage tiene el acceso público apagado y guarda el audio de las reuniones: no se tocó. Borrar la directiva del contenedor (`meeting-assistant-install-N`, la que imprime `--publish-release`) revoca todos los enlaces sin rotar la clave. Vence a los 2 años y cada publicación lo renueva. |
 | Historial en la máquina nueva | Compartido (Neon + Azure) | Las dos cadenas de conexión se pegan en Configuración y se guardan cifradas con DPAPI. |
 | Secretos | Siguen en texto plano en el `appsettings.json` de desarrollo | Decisión del usuario. Lo que sí cambió: ese archivo **ya no entra en el paquete**. |
 | Forma de instalar (revisada 2026-10-15) | **Se mantiene:** un comando de PowerShell + un permiso de administrador por máquina | Comparadas: firma de confianza (~US$10/mes, doble clic), Microsoft Store sin listar (certificación por versión), `.exe` clásico (pierde la identidad del paquete: toasts, autoarranque, actualizaciones). Ninguna compensa para uso personal en máquinas propias. Precios y requisitos no verificados contra la web del proveedor. Revisar si alguien más necesita instalarla. Pendiente sin decidir: exportar/importar los ajustes para no reescribir las claves. |
@@ -1265,6 +1265,20 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
    `.appinstaller`; **`--verify-release`** (offline, en la CI) prueba el XML.
 8. **Publicada la 1.0.3.0** el 2026-10-14. Comprobado: con el enlace firmado
    los cuatro archivos responden 200 con su tipo; sin él, 409 (privado).
+9. **Primera instalación real, 2026-10-15: 403 en App Installer.** El script y
+   el certificado bajaban (Invoke-WebRequest manda el enlace tal cual), pero la
+   firma llevaba `%2B`; decodificado a `+`, Azure responde 403 "Signature fields
+   not well formed" (reproducido con curl). La comprobación del 10-14 sólo usó
+   descargas directas, nunca App Installer. Arreglo: `--publish-release` prueba
+   `meeting-assistant-install`, `-2`, `-3`… y se queda con la primera directiva
+   cuya firma no lleva `+` ni `/` (determinista: republicar no cambia el
+   enlace); `--verify-release` lo cubre. Además sube en bloques de 8 MB: el
+   `.msix` entero en una petición excedía el plazo de 100 s del SDK.
+   Republicada la 1.0.3.0 con la directiva `meeting-assistant-install-5`;
+   comprobado: los cuatro archivos 200, el `.msix` en Blob pesa lo mismo que el
+   local, y el enlace viejo (que viajó por correo) responde 403. **Sin
+   confirmar todavía que App Installer era quien decodificaba:** lo confirma la
+   reinstalación.
 
 ### Falta, y sólo lo puede cerrar el usuario
 

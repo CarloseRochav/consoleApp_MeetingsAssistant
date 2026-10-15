@@ -15,11 +15,21 @@ using Microsoft.Extensions.Configuration;
 /// contenedor: borrar esa directiva revoca todos los enlaces sin rotar la clave
 /// de la cuenta. Cada publicacion renueva el vencimiento de la directiva, y los
 /// enlaces no cambian.
+///
+/// La firma del enlace no puede llevar '+' ni '/'. App Installer decodifica el
+/// %2B de vuelta a '+' antes de pedir el archivo, Azure lo lee como espacio y
+/// responde 403 (visto en la primera instalacion real, 2026-10-15; Invoke-
+/// WebRequest lo manda tal cual y por eso el script y el certificado si
+/// bajaban). La firma depende del nombre de la directiva, asi que se prueba
+/// <c>meeting-assistant-install</c>, <c>-2</c>, <c>-3</c>... y se queda la
+/// primera limpia: la eleccion es determinista para una misma clave de cuenta,
+/// y volver a publicar no cambia el enlace.
 /// </summary>
 internal static class ReleaseCommands
 {
     public const string ContainerName = "releases";
-    public const string AccessPolicyId = "meeting-assistant-install";
+    public const string AccessPolicyIdPrefix = "meeting-assistant-install";
+    private const int MaxPolicyCandidates = 100;
     public const string AppInstallerBlobName = "MeetingAssistant.appinstaller";
     public const string CertificateBlobName = "MeetingAssistant.cer";
     public const string InstallScriptBlobName = "Install.ps1";
@@ -72,14 +82,20 @@ internal static class ReleaseCommands
         var container = new BlobContainerClient(connectionString, ContainerName);
         await container.CreateIfNotExistsAsync(PublicAccessType.None);
 
+        // Con Identifier, permisos y vencimiento salen de la directiva: el
+        // enlace no los lleva, y por eso no cambia entre publicaciones.
+        (string policyId, string sas) = ChooseAppInstallerSafeSas(container);
+
         // Renovar el vencimiento en cada publicacion: mientras se siga
         // publicando, los enlaces de las maquinas ya instaladas no caducan.
+        // Reemplaza TODAS las directivas del contenedor: si el nombre cambio,
+        // los enlaces de la directiva anterior dejan de funcionar.
         DateTimeOffset expiresOn = DateTimeOffset.UtcNow.Add(PolicyLifetime);
         await container.SetAccessPolicyAsync(permissions:
         [
             new BlobSignedIdentifier
             {
-                Id = AccessPolicyId,
+                Id = policyId,
                 AccessPolicy = new BlobAccessPolicy
                 {
                     PolicyStartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
@@ -88,15 +104,6 @@ internal static class ReleaseCommands
                 }
             }
         ]);
-
-        // Con Identifier, permisos y vencimiento salen de la directiva: el
-        // enlace no los lleva, y por eso no cambia entre publicaciones.
-        string sas = container.GenerateSasUri(new BlobSasBuilder
-        {
-            BlobContainerName = ContainerName,
-            Resource = "c",
-            Identifier = AccessPolicyId
-        }).Query.TrimStart('?');
 
         string UrlOf(string blobName) => $"{container.Uri.AbsoluteUri.TrimEnd('/')}/{blobName}?{sas}";
 
@@ -118,7 +125,7 @@ internal static class ReleaseCommands
         await File.WriteAllTextAsync(installCommandPath, installCommand);
 
         Console.WriteLine();
-        Console.WriteLine($"Publicado. La directiva de acceso vence el {expiresOn:yyyy-MM-dd} (se renueva en cada publicacion).");
+        Console.WriteLine($"Publicado. La directiva de acceso '{policyId}' vence el {expiresOn:yyyy-MM-dd} (se renueva en cada publicacion).");
         Console.WriteLine("Azure puede tardar hasta 30 s en aplicar una directiva nueva.");
         Console.WriteLine($"Comando para instalar en otra maquina (PowerShell, usuario normal), guardado en {installCommandPath}:");
         Console.WriteLine();
@@ -131,8 +138,53 @@ internal static class ReleaseCommands
         Console.WriteLine($"  subiendo {blobName} ({new FileInfo(path).Length / 1048576.0:F1} MB)...");
         await container.GetBlobClient(blobName).UploadAsync(path, new BlobUploadOptions
         {
-            HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
+            HttpHeaders = new BlobHttpHeaders { ContentType = contentType },
+            // En bloques de 8 MB: el .msix (~130 MB) en una sola peticion
+            // excede el plazo de 100 s del SDK con una subida lenta (2026-10-15),
+            // y cada reintento volvia a empezar desde cero.
+            TransferOptions = new Azure.Storage.StorageTransferOptions
+            {
+                InitialTransferSize = 8 * 1024 * 1024,
+                MaximumTransferSize = 8 * 1024 * 1024,
+                MaximumConcurrency = 4
+            }
         });
+    }
+
+    /// <summary>
+    /// El primer nombre de directiva cuyo enlace sobrevive a App Installer.
+    /// Solo firma en local (HMAC con la clave de la cuenta): no llama a Azure.
+    /// </summary>
+    public static (string PolicyId, string Sas) ChooseAppInstallerSafeSas(BlobContainerClient container)
+    {
+        for (int candidate = 1; candidate <= MaxPolicyCandidates; candidate++)
+        {
+            string policyId = candidate == 1 ? AccessPolicyIdPrefix : $"{AccessPolicyIdPrefix}-{candidate}";
+            string sas = container.GenerateSasUri(new BlobSasBuilder
+            {
+                BlobContainerName = container.Name,
+                Resource = "c",
+                Identifier = policyId
+            }).Query.TrimStart('?');
+
+            if (IsSafeForAppInstaller(sas)) return (policyId, sas);
+        }
+
+        throw new InvalidOperationException(
+            $"Ninguno de {MaxPolicyCandidates} nombres de directiva dio una firma sin '+' ni '/'. No se publica un enlace que App Installer rompe.");
+    }
+
+    /// <summary>La firma no lleva '+' ni '/', ni escapados ni sin escapar.</summary>
+    public static bool IsSafeForAppInstaller(string sasQuery)
+    {
+        string signature = sasQuery.Split('&')
+            .FirstOrDefault(part => part.StartsWith("sig=", StringComparison.Ordinal))?["sig=".Length..]
+            ?? throw new InvalidOperationException("El enlace SAS no tiene firma (sig=).");
+
+        return !signature.Contains("%2B", StringComparison.OrdinalIgnoreCase)
+            && !signature.Contains("%2F", StringComparison.OrdinalIgnoreCase)
+            && !signature.Contains('+')
+            && !signature.Contains('/');
     }
 
     public static PackageIdentity ReadIdentity(string msixPath)
@@ -261,6 +313,23 @@ internal static class ReleaseCommands
             Check("los enlaces van entre comillas simples (el & no corta el comando)",
                 command.Contains($"'{appInstallerUri}'", StringComparison.Ordinal));
             Check("corre Install.ps1 con los dos enlaces", command.Contains("-AppInstallerUri", StringComparison.Ordinal) && command.Contains("-CertificateUri", StringComparison.Ordinal));
+
+            // --- La firma sobrevive a App Installer ---------------------------
+            Console.WriteLine($"{Environment.NewLine}--- Firma del enlace (App Installer decodifica %2B) ---");
+            Check("rechaza una firma con %2B (el 403 de la primera instalacion)", !IsSafeForAppInstaller("sv=2026-10-06&si=p&sr=c&sig=tHWc7kR%2BZg1K%3D"));
+            Check("rechaza una firma con %2F", !IsSafeForAppInstaller("sv=2026-10-06&si=p&sr=c&sig=abc%2fdef%3D"));
+            Check("acepta una firma sin + ni / (el %3D del final no molesta)", IsSafeForAppInstaller("sv=2026-10-06&si=p&sr=c&sig=abcDEF123%3D"));
+
+            // Clave inventada: firmar es local, nada sale a la red.
+            byte[] fakeKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(64);
+            var fakeContainer = new BlobContainerClient(
+                $"DefaultEndpointsProtocol=https;AccountName=fakeaccount;AccountKey={Convert.ToBase64String(fakeKey)};EndpointSuffix=core.windows.net",
+                ContainerName);
+            (string policyId, string chosenSas) = ChooseAppInstallerSafeSas(fakeContainer);
+            Check($"elige una directiva con firma limpia ({policyId})",
+                IsSafeForAppInstaller(chosenSas) && chosenSas.Contains($"si={policyId}", StringComparison.Ordinal));
+            Check("y la misma clave da siempre la misma directiva (republicar no cambia el enlace)",
+                ChooseAppInstallerSafeSas(fakeContainer) == (policyId, chosenSas));
         }
         finally
         {
