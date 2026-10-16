@@ -1221,7 +1221,7 @@ tiene su propia base.
 
 ---
 
-## Fase 7 — Instalador para otras máquinas (instalada y funcionando en otra máquina 2026-10-15; queda una comprobación en esta)
+## Fase 7 — Instalador para otras máquinas ✅ COMPLETA (2026-10-15)
 
 **Objetivo:** instalar la app en otra máquina como cualquier app de escritorio,
 con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
@@ -1287,8 +1287,11 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
   ventana de primer arranque aparece y guarda, y que tras reiniciar la app abre
   con el historial compartido. **Confirmado por el usuario 2026-10-15**, con el
   enlace republicado (punto 9), siguiendo la guía de instalación paso a paso.
-- [ ] En esta máquina, con `dotnet run`: Configuración muestra las secciones
-  nuevas y guarda igual que antes.
+- [x] En esta máquina, con `dotnet run`: Configuración muestra las secciones
+  nuevas y guarda igual que antes. **Cerrado por decisión del usuario
+  2026-10-15, sin reporte explícito de esta comprobación.** Cubierto en buena
+  parte: la ventana de primer arranque de la otra máquina usa el mismo
+  `SettingsForm` y guardó bien.
 - [x] Ver que una notificación (toast) funciona en la versión instalada: es la
   primera vez que el Windows App SDK va dentro del paquete. **Confirmado por el
   usuario 2026-10-15** (parte de las comprobaciones de la guía).
