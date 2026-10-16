@@ -15,6 +15,7 @@ public sealed record UserSettings
     public string? SubFolder { get; init; }
     public string? LlmProvider { get; init; }
     public string? DeepgramApiKey { get; init; }
+    public string? DeepgramKeyterms { get; init; }
     public string? GeminiApiKey { get; init; }
     public string? GeminiModel { get; init; }
     public string? AzureEndpoint { get; init; }
@@ -88,6 +89,7 @@ public sealed class UserSettingsService
         SubFolder = Read("Storage:SubFolder"),
         LlmProvider = Read("Llm:Provider") ?? "Gemini",
         DeepgramApiKey = Read("Deepgram:ApiKey"),
+        DeepgramKeyterms = Read("Deepgram:Keyterms"),
         GeminiApiKey = Read("Gemini:ApiKey"),
         GeminiModel = Read("Gemini:Model"),
         AzureEndpoint = Read("AzureFoundry:Endpoint"),
@@ -154,6 +156,7 @@ public sealed class UserSettingsService
             ("Storage:SubFolder", settings.SubFolder),
             ("Llm:Provider", settings.LlmProvider),
             ("Deepgram:ApiKey", settings.DeepgramApiKey),
+            ("Deepgram:Keyterms", settings.DeepgramKeyterms),
             ("Gemini:ApiKey", settings.GeminiApiKey),
             ("Gemini:Model", settings.GeminiModel),
             ("AzureFoundry:Endpoint", settings.AzureEndpoint),

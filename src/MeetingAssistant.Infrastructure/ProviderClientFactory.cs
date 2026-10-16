@@ -35,7 +35,9 @@ public static class ProviderClientFactory
     }
 
     public static ITranscriptionClient CreateTranscriptionClient(IConfiguration configuration) =>
-        new DeepgramTranscriptionClient(ReadRequiredSetting(configuration, "Deepgram", "ApiKey", "DEEPGRAM_API_KEY"));
+        new DeepgramTranscriptionClient(
+            ReadRequiredSetting(configuration, "Deepgram", "ApiKey", "DEEPGRAM_API_KEY"),
+            DeepgramKeyterms.Parse(configuration[DeepgramKeyterms.SettingKey]));
 
     public static string ReadRequiredSetting(
         IConfiguration configuration,

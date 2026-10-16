@@ -16,6 +16,7 @@ internal static class CommandCatalog
         HarnessCommand.Offline("--verify-retention", "Offline. La retencion de audio local.", RetentionCommands.VerifyAsync),
         HarnessCommand.Offline("--verify-retry", "Offline. Los reintentos al abrir Postgres.", RetryCommands.VerifyAsync),
         HarnessCommand.Offline("--verify-release", "Offline. El .appinstaller y el comando de instalacion.", ReleaseCommands.Verify),
+        HarnessCommand.Offline("--verify-keyterms", "Offline. Los terminos clave de Deepgram: lista, costo y nube.", KeytermCommands.Verify),
 
         // --- Autotests que salen a la red, en recursos descartables -------------
         new("--verify-prompts", "--verify-prompts",

@@ -14,11 +14,14 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
     // over 10 minutes. Leave one minute of margin for WAV metadata and rounding.
     private static readonly TimeSpan MaximumSegmentDuration = TimeSpan.FromMinutes(9);
     private readonly string apiKey;
+    private readonly IReadOnlyList<string> keyterms;
 
-    public DeepgramTranscriptionClient(string apiKey)
+    /// <param name="keyterms">Ver <see cref="DeepgramKeyterms"/>. Vacía: no se manda ninguno y no se cobra el extra.</param>
+    public DeepgramTranscriptionClient(string apiKey, IReadOnlyList<string>? keyterms = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
         this.apiKey = apiKey;
+        this.keyterms = keyterms ?? [];
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(string audioPath, CancellationToken cancellationToken = default)
@@ -44,7 +47,7 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    TranscriptionResult segmentResult = await TranscribeSegmentAsync(client, segments[index], cancellationToken);
+                    TranscriptionResult segmentResult = await TranscribeSegmentAsync(client, segments[index], keyterms, cancellationToken);
                     if (!string.IsNullOrWhiteSpace(segmentResult.Transcript)) transcripts.Add(segmentResult.Transcript);
                     utterances.AddRange(segmentResult.Utterances);
                     language ??= segmentResult.DetectedLanguage;
@@ -69,6 +72,7 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
     private static async Task<TranscriptionResult> TranscribeSegmentAsync(
         IListenRESTClient client,
         string segmentPath,
+        IReadOnlyList<string> keyterms,
         CancellationToken cancellationToken)
     {
         byte[] audio = await File.ReadAllBytesAsync(segmentPath, cancellationToken);
@@ -80,10 +84,11 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
         requestCancellation.CancelAfter(Deepgram.Abstractions.v1.Constants.DefaultRESTTimeout);
 
         var stopwatch = Stopwatch.StartNew();
-        var response = await client.TranscribeFile(
-            audio,
-            new PreRecordedSchema { Model = "nova-3", Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true },
-            requestCancellation);
+        var schema = new PreRecordedSchema { Model = "nova-3", Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true };
+        // Sin términos no se manda el parámetro: Deepgram cobra el extra sólo si viene.
+        if (keyterms.Count > 0) schema.Keyterm = [.. keyterms];
+
+        var response = await client.TranscribeFile(audio, schema, requestCancellation);
         stopwatch.Stop();
 
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(response));

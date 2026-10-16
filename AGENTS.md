@@ -69,7 +69,7 @@ the other way around.
   runs one store contract against a temp SQLite file and against the configured
   Postgres, in a throwaway schema it drops afterwards; `--verify-cloud-settings`
   does the same for the settings layer. `--verify-migration`,
-  `--verify-retention` and `--verify-retry` are offline. `--audio-retention <days>` reports which
+  `--verify-retention`, `--verify-retry` and `--verify-keyterms` are offline. `--audio-retention <days>` reports which
   local WAVs would be deleted, checking the real cloud; it deletes only with
   `--apply`.
   `--migrate-to-postgres` only simulates unless `--apply` is passed;

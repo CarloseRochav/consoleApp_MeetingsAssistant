@@ -52,11 +52,23 @@ public sealed class ConfigPricingCostEstimator : ICostEstimator, ITranscriptionC
     ///
     /// Sin precio —clave ausente, o el 0 que trae el archivo de ejemplo como
     /// marcador— devuelve <b>null</b>, no 0. Un cero guardado parecería medido.
+    ///
+    /// Si el proveedor tiene términos clave (<c>{proveedor}:Keyterms</c>, hoy
+    /// <c>Deepgram:Keyterms</c>), suma <c>Pricing:{proveedor}:KeytermPerMinute</c>.
+    /// Con términos y sin ese precio también devuelve null: el costo base solo
+    /// quedaría por debajo del real y parecería completo.
     /// </summary>
     public decimal? EstimateTranscriptionCostUsd(string provider, TimeSpan audioDuration)
     {
         decimal? perMinute = _configuration.GetValue<decimal?>($"Pricing:{provider}:PerMinute");
         if (perMinute is null or <= 0m) return null;
+
+        if (!string.IsNullOrWhiteSpace(_configuration[$"{provider}:Keyterms"]))
+        {
+            decimal? keytermPerMinute = _configuration.GetValue<decimal?>($"Pricing:{provider}:KeytermPerMinute");
+            if (keytermPerMinute is null or <= 0m) return null;
+            perMinute += keytermPerMinute.Value;
+        }
 
         return (decimal)audioDuration.TotalMinutes * perMinute.Value;
     }

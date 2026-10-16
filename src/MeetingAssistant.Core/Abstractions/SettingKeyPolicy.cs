@@ -60,13 +60,17 @@ public static class SettingKeyPolicy
     /// <item><c>Configuration</c>, <c>Database</c>, <c>Postgres</c>: son lo que
     /// dice <b>dónde está</b> la base en la nube. No se pueden leer de ella.</item>
     /// </list>
+    /// <c>Deepgram</c> entra por <c>Deepgram:Keyterms</c> (los términos son los
+    /// de las reuniones, no los de una máquina); su <c>ApiKey</c> sigue afuera
+    /// por ser secreto.
     /// </summary>
     private static readonly string[] CloudSections =
     [
         "Pricing",
         "Llm",
         "Gemini",
-        "AzureFoundry"
+        "AzureFoundry",
+        "Deepgram"
     ];
 
     /// <summary>

@@ -91,6 +91,20 @@
             Style="{StaticResource SubtitleTextBlockStyle}"
             Text="Transcripción" />
         <PasswordBox x:Name="DeepgramKeyBox" Header="API key de Deepgram" />
+        <TextBox
+            x:Name="DeepgramKeytermsBox"
+            MinHeight="96"
+            MaxHeight="240"
+            AcceptsReturn="True"
+            Header="Términos clave (uno por línea)"
+            PlaceholderText="stored procedure&#x0a;endpoint&#x0a;Neon"
+            ScrollViewer.VerticalScrollBarVisibility="Auto"
+            TextWrapping="Wrap" />
+        <TextBlock
+            MaxWidth="600"
+            Opacity="0.6"
+            TextWrapping="Wrap"
+            Text="Jerga, productos y nombres que Deepgram tiene que reconocer bien. Hasta 100; rinde más con 20 a 50. Con al menos uno, Deepgram cobra un extra por minuto (Pricing:Deepgram:KeytermPerMinute). Con la nube, la lista es la misma en todas tus máquinas." />
 
         <!-- Nube -->
         <TextBlock

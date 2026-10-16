@@ -1,5 +1,6 @@
 using MeetingAssistant.App.Services;
 using MeetingAssistant.App.Startup;
+using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -74,6 +75,7 @@ public sealed partial class SettingsForm : UserControl
         SubFolder = SubFolderBox.Text,
         LlmProvider = SelectedProvider,
         DeepgramApiKey = DeepgramKeyBox.Password,
+        DeepgramKeyterms = DeepgramKeyterms.Format(DeepgramKeyterms.Parse(DeepgramKeytermsBox.Text)),
         GeminiApiKey = GeminiKeyBox.Password,
         GeminiModel = GeminiModelBox.Text,
         AzureEndpoint = AzureEndpointBox.Text,
@@ -102,6 +104,7 @@ public sealed partial class SettingsForm : UserControl
             GeminiModelBox.Text = settings.GeminiModel ?? string.Empty;
             AzureEndpointBox.Text = settings.AzureEndpoint ?? string.Empty;
             AzureDeploymentBox.Text = settings.AzureDeployment ?? string.Empty;
+            DeepgramKeytermsBox.Text = string.Join(Environment.NewLine, DeepgramKeyterms.Parse(settings.DeepgramKeyterms));
 
             // Las claves se precargan para que "guardar" sin tocarlas no las
             // borre. Van en PasswordBox, así que se ven enmascaradas.
