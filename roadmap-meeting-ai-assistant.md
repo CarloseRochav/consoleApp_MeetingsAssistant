@@ -1221,7 +1221,7 @@ tiene su propia base.
 
 ---
 
-## Fase 7 — Instalador para otras máquinas (en curso, 2026-10-14)
+## Fase 7 — Instalador para otras máquinas (instalada y funcionando en otra máquina 2026-10-15; queda una comprobación en esta)
 
 **Objetivo:** instalar la app en otra máquina como cualquier app de escritorio,
 con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
@@ -1276,20 +1276,22 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
    `.msix` entero en una petición excedía el plazo de 100 s del SDK.
    Republicada la 1.0.3.0 con la directiva `meeting-assistant-install-5`;
    comprobado: los cuatro archivos 200, el `.msix` en Blob pesa lo mismo que el
-   local, y el enlace viejo (que viajó por correo) responde 403. **Sin
-   confirmar todavía que App Installer era quien decodificaba:** lo confirma la
-   reinstalación.
+   local, y el enlace viejo (que viajó por correo) responde 403. Con el enlace
+   nuevo la instalación en la otra máquina funcionó (2026-10-15), lo que
+   confirma la causa.
 
 ### Falta, y sólo lo puede cerrar el usuario
 
-- [ ] Correr el comando de `artifacts\release\1.0.3.0\install-command.txt` en
+- [x] Correr el comando de `artifacts\release\1.0.3.0\install-command.txt` en
   la otra máquina: confirma que App Installer acepta el enlace firmado, que la
   ventana de primer arranque aparece y guarda, y que tras reiniciar la app abre
-  con el historial compartido.
+  con el historial compartido. **Confirmado por el usuario 2026-10-15**, con el
+  enlace republicado (punto 9), siguiendo la guía de instalación paso a paso.
 - [ ] En esta máquina, con `dotnet run`: Configuración muestra las secciones
   nuevas y guarda igual que antes.
-- [ ] Ver que una notificación (toast) funciona en la versión instalada: es la
-  primera vez que el Windows App SDK va dentro del paquete.
+- [x] Ver que una notificación (toast) funciona en la versión instalada: es la
+  primera vez que el Windows App SDK va dentro del paquete. **Confirmado por el
+  usuario 2026-10-15** (parte de las comprobaciones de la guía).
 
 ---
 
@@ -1310,7 +1312,7 @@ Priorizados por riesgo × impacto ÷ esfuerzo. Las decisiones son del usuario.
 | 9 | Partir archivos grandes | **Hecho:** el harness pasó a comandos (`CommandCatalog`), `App.xaml.cs` quedó en el ciclo de vida (`Startup/`), y los clientes de proveedor salen de `ProviderClientFactory`. Verificado por el usuario en la app. |
 | 10 | Arranque en frío de Neon | **Pasivo:** el log registra "Espera del arranque: N ms". Actuar sólo si se acerca a los 5 s. |
 | 11 | "Detener" sin grabar avisa error | **Hecho y verificado por el usuario.** El HTTP sigue respondiendo 409. |
-| 12 | Instalador firmado | **Construido y publicado (1.0.3.0, Fase 7). Pendiente de la prueba manual del usuario** en otra máquina: instalación desde el enlace, ventana de primer arranque, historial compartido y notificaciones. |
+| 12 | Instalador firmado | **Hecho y verificado por el usuario 2026-10-15:** la 1.0.3.0 se instaló y funciona en otra máquina (enlace, primer arranque, historial compartido, notificaciones). Hizo falta corregir la firma del enlace (Fase 7, punto 9). |
 | 13 | Borrar `audit-2026-10-09.md` | **Hecho.** |
 
 ---
