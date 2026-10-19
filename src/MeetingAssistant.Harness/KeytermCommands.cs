@@ -38,6 +38,14 @@ internal static class KeytermCommands
             DeepgramKeyterms.Parse(DeepgramKeyterms.Format(["stored procedure", "Neon"])) is ["stored procedure", "Neon"]);
         Check("una lista vacia se guarda como nada (borra la clave)", DeepgramKeyterms.Format([]) is null);
 
+        // --- Lista que pasa el limite ------------------------------------------
+        Console.WriteLine($"{Environment.NewLine}--- Lista que pasa el limite de Deepgram ---");
+        Check("reconoce el 400 real de Deepgram (2026-10-15) para reintentar sin terminos",
+            DeepgramTranscriptionClient.IsKeytermLimitError(new Exception(
+                "Bad Request: Keyterm limit exceeded. The maximum number of tokens across all keyterms is 500.")));
+        Check("cualquier otro error NO: sigue fallando como siempre",
+            !DeepgramTranscriptionClient.IsKeytermLimitError(new Exception("Unauthorized: Invalid credentials.")));
+
         // --- El costo -----------------------------------------------------------
         Console.WriteLine($"{Environment.NewLine}--- Costo ---");
         decimal? Cost(Dictionary<string, string?> values) =>

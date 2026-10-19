@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Deepgram;
 using Deepgram.Clients.Interfaces.v1;
+using Deepgram.Models.Exceptions.v1;
 using Deepgram.Models.Listen.v1.REST;
 using MeetingAssistant.Core.Abstractions;
 using NAudio.Wave;
@@ -41,13 +42,31 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
             var utterances = new List<DiarizedUtterance>();
             string? language = null;
             TimeSpan latency = TimeSpan.Zero;
+            IReadOnlyList<string> segmentKeyterms = keyterms;
 
             for (int index = 0; index < segments.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    TranscriptionResult segmentResult = await TranscribeSegmentAsync(client, segments[index], keyterms, cancellationToken);
+                    TranscriptionResult segmentResult;
+                    try
+                    {
+                        segmentResult = await TranscribeSegmentAsync(client, segments[index], segmentKeyterms, cancellationToken);
+                    }
+                    catch (DeepgramRESTException exception) when (segmentKeyterms.Count > 0 && IsKeytermLimitError(exception))
+                    {
+                        // La lista pasa el límite de tokens de Deepgram (500, que
+                        // no se puede contar de este lado). Antes que perder la
+                        // reunión, se transcribe sin términos, y los segmentos que
+                        // quedan también: el límite no cambia entre uno y otro.
+                        Console.Error.WriteLine(
+                            $"Deepgram rechazó los {segmentKeyterms.Count} términos clave ({exception.Message}). " +
+                            "Se transcribe sin ellos; acortá la lista en Configuración.");
+                        segmentKeyterms = [];
+                        segmentResult = await TranscribeSegmentAsync(client, segments[index], segmentKeyterms, cancellationToken);
+                    }
+
                     if (!string.IsNullOrWhiteSpace(segmentResult.Transcript)) transcripts.Add(segmentResult.Transcript);
                     utterances.AddRange(segmentResult.Utterances);
                     language ??= segmentResult.DetectedLanguage;
@@ -68,6 +87,14 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
             DeleteTemporarySegments(segments, audioPath);
         }
     }
+
+    /// <summary>
+    /// El 400 de Deepgram cuando los términos pasan su límite. Visto el
+    /// 2026-10-15: "Keyterm limit exceeded. The maximum number of tokens across
+    /// all keyterms is 500." Cualquier otro error sigue fallando como siempre.
+    /// </summary>
+    public static bool IsKeytermLimitError(Exception exception) =>
+        exception.Message.Contains("Keyterm limit", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<TranscriptionResult> TranscribeSegmentAsync(
         IListenRESTClient client,
