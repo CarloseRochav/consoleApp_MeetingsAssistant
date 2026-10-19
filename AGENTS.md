@@ -160,6 +160,14 @@ See `roadmap-meeting-ai-assistant.md` at the repo root — it's the
 detailed phase-by-phase tracker, with what's done and what's pending.
 Update it when closing any milestone; don't let it go stale.
 
+Every decision the owner makes (what was chosen, over what, why, the
+trade-offs and accepted risks) goes into the decision log, a Claude Doc:
+https://claude.ai/code/artifact/41af1a20-7e99-46f2-b9ac-4d080824627f
+Record it there and in the roadmap in the same turn the decision is made,
+and give the owner both locations when asked; never leave a decision only in
+chat. Present a pending decision as one table (experience, cost, effort,
+trade-off) plus a recommendation.
+
 ## Security incident that already happened — don't repeat it
 
 A real local path (Windows username + employer name) once leaked into a

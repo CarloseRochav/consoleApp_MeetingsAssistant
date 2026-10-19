@@ -4,6 +4,12 @@
 **Stack:** .NET/C#, WinUI 3, Deepgram Nova-3 (transcripción), Gemini Flash-Lite (LLM extractor)
 **Objetivo:** Transcribir reuniones de asignación de desarrollo → extraer summary, insights, tasklist e indicaciones mediante LLM → generar reporte estructurado.
 
+**Dónde vive cada cosa:**
+- Este roadmap (qué está hecho y qué falta): `C:\Projects\PersonnalTool_App\consoleApp_MeetingsAssistant\roadmap-meeting-ai-assistant.md`
+- Registro de decisiones (qué se decidió, contra qué, por qué, riesgos aceptados), documento de Claude: https://claude.ai/code/artifact/41af1a20-7e99-46f2-b9ac-4d080824627f
+- Decisión de instalación (Fase 7), documento de Claude: https://claude.ai/code/artifact/ffddabd0-ef1c-4cac-90b8-206736eef6fb
+- Reglas técnicas del servidor (Fase 8): `C:\Projects\DevLog_Backend\devLog_Backend\CLAUDE.md`
+
 **Nota de decisión (redefinición de plan):** se descartó Whisper (cualquier proveedor que lo hospede) y los modelos de Claude por prioridad costo/calidad. Transcripción vía Deepgram Nova-3 batch (~$0.0036/min, motor propio no-Whisper, tier gratis ~200 min/mes). LLM extractor vía Gemini Flash-Lite, elegido sobre DeepSeek V4 Flash por su desempeño multilingüe más sólido (relevante porque las reuniones mezclan español/inglés).
 
 ---
@@ -1465,10 +1471,23 @@ están en servidores Neon distintos).
   llave vieja. **El login ya no devuelve la contraseña**: sólo token, vencimiento
   y `idUser, username, name, lastname, email`, que es lo que el frontend usa.
   Probado en local (21 comprobaciones HTTP, producción simulada, `schema.sql` en
-  base vacía). **Producción de DevLog no tiene `001` ni `006`:** aplicar `001` y
-  luego `006` antes de desplegar (sin llave: allí están en claro). No aplicado aún.
+  base vacía). **Aplicado en producción el 2026-10-19** (autorizado por el
+  usuario): `001` y luego `006`. Los 2 usuarios quedaron con hash bcrypt, nada en
+  claro, sin restos del cifrado; una contraseña equivocada no entra; las 24
+  sesiones importadas intactas. El login con la contraseña correcta sólo lo
+  puede probar el dueño.
 - **Worker en un proyecto/contenedor aparte (decisión del usuario, 2026-10-19)**,
   no dentro de la API. El estado de cada trabajo queda en la base para seguirlo.
+- **Tope de gasto: $2 USD por usuario por día (decisión del usuario, 2026-10-19)**,
+  Deepgram + LLM sumados. Al pasarlo, la API rechaza trabajos nuevos hasta el día
+  siguiente. Cubre unas 5–6 horas de reunión ($0.0052/min de Deepgram).
+- **Subidas: contenedor privado nuevo en la cuenta de Azure Storage existente
+  (decisión del usuario, 2026-10-19)**, con enlaces SAS de escritura de pocos
+  minutos; el audio no pasa por la API.
+- **Pendiente nuevo: restablecer la contraseña por correo** (pedido del usuario,
+  2026-10-19). Con hash ya no se puede recuperar una contraseña, sólo
+  reemplazarla; cada usuario tiene su correo en `per_users.email`. Falta elegir
+  el servicio de envío de correo (ver el registro de decisiones).
 - Falta en el paso A: subida por SAS, el worker (transcribir y extraer en el
   servidor), límite de peticiones y tope de gasto, despliegue.
 
