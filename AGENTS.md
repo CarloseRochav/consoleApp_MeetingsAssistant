@@ -79,6 +79,11 @@ never merge it or keep building it.
   local WAVs would be deleted, checking the real cloud; it deletes only with
   `--apply`.
   `--migrate-to-postgres` only simulates unless `--apply` is passed;
+  `--migrate-to-devlog <idUser> [--apply]` copies the Postgres history into
+  DevLog_Backend's `mtg` schema (Fase 8) through its `mtg_import_*` functions,
+  target `DevLog__ConnectionString`; it also only counts without `--apply`, and
+  must not run again once the API creates meetings itself (DevLog's CLAUDE.md,
+  "Cutover rule");
   `--set-cloud-setting` and `--list-cloud-settings` touch the REAL cloud
   settings.
 - When isolating a test in its own Postgres schema, never rely on the

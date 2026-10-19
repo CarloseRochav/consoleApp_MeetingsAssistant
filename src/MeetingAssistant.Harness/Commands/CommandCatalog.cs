@@ -62,6 +62,9 @@ internal static class CommandCatalog
         new("--migrate-to-postgres", "--migrate-to-postgres [--apply]",
             "Copia el historial local a Postgres y Azure Blob. Sin --apply solo simula.", 0, 1,
             context => MigrationCommands.MigrateFromArgumentsAsync(context.Configuration, context.Arguments)),
+        new("--migrate-to-devlog", "--migrate-to-devlog <idUser> [--apply]",
+            "Copia el historial de Postgres a la base de DevLog_Backend (esquema mtg, Fase 8), a nombre de ese usuario. Sin --apply solo cuenta.", 1, 2,
+            context => DevLogMigrationCommands.MigrateFromArgumentsAsync(context.Configuration, context.Arguments)),
 
         // --- El pipeline de verdad (cobra) -------------------------------------
         PipelineRunCommand.TranscribeFile,
