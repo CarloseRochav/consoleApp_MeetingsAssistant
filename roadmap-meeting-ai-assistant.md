@@ -1491,7 +1491,8 @@ están en servidores Neon distintos).
   local con Mailpit (24 comprobaciones), y el 2026-10-19 de punta a punta con
   el Gmail real del dueño (contraseña de aplicación): correo recibido, enlace
   abierto en el navegador, contraseña cambiada e inicio de sesión con la nueva,
-  contra la base local. Falta: `007` en producción.
+  contra la base local. `007` aplicada en producción el mismo día (DevLog
+  `60de009`); un fallo al pedir el reset va al log (`ILogger`), sin el usuario.
 - Falta en el paso A: subida por SAS, el worker (transcribir y extraer en el
   servidor), límite de peticiones y tope de gasto, despliegue.
 
