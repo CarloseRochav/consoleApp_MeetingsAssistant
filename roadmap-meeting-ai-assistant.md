@@ -1414,12 +1414,43 @@ un usuario con sesión iniciada (JWT), por HTTP, y el token se muestra una sola 
   dispositivo no puede listar ni crear dispositivos ni llegar a `Users`, otro
   usuario no puede revocarlo, y la baja lo corta. En la base sólo está el hash y
   el token no aparece en el log.
-- **No aplicado a Neon.** Falta en el paso A: datos de reuniones y endpoints de
-  lectura (antes, decidir si las reuniones pasan a la base de DevLog o la API lee
-  la base actual), subida por SAS, cola de trabajos, límite de peticiones y tope
-  de gasto, despliegue. Pendiente anotado: el login de DevLog devuelve la
-  contraseña en claro; quitarla de la respuesta antes de que un cliente Android
-  inicie sesión (decisión del usuario).
+- **No aplicado a Neon.**
+
+**DevLog_Backend, tanda 2 — una sola base: datos de reuniones y lectura. ✅ Hecha y
+probada en local (2026-10-19), en `master` de DevLog (`759b426`).** Decisión del
+usuario: las reuniones pasan a la base de DevLog, con migración (las dos bases
+están en servidores Neon distintos).
+
+- **2a, datos.** Esquema `mtg` (migración `004`): sesiones con dueño (un usuario
+  de DevLog), transcripts con búsqueda sin acentos (`mtg_simple` = `simple` +
+  `unaccent`), reportes, ediciones de prompts, ajustes compartidos y el registro
+  de subidas. Entran por funciones `mtg_import_*` (filas JSON, upsert por el id
+  original). En este repo, **`--migrate-to-devlog <idUser> [--apply]`** las
+  alimenta: sin `--apply` sólo cuenta; con él, una sola transacción en DevLog.
+  Se puede volver a correr mientras el escritorio siga escribiendo en la base
+  vieja; **la última corrida es el corte**: después de que la API cree reuniones
+  propias no se vuelve a correr (conservaría ids que pisarían filas nuevas).
+- **2b, lectura** (migración `005`), por login o token de dispositivo:
+  sesiones (paginadas), transcript, reportes, búsqueda, costos (los sin precio se
+  cuentan aparte; los totales siempre traen una fila) y versiones de prompt. Cada
+  consulta va atada al `sub` del token; la sesión de otro usuario responde 404.
+  Los reportes no devuelven `vault_path` (ruta de un escritorio).
+- **Probado sólo en local, con datos sintéticos.** Un Postgres de Docker con el
+  esquema exacto de esta app y filas inventadas → la base local de DevLog:
+  conteos, ids, dueño, md5 de cada transcript y de las 13 columnas de cada
+  reporte, costos nulos, búsqueda, secuencias, re-corrida incremental y una
+  corrida fallida que no dejó nada. Por HTTP, 36 comprobaciones (los dos tipos de
+  token, aislamiento entre usuarios, contenido, números, paginado, entradas
+  malas, dispositivo revocado, nada sensible en el log). `schema.sql` carga
+  limpio en una base vacía.
+- **La migración real no corrió.** Para hacerla: aplicar `003`–`005` en el Neon
+  de DevLog, elegir el `idUser` dueño, y correr `--migrate-to-devlog` primero sin
+  `--apply` y después con él. Lee las reuniones reales: la corre el usuario o lo
+  autoriza explícitamente.
+- Falta en el paso A: subida por SAS, cola de trabajos (transcribir y extraer en
+  el servidor), límite de peticiones y tope de gasto, despliegue. Pendiente
+  anotado: el login de DevLog devuelve la contraseña en claro; quitarla de la
+  respuesta antes de que un cliente Android inicie sesión (decisión del usuario).
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
 Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que
