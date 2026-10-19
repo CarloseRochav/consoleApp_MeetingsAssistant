@@ -6,7 +6,7 @@
 
 **Dónde vive cada cosa:**
 - Este roadmap (qué está hecho y qué falta): `C:\Projects\PersonnalTool_App\consoleApp_MeetingsAssistant\roadmap-meeting-ai-assistant.md`
-- Registro de decisiones (qué se decidió, contra qué, por qué, riesgos aceptados), documento de Claude: https://claude.ai/code/artifact/41af1a20-7e99-46f2-b9ac-4d080824627f
+- Registro de decisiones (qué se decidió, contra qué, por qué, riesgos aceptados): `C:\Projects\PersonnalTool_App\consoleApp_MeetingsAssistant\decision-log.md` (desde el 2026-10-19; reemplaza al documento de Claude)
 - Decisión de instalación (Fase 7), documento de Claude: https://claude.ai/code/artifact/ffddabd0-ef1c-4cac-90b8-206736eef6fb
 - Reglas técnicas del servidor (Fase 8): `C:\Projects\DevLog_Backend\devLog_Backend\CLAUDE.md`
 

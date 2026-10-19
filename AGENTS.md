@@ -161,8 +161,8 @@ detailed phase-by-phase tracker, with what's done and what's pending.
 Update it when closing any milestone; don't let it go stale.
 
 Every decision the owner makes (what was chosen, over what, why, the
-trade-offs and accepted risks) goes into the decision log, a Claude Doc:
-https://claude.ai/code/artifact/41af1a20-7e99-46f2-b9ac-4d080824627f
+trade-offs and accepted risks) goes into the decision log, `decision-log.md`
+at the repo root (a Claude Doc until 2026-10-19; that copy is retired).
 Record it there and in the roadmap in the same turn the decision is made,
 and give the owner both locations when asked; never leave a decision only in
 chat. Present a pending decision as one table (experience, cost, effort,
