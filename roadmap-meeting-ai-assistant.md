@@ -1397,7 +1397,31 @@ de IA. Las filas de abajo que dicen "reutilizando Core + Infrastructure" o
 
 ### Avance del paso A
 
-**Tanda 1, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
+**DevLog_Backend, tanda 1 — tokens por dispositivo. ✅ Hecha y probada (2026-10-19),
+en `master` de DevLog (`7e02964`).** Decisión del usuario: el dispositivo lo crea
+un usuario con sesión iniciada (JWT), por HTTP, y el token se muestra una sola vez.
+
+- Tabla `per.per_devices` (dueño, nombre, SHA-256 del token, alta, baja, último
+  uso) y funciones `per_insert_update_devices` (0 alta, 1 baja, 2 último uso) y
+  `per_select_devices` (0 autenticar por hash, 1 los de un usuario). Migración
+  `003` y `schema.sql`.
+- Token `dlg_` + 32 bytes aleatorios; la base guarda sólo el hash. Esquema de
+  autenticación `DeviceToken` aparte del login: los endpoints existentes siguen
+  aceptando sólo el login, así que un dispositivo no administra usuarios ni
+  dispositivos. El dueño sale siempre del `sub` del login, nunca del cuerpo.
+- **Probado contra el Postgres local de Docker**, 18 comprobaciones por HTTP:
+  alta, uso, token inventado / revocado / sin token rechazados (401), un
+  dispositivo no puede listar ni crear dispositivos ni llegar a `Users`, otro
+  usuario no puede revocarlo, y la baja lo corta. En la base sólo está el hash y
+  el token no aparece en el log.
+- **No aplicado a Neon.** Falta en el paso A: datos de reuniones y endpoints de
+  lectura (antes, decidir si las reuniones pasan a la base de DevLog o la API lee
+  la base actual), subida por SAS, cola de trabajos, límite de peticiones y tope
+  de gasto, despliegue. Pendiente anotado: el login de DevLog devuelve la
+  contraseña en claro; quitarla de la respuesta antes de que un cliente Android
+  inicie sesión (decisión del usuario).
+
+**Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
 Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que
 sigue describe esa rama, que no se fusiona; el paso A continúa en DevLog_Backend.
 
