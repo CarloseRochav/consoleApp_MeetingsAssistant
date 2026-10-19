@@ -1484,10 +1484,13 @@ están en servidores Neon distintos).
 - **Subidas: contenedor privado nuevo en la cuenta de Azure Storage existente
   (decisión del usuario, 2026-10-19)**, con enlaces SAS de escritura de pocos
   minutos; el audio no pasa por la API.
-- **Pendiente nuevo: restablecer la contraseña por correo** (pedido del usuario,
-  2026-10-19). Con hash ya no se puede recuperar una contraseña, sólo
-  reemplazarla; cada usuario tiene su correo en `per_users.email`. Falta elegir
-  el servicio de envío de correo (ver el registro de decisiones).
+- **Restablecer la contraseña por correo: hecho (2026-10-19).** Envío por SMTP
+  desde el buzón personal del dueño (decisión del usuario); las credenciales son
+  marcadores que el dueño completa a mano en el `appsettings.json` de DevLog.
+  DevLog `53c6ef8` (migración `007`) y DevLog_Frontend `61993d4`. Probado en
+  local con Mailpit (24 comprobaciones). Falta: el buzón real (Outlook.com
+  personal ya no acepta contraseña por SMTP; Gmail con contraseña de aplicación
+  sí), recorrer las dos páginas en el navegador, y `007` en producción.
 - Falta en el paso A: subida por SAS, el worker (transcribir y extraer en el
   servidor), límite de peticiones y tope de gasto, despliegue.
 

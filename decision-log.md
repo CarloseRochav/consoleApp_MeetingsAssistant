@@ -117,6 +117,8 @@ With hashing, a forgotten password can only be replaced, so users need a way to 
 - **Gmail works with an app password:** turn on 2-Step Verification, create an app password, and use `smtp.gmail.com`, port 587 (STARTTLS), with the full address as the username. Personal Gmail caps sending at about 500 messages a day, far above this use (secondary sources: [Nylas](https://developer.nylas.com/docs/cookbook/email/gmail-smtp-settings.md), [n8n](https://docs.n8n.io/integrations/builtin/credentials/send-email/gmail)).
 - **Trade-offs accepted:** the mailbox credential sits on the server (an app password, revocable on its own, never the account's main password); reset emails come from a personal address and may land in spam.
 
+**State (2026-10-19):** built in DevLog_Backend `master` (`53c6ef8`, migration `007`) and DevLog_Frontend `master` (`61993d4`, pages `/forgot-password` and `/reset-password`). Tested locally with a test mail server (Mailpit): 24 checks pass, including the same answer for unknown users, refused reused or expired links, rate limits, and no token in the logs. **Not yet done:** the owner's real mailbox (the settings are placeholders), a click-through of the two pages in a browser, and migration `007` in production.
+
 ## Data and configuration
 
 The Obsidian vault stays the product; the database is the record and the index, and the cloud gives one shared history across machines.
