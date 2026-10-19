@@ -1443,10 +1443,25 @@ están en servidores Neon distintos).
   token, aislamiento entre usuarios, contenido, números, paginado, entradas
   malas, dispositivo revocado, nada sensible en el log). `schema.sql` carga
   limpio en una base vacía.
-- **La migración real no corrió.** Para hacerla: aplicar `003`–`005` en el Neon
-  de DevLog, elegir el `idUser` dueño, y correr `--migrate-to-devlog` primero sin
-  `--apply` y después con él. Lee las reuniones reales: la corre el usuario o lo
-  autoriza explícitamente.
+- **Migración real hecha (2026-10-19, autorizada por el usuario).** `003`–`005`
+  aplicadas en el Neon de producción de DevLog (`devLog-production`). Dueño:
+  `idUser 1` (`tormentorXXVI`, el único usuario activo). Copiadas 24 sesiones, 20
+  transcripts, 13 reportes, 3 versiones de prompt, 5 ajustes y 34 subidas;
+  **verificado por md5 de todas las columnas, tabla por tabla: idéntico** al
+  origen. El escritorio sigue escribiendo en la base vieja: volver a correr
+  `--migrate-to-devlog 1 --apply` antes del corte (paso B) para traer lo nuevo.
+- **Incidente durante la migración:** la primera simulación falló porque el
+  harness guarda el origen como URL `postgresql://`, y el mensaje de la excepción
+  de Npgsql **mostró la URL entera, contraseña de `neondb_owner` incluida**, en la
+  salida de la sesión. No se escribió nada. Arreglado: el comando lee las dos
+  formas con `PostgresDatabase.ToBuilder` (ahora pública) y un error de lectura
+  nombra sólo la clave de configuración. **Pendiente del usuario: rotar la
+  contraseña de esa base en Neon** y actualizarla donde vive (los dos
+  `appsettings.json`, app y harness, y la base local si se guardó desde
+  Configuración; ver "Rotar una credencial" en Fase 6).
+- **Producción de DevLog no tiene las migraciones `001`/`002`** (la contraseña
+  cifrada): `master` de DevLog llama a `per_select_users` con `p_private_key`,
+  que esa base no tiene. Hay que aplicarlas antes de desplegar el `master` actual.
 - Falta en el paso A: subida por SAS, cola de trabajos (transcribir y extraer en
   el servidor), límite de peticiones y tope de gasto, despliegue. Pendiente
   anotado: el login de DevLog devuelve la contraseña en claro; quitarla de la

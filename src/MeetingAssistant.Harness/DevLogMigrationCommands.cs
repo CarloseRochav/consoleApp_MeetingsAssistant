@@ -52,12 +52,20 @@ internal static class DevLogMigrationCommands
             return 1;
         }
 
-        Console.WriteLine("=== Migrar el historial a DevLog_Backend ===");
-        Console.WriteLine($"Origen:  {Describe(source)}");
-        Console.WriteLine($"Destino: {Describe(target)}, esquema mtg, dueño idUser {idUser}");
+        // Las dos formas que da Neon (URL postgresql:// o clave=valor), por el mismo camino que la
+        // app. Si no se puede leer, el error NO lleva la cadena: lleva la clave.
+        if (TryParse(source, "Postgres:ConnectionString") is not { } sourceBuilder ||
+            TryParse(target, "DevLog:ConnectionString") is not { } targetBuilder)
+        {
+            return 1;
+        }
 
-        await using var sourceConnection = new NpgsqlConnection(source);
-        await using var targetConnection = new NpgsqlConnection(target);
+        Console.WriteLine("=== Migrar el historial a DevLog_Backend ===");
+        Console.WriteLine($"Origen:  {sourceBuilder.Host}/{sourceBuilder.Database}");
+        Console.WriteLine($"Destino: {targetBuilder.Host}/{targetBuilder.Database}, esquema mtg, dueño idUser {idUser}");
+
+        await using var sourceConnection = new NpgsqlConnection(sourceBuilder.ConnectionString);
+        await using var targetConnection = new NpgsqlConnection(targetBuilder.ConnectionString);
         await sourceConnection.OpenAsync();
         await targetConnection.OpenAsync();
 
@@ -124,10 +132,21 @@ internal static class DevLogMigrationCommands
         return result is null or DBNull ? default! : (T)result;
     }
 
-    /// <summary>Host y base, nunca el usuario ni la clave.</summary>
-    private static string Describe(string connectionString)
+    /// <summary>
+    /// Null, con un aviso que nombra la clave de configuración y nada más, si la cadena no se puede
+    /// leer. El mensaje de la excepción NO se muestra: Npgsql mete la cadena entera, clave incluida
+    /// (pasó el 2026-10-19 con una URL de Neon y la clave de la base quedó en la salida).
+    /// </summary>
+    private static NpgsqlConnectionStringBuilder? TryParse(string connectionString, string settingKey)
     {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        return $"{builder.Host}/{builder.Database}";
+        try
+        {
+            return MeetingAssistant.Infrastructure.Storage.Postgres.PostgresDatabase.ToBuilder(connectionString);
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"No se pudo leer {settingKey} ({exception.GetType().Name}). No se muestra su contenido.");
+            return null;
+        }
     }
 }

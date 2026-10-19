@@ -207,7 +207,7 @@ public sealed partial class PostgresDatabase : IAsyncDisposable
     /// Neon entrega una URL; Npgsql quiere pares clave=valor. Se aceptan las dos
     /// formas para que lo que se copia del panel de Neon sirva tal cual.
     /// </summary>
-    internal static NpgsqlConnectionStringBuilder ToBuilder(string connectionString)
+    public static NpgsqlConnectionStringBuilder ToBuilder(string connectionString)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         connectionString = connectionString.Trim();
