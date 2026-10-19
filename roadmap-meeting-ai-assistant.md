@@ -1488,9 +1488,10 @@ están en servidores Neon distintos).
   desde el buzón personal del dueño (decisión del usuario); las credenciales son
   marcadores que el dueño completa a mano en el `appsettings.json` de DevLog.
   DevLog `53c6ef8` (migración `007`) y DevLog_Frontend `61993d4`. Probado en
-  local con Mailpit (24 comprobaciones). Falta: el buzón real (Outlook.com
-  personal ya no acepta contraseña por SMTP; Gmail con contraseña de aplicación
-  sí), recorrer las dos páginas en el navegador, y `007` en producción.
+  local con Mailpit (24 comprobaciones), y el 2026-10-19 de punta a punta con
+  el Gmail real del dueño (contraseña de aplicación): correo recibido, enlace
+  abierto en el navegador, contraseña cambiada e inicio de sesión con la nueva,
+  contra la base local. Falta: `007` en producción.
 - Falta en el paso A: subida por SAS, el worker (transcribir y extraer en el
   servidor), límite de peticiones y tope de gasto, despliegue.
 
