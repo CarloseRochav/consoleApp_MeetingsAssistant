@@ -1455,17 +1455,22 @@ están en servidores Neon distintos).
   de Npgsql **mostró la URL entera, contraseña de `neondb_owner` incluida**, en la
   salida de la sesión. No se escribió nada. Arreglado: el comando lee las dos
   formas con `PostgresDatabase.ToBuilder` (ahora pública) y un error de lectura
-  nombra sólo la clave de configuración. **Pendiente del usuario: rotar la
-  contraseña de esa base en Neon** y actualizarla donde vive (los dos
-  `appsettings.json`, app y harness, y la base local si se guardó desde
-  Configuración; ver "Rotar una credencial" en Fase 6).
-- **Producción de DevLog no tiene las migraciones `001`/`002`** (la contraseña
-  cifrada): `master` de DevLog llama a `per_select_users` con `p_private_key`,
-  que esa base no tiene. Hay que aplicarlas antes de desplegar el `master` actual.
-- Falta en el paso A: subida por SAS, cola de trabajos (transcribir y extraer en
-  el servidor), límite de peticiones y tope de gasto, despliegue. Pendiente
-  anotado: el login de DevLog devuelve la contraseña en claro; quitarla de la
-  respuesta antes de que un cliente Android inicie sesión (decisión del usuario).
+  nombra sólo la clave de configuración. ~~Pendiente: rotar la contraseña.~~
+  **Rotada por el usuario el 2026-10-19** y verificada: la base local de ajustes
+  y los dos `appsettings.json` conectan con la nueva (`--verify-db`, sin mostrarla).
+- **Contraseñas de DevLog: hash bcrypt (decisión del usuario, 2026-10-19)**, en
+  lugar del cifrado reversible de la migración `002`, que queda obsoleta. Nadie,
+  ni la API, puede leer una contraseña. Migración `006` en DevLog (`fc1c1b3`): hashea
+  en el lugar las contraseñas en claro, o descifra una vez las cifradas con la
+  llave vieja. **El login ya no devuelve la contraseña**: sólo token, vencimiento
+  y `idUser, username, name, lastname, email`, que es lo que el frontend usa.
+  Probado en local (21 comprobaciones HTTP, producción simulada, `schema.sql` en
+  base vacía). **Producción de DevLog no tiene `001` ni `006`:** aplicar `001` y
+  luego `006` antes de desplegar (sin llave: allí están en claro). No aplicado aún.
+- **Worker en un proyecto/contenedor aparte (decisión del usuario, 2026-10-19)**,
+  no dentro de la API. El estado de cada trabajo queda en la base para seguirlo.
+- Falta en el paso A: subida por SAS, el worker (transcribir y extraer en el
+  servidor), límite de peticiones y tope de gasto, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
 Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que
@@ -1504,9 +1509,9 @@ de prompts y ajustes, Dockerfile y despliegue a Container Apps.
 - **Arranque en frío:** Container Apps puede escalar a cero sin uso, así que la
   primera llamada después de un rato tarda más, como hoy Neon. Dejar una réplica
   siempre encendida lo evita; **costo sin verificar**.
-- **Sin servicio de cola aparte:** el estado de cada trabajo ya vive en Postgres
-  (`session.state`), así que un worker dentro del mismo contenedor toma de ahí
-  las sesiones pendientes.
+- **Sin servicio de cola aparte:** el estado de cada trabajo vive en Postgres,
+  y el worker (proyecto y contenedor propios, decisión del 2026-10-19) toma de
+  ahí los trabajos pendientes. La API sólo los crea y deja consultar su estado.
 
 ### Riesgos, anotados antes de empezar
 
