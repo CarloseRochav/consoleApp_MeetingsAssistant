@@ -1298,13 +1298,164 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 
 ---
 
+## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A en curso)
+
+**Objetivo:** que el escritorio y una app Android en Kotlin sean dos clientes
+delgados de una API propia. La API es la única que habla con la base y con los
+proveedores de IA: ningún cliente guarda una clave de proveedor ni la cadena de
+conexión de Neon.
+
+El plan completo, con la auditoría y los diagramas, está en el doc compartido
+"Meeting Assistant: Audit and Android Port Plan" (Claude Docs, privado).
+
+### Cambio de decisión (2026-10-18): el servidor vive en DevLog_Backend
+
+El usuario decidió que la API de reuniones se construye **dentro de su repo
+existente DevLog_Backend** (`C:\Projects\DevLog_Backend\devLog_Backend`, GitHub
+`CarloseRochav/DevLog_Backend`, privado, rama por defecto `master`), **reescrita
+al estilo de DevLog**: sólo funciones almacenadas de PostgreSQL (nada de SQL en
+línea desde C#), modelos `mod*`, clases `BL`/`DL` únicas, Controllers → BL →
+Interfaces → DL. Su `CLAUDE.md` manda. Quedaron descartadas: (a) seguir el
+proyecto aparte `MeetingAssistant.Api`, y (b) un módulo de DevLog que
+referencie Core e Infrastructure de este repo.
+
+**Por qué:** un solo backend, en el estilo propio del usuario.
+
+**Qué pasa con la rama `fase-8-api`** (local, sin publicar): **no se fusiona**.
+Su código (`MeetingAssistant.Api`, `DeviceTokens`, `IDeviceStore`, las tablas
+`device`) queda como referencia para portar el diseño de tokens por dispositivo
+y las ideas de sus autotests; nada de eso está en `main`. El 2026-10-18 se trajo
+a `main` sólo esta sección del roadmap.
+
+**Siguen en pie** las decisiones confirmadas: hosting en Azure Container Apps,
+token revocable por dispositivo (colgado de un usuario de DevLog, que ya tiene
+login con JWT), y la API dueña de la base y de todas las llamadas a proveedores
+de IA. Las filas de abajo que dicen "reutilizando Core + Infrastructure" o
+"proyecto nuevo que referencia Core" quedan **reemplazadas** por esta decisión.
+
+### Decisiones tomadas por el usuario (2026-10-15)
+
+| Decisión | Elegido | Nota |
+|---|---|---|
+| Uso de la app Android | **Reuniones presenciales** | Android no deja grabar una llamada (Teams/Meet/Zoom) que corre en el mismo teléfono: el audio de la llamada no se puede capturar y el micrófono llega en silencio mientras la llamada lo tiene. Sacado de la documentación de Android, **sin probar todavía en el teléfono** (paso C). |
+| Acceso a la base | **API dedicada, dueña de Neon** | Ningún cliente se conecta directo. Un solo dueño del esquema y las migraciones; acceso revocable por dispositivo. |
+| Proveedores de IA | **La API llama a Deepgram, Gemini y Foundry** | Claves en un solo lugar. Prompts, precios y términos clave cambian sin publicar clientes. Resuelve el pendiente de Fase 7 de reescribir las claves en cada máquina. |
+| Rol del escritorio | **Cliente delgado, igual que el teléfono** | Graba, dispara (hotkey, bandeja, endpoint local) y escribe el `.md` en el vault. Deja de funcionar sin la API. |
+| Lenguaje de la app Android | **Kotlin** | Compose + ViewModel + Hilt. |
+| Lenguaje de la API | **ASP.NET Core**, reutilizando Core + Infrastructure | Confirmado 2026-10-18. Mueve ~6.5k líneas probadas en vez de reescribirlas. |
+| Hosting de la API | **Azure Container Apps** | Confirmado 2026-10-18. |
+| Inicio de sesión | **Token revocable por dispositivo** | Confirmado 2026-10-18. Entra ID descartado por ahora. |
+
+### Condiciones del diseño
+
+1. **Procesamiento en segundo plano, no dentro de una petición HTTP.**
+   `POST /sessions/{id}/process` responde 202 y un worker hace el trabajo; el
+   cliente consulta el estado o recibe un push (FCM en Android). Deepgram ya dio
+   504 por encima de 10 minutos de audio, y los hosts HTTP tienen plazos propios.
+2. **El audio no pasa por la API.** La API entrega un enlace SAS de subida de
+   corta vida, y Deepgram baja el archivo de Blob por URL.
+3. **Autenticación en cada llamada** (regla de AGENTS.md sobre superficies de
+   red): un token revocable por dispositivo (DPAPI en Windows, Keystore en
+   Android), límite de peticiones y **tope de gasto diario**, para que un token
+   filtrado no queme la cuenta del LLM.
+4. **El `.md` lo escribe el cliente** que pidió el reporte: la API devuelve el
+   Markdown. El vault sigue siendo el producto.
+5. **La regla de Core no cambia.** La API es un proyecto nuevo que referencia
+   Core + Infrastructure; la app Android tiene su propio `:core` sin
+   dependencias de Android, comprobado en la CI.
+
+### Pasos (estimaciones gruesas, una persona)
+
+1. **A — API (2-3 semanas).** ASP.NET Core; cola de trabajos con el pipeline
+   como máquina de estados guardada (`UPLOADED → TRANSCRIBED → EXTRACTED`, más
+   `FAILED` con el error y reintento desde ese paso); enlaces SAS; tokens por
+   dispositivo; endpoints de historial, búsqueda, prompts, ajustes de la nube y
+   costos. Salida: los autotests del harness corren contra la API.
+2. **B — Escritorio como cliente (1-2 semanas).** Las interfaces de Core
+   (`IMeetingHistoryStore`, `IPromptStore`, `ICloudSettingsStore`...) se quedan;
+   cambian sus implementaciones por HTTP. Configuración pide la dirección de la
+   API y el token. Salida: el escritorio no guarda ninguna clave de proveedor.
+3. **C — Spike Android (unos días; no depende de A ni de B).** Micrófono 60 min
+   con la pantalla apagada en un servicio en primer plano; calidad de Opus/AAC a
+   16 kHz contra el WAV en Deepgram; subida que sobrevive reinicios; escritura en
+   la carpeta del vault. Salida: audio del teléfono → `.md` a mano.
+4. **D — App Android (2-3 semanas).** Grabar, tile de Configuración rápida,
+   notificación; subida + push al terminar; historial, búsqueda, re-extracción;
+   editor de prompts y costos. Salida: tile → `.md` en el vault con la app
+   cerrada.
+5. **E — Distribución.** Firma de release, reglas de R8, sideload o pista
+   interna de Play, CI (tests, lint, build), revocar el token de un dispositivo
+   perdido.
+
+### Hallazgos de la auditoría del plan que entran en esta fase
+
+- **Etiquetas de hablante descartadas:** Deepgram las devuelve y el pipeline
+  manda texto plano al LLM. La API manda líneas `Speaker N: ...`.
+- **Sin modo JSON:** la API activa la salida JSON de Gemini.
+- **Audio a 44,1 kHz (~320 MB/h):** los dos clientes graban 16 kHz comprimido.
+- **Pipeline sólo en memoria:** la cola de trabajos reanudable de la API.
+
+### Avance del paso A
+
+**Tanda 1, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
+Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que
+sigue describe esa rama, que no se fusiona; el paso A continúa en DevLog_Backend.
+
+- Proyecto `MeetingAssistant.Api` (ASP.NET Core). `ApiHost.Build` es la única
+  composición: la usan `Program.cs` y el autotest.
+- **Tokens de dispositivo:** `DeviceTokens` (Core) genera `ma_` + 32 bytes
+  aleatorios y guarda sólo el SHA-256. Tabla `device` (SQLite v4, Postgres v3),
+  `IDeviceStore` en Core, implementaciones en Infrastructure. Alta, listado y
+  baja **sólo por línea de comandos** de la API, nunca por HTTP.
+- **Todo pide token** salvo `/health` (política por defecto, así que una ruta
+  nueva no queda abierta por olvido). Límite de peticiones por dispositivo (por
+  IP sin token), 120 por minuto por defecto.
+- **Lectura:** `/v1/me`, `/v1/sessions`, `/v1/sessions/{id}`, `/v1/search`,
+  `/v1/costs`, `/v1/prompts`, sobre los mismos stores que la app.
+- `/health` no consulta la base, para que la sonda de Container Apps no tenga
+  despierto a Neon.
+- **`--verify-api`** (offline, en la CI) y el contrato de `IDeviceStore`, que
+  corre contra SQLite en `--verify-api` y contra Postgres en `--verify-postgres`.
+
+**Lo que NO se verificó, dicho explícitamente:** en esta máquina Smart App
+Control bloquea los DLL recién compilados del harness y de la API
+(`0x800711C7`), así que **ningún autotest corrió acá**: sólo compila (0
+warnings, 0 errores; Core con 0 paquetes). `--verify-api` queda para la CI.
+`PostgresDeviceStore` y la migración v3 de Postgres no corrieron contra Neon:
+`--verify-postgres` los cubre, pero hay que correrlo donde el harness no esté
+bloqueado.
+
+**Falta en el paso A:** subida por enlace SAS, cola de trabajos con el pipeline
+(transcribir, extraer) del lado del servidor, tope de gasto diario, escritura
+de prompts y ajustes, Dockerfile y despliegue a Container Apps.
+
+### Consecuencias de Container Apps para el paso A
+
+- **Arranque en frío:** Container Apps puede escalar a cero sin uso, así que la
+  primera llamada después de un rato tarda más, como hoy Neon. Dejar una réplica
+  siempre encendida lo evita; **costo sin verificar**.
+- **Sin servicio de cola aparte:** el estado de cada trabajo ya vive en Postgres
+  (`session.state`), así que un worker dentro del mismo contenedor toma de ahí
+  las sesiones pendientes.
+
+### Riesgos, anotados antes de empezar
+
+- **Una caída de la API deja sin reportes nuevos**, también en el escritorio. El
+  audio queda en el dispositivo y se procesa cuando vuelve.
+- **Un token filtrado gasta plata:** por eso el tope de gasto es condición, no
+  extra.
+- **El límite de Android sobre llamadas no está probado en el teléfono:** si el
+  paso C lo contradice, se revisa el uso de la app Android.
+
+---
+
 ## Auditoría 2026-10-14 — estado de los 13 puntos
 
 Priorizados por riesgo × impacto ÷ esfuerzo. Las decisiones son del usuario.
 
 | # | Punto | Estado |
 |---|---|---|
-| 1 | Secretos en un solo lugar | **Cerrado por decisión del usuario:** siguen en texto plano en el `appsettings.json` de desarrollo. Mitigado: el log avisa cuando un valor de la base tapa uno distinto del JSON (sólo el nombre de la clave), y el paquete para instalar ya no lleva ese archivo (Fase 7). |
+| 1 | Secretos en un solo lugar | **Cerrado por decisión del usuario:** siguen en texto plano en el `appsettings.json` de desarrollo. Mitigado: el log avisa cuando un valor de la base tapa uno distinto del JSON (sólo el nombre de la clave), y el paquete para instalar ya no lleva ese archivo (Fase 7). **Fase 8 lo resuelve de raíz:** las claves de proveedor pasan a vivir sólo en la API (en DevLog_Backend desde 2026-10-18). |
 | 2 | CI en GitHub Actions | **Hecho.** Compila con warnings como errores, comprueba que Core no tiene paquetes y corre los autotests offline. |
 | 3 | Precio de Deepgram | **Hecho:** `Pricing:Deepgram:PerMinute = 0.0052` en la nube (Nova-3 multilingüe, pregrabado, precio oficial). **Pendiente, con el OK del usuario:** ponerle costo a los 20 transcripts viejos sin precio (escribe en Postgres). |
 | 4 | Caída de Postgres pierde la reunión | **Hecho:** `ConnectionRetry` reintenta al abrir ante errores transitorios. Si una caída larga llega a pasar, el plan es caer a SQLite + `HistoryMigrationService`, no un diario nuevo. |
@@ -1326,7 +1477,13 @@ Priorizados por riesgo × impacto ÷ esfuerzo. Las decisiones son del usuario.
 Fase 0 (spike) ──> Fase 1 (core pipeline) ──> Fase 2 (UI) ──> Fase 3 (integración) ──> Fase 4 (iteración continua)
                                                   │
                                                   └──> Fase 5 (persistencia local) ──> alimenta Fase 4
+
+Fase 5 ──> Fase 6 (nube) ──> Fase 7 (instalador) ──> Fase 8 (API en DevLog_Backend ──> escritorio cliente ──> app Android)
 ```
+
+Fase 8 se cuelga de Fase 6 porque la API reemplaza el acceso directo a Neon y a
+Blob que construyó, y de Fase 7 porque resuelve su pendiente de reescribir las
+claves en cada máquina.
 
 Fase 5 se cuelga de Fase 2 porque absorbe sus pasos 4 y 5 (Historial y Detalle),
 y alimenta a Fase 4: la comparación entre versiones de prompt y el costo

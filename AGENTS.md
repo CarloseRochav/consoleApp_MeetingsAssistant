@@ -48,6 +48,12 @@ Harness              → end-to-end test console. Every command is an entry in
 `Infrastructure` references `Core`. `App`/`Harness` reference both. Never
 the other way around.
 
+**Fase 8 server is NOT in this repo.** Since 2026-10-18 the meetings API is
+built inside `C:\Projects\DevLog_Backend\devLog_Backend`, in DevLog's own
+conventions (its `CLAUDE.md` rules). The local branch `fase-8-api` with
+`src/MeetingAssistant.Api` is abandoned reference code: port ideas from it,
+never merge it or keep building it.
+
 ## Commands
 
 - Build: `dotnet build MeetingAssistant.sln`
