@@ -1492,7 +1492,11 @@ están en servidores Neon distintos).
   el Gmail real del dueño (contraseña de aplicación): correo recibido, enlace
   abierto en el navegador, contraseña cambiada e inicio de sesión con la nueva,
   contra la base local. `007` aplicada en producción el mismo día (DevLog
-  `60de009`); un fallo al pedir el reset va al log (`ILogger`).
+  `60de009`) y probada por el dueño contra producción: funciona. Un fallo al
+  pedir el reset va al log (`ILogger`).
+- **Lista de usuarios del frontend arreglada (2026-10-19).** Pedía la opción 1
+  (un usuario por id) con `idUser 0` y recibía una lista vacía; ahora pide la 2
+  (todos). DevLog_Frontend `af8c11d`.
 - **Logs de DevLog con el payload: hecho (2026-10-19, decisión del dueño).** Cada
   línea de log de una petición lleva lo que mandó el cliente (método, ruta,
   query, cuerpo JSON), con contraseñas, tokens, secretos y claves tachados y
