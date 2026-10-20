@@ -10,6 +10,9 @@ Every decision below was taken by the project owner and is in force as of this d
 
 | Date | Area | Decision | Chosen over |
 | --- | --- | --- | --- |
+| 2026-10-20 | Cost history | The 20 old transcripts stay without a price; their cost stays "unknown" | Back-filling their cost with today's Deepgram price (a write to Postgres) |
+| 2026-10-20 | DevLog config | DevLog's production database credentials stay in plain text in the untracked `appsettings.Production.json`; not rotated now | Moving them to user-secrets or environment variables; rotating the Neon password |
+| 2026-10-20 | DevLog config | `appsettings.QA.json` stays with `YOUR_*` placeholders; there is no QA environment | Setting up a QA database |
 | 2026-10-19 | DevLog users | `Select_Users` options: 0 = login check, 1 = one user by id, 2 = all; the frontend lists with 2 and never calls 0 (the renumbering closed a login that checked no password) | The original numbering (0 = all, 2 = password check) |
 | 2026-10-19 | DevLog logging | .NET's built-in `ILogger`, plus one custom middleware that adds the payload as a scope | A custom logger class; `Console.Error` |
 | 2026-10-19 | DevLog logging | Every log line written during a request carries the caller's payload (method, path, query, JSON body), secrets redacted, for reproducing errors; production logs errors only; callers never see error details | Logging only the error type and message, without the payload |
@@ -193,4 +196,5 @@ These risks were accepted knowingly; each has a mitigation in place and a condit
 | DevLog login timing shows which usernames exist | An unknown username answers faster than a wrong password, since no hash is computed | None yet; login rate limits come with Phase 8 step A | Before the API is reachable from the internet |
 | Personal mailbox credential on the DevLog server | Whoever reads the server's settings can send mail as the owner | An app password (revocable alone, not the main password), only in untracked settings or the host's secret settings | The mailbox is used for anything sensitive, or other people get accounts |
 | Reset emails from a personal address | They can land in spam; the sender looks personal | None | Users miss reset emails |
+| DevLog production credentials in plain text (owner's decision, 2026-10-20) | Whoever reads the developer's disk, or the early pushed commit that held a connection string, can reach the production database | File is git-ignored; never printed or copied into tracked files, logs or output | Before deploying to Container Apps (secrets then go in the host's secret settings), or if the disk or repo is exposed |
 | Caller payloads in the DevLog logs | Whoever reads the logs sees usernames, emails and other non-secret request data | Secret-looking fields and all headers redacted; production keeps errors only; body size and log text capped | Other people get accounts, or a request carries a secret under an unexpected name |

@@ -1567,7 +1567,7 @@ Priorizados por riesgo × impacto ÷ esfuerzo. Las decisiones son del usuario.
 |---|---|---|
 | 1 | Secretos en un solo lugar | **Cerrado por decisión del usuario:** siguen en texto plano en el `appsettings.json` de desarrollo. Mitigado: el log avisa cuando un valor de la base tapa uno distinto del JSON (sólo el nombre de la clave), y el paquete para instalar ya no lleva ese archivo (Fase 7). **Fase 8 lo resuelve de raíz:** las claves de proveedor pasan a vivir sólo en la API (en DevLog_Backend desde 2026-10-18). |
 | 2 | CI en GitHub Actions | **Hecho.** Compila con warnings como errores, comprueba que Core no tiene paquetes y corre los autotests offline. |
-| 3 | Precio de Deepgram | **Hecho:** `Pricing:Deepgram:PerMinute = 0.0052` en la nube (Nova-3 multilingüe, pregrabado, precio oficial). **Pendiente, con el OK del usuario:** ponerle costo a los 20 transcripts viejos sin precio (escribe en Postgres). |
+| 3 | Precio de Deepgram | **Hecho:** `Pricing:Deepgram:PerMinute = 0.0052` en la nube (Nova-3 multilingüe, pregrabado, precio oficial). ~~Pendiente: ponerle costo a los 20 transcripts viejos sin precio.~~ **Cerrado por decisión del usuario (2026-10-20):** se quedan sin precio, costo "desconocido". |
 | 4 | Caída de Postgres pierde la reunión | **Hecho:** `ConnectionRetry` reintenta al abrir ante errores transitorios. Si una caída larga llega a pasar, el plan es caer a SQLite + `HistoryMigrationService`, no un diario nuevo. |
 | 5 | Fase 4: comparar versiones de prompt | **Pendiente.** Continuo por diseño; falta diseñar la comparación lado a lado. |
 | 6 | Medir una reunión de 1 hora | **Cerrado por el usuario.** El riesgo conocido queda anotado: cada segmento de 9 min tiene el plazo de 30 s del SDK. |
