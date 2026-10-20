@@ -1492,7 +1492,12 @@ están en servidores Neon distintos).
   el Gmail real del dueño (contraseña de aplicación): correo recibido, enlace
   abierto en el navegador, contraseña cambiada e inicio de sesión con la nueva,
   contra la base local. `007` aplicada en producción el mismo día (DevLog
-  `60de009`); un fallo al pedir el reset va al log (`ILogger`), sin el usuario.
+  `60de009`); un fallo al pedir el reset va al log (`ILogger`).
+- **Logs de DevLog con el payload: hecho (2026-10-19, decisión del dueño).** Cada
+  línea de log de una petición lleva lo que mandó el cliente (método, ruta,
+  query, cuerpo JSON), con contraseñas, tokens, secretos y claves tachados y
+  sin cabeceras; producción solo registra errores; el cliente nunca ve el
+  detalle. DevLog `1808b54`, probado con la base caída y en marcha.
 - Falta en el paso A: subida por SAS, el worker (transcribir y extraer en el
   servidor), límite de peticiones y tope de gasto, despliegue.
 

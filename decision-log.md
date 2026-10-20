@@ -10,6 +10,7 @@ Every decision below was taken by the project owner and is in force as of this d
 
 | Date | Area | Decision | Chosen over |
 | --- | --- | --- | --- |
+| 2026-10-19 | DevLog logging | Every log line written during a request carries the caller's payload (method, path, query, JSON body), secrets redacted, for reproducing errors; production logs errors only; callers never see error details | Logging only the error type and message, without the payload |
 | 2026-10-19 | Records | Decision log kept as `decision-log.md` in the repo root | A Claude Doc outside the repo |
 | 2026-10-19 | DevLog passwords | Password reset by email, sent over SMTP from the owner's personal mailbox; the owner fills in the credentials by hand | Azure Communication Services Email; a dedicated email service |
 | 2026-10-19 | Phase 8 | Uploads go to a new private container in the existing Azure Storage account | A new storage account; uploading through the API |
@@ -117,7 +118,18 @@ With hashing, a forgotten password can only be replaced, so users need a way to 
 - **Gmail works with an app password:** turn on 2-Step Verification, create an app password, and use `smtp.gmail.com`, port 587 (STARTTLS), with the full address as the username. Personal Gmail caps sending at about 500 messages a day, far above this use (secondary sources: [Nylas](https://developer.nylas.com/docs/cookbook/email/gmail-smtp-settings.md), [n8n](https://docs.n8n.io/integrations/builtin/credentials/send-email/gmail)).
 - **Trade-offs accepted:** the mailbox credential sits on the server (an app password, revocable on its own, never the account's main password); reset emails come from a personal address and may land in spam.
 
-**State (2026-10-19):** built in DevLog_Backend `master` (`53c6ef8`, migration `007`) and DevLog_Frontend `master` (`61993d4`, pages `/forgot-password` and `/reset-password`). Tested locally with a test mail server (Mailpit): 24 checks pass, including the same answer for unknown users, refused reused or expired links, rate limits, and no token in the logs. On 2026-10-19 also tested end to end with the owner's real Gmail (app password), against the local database: email received, link opened in the browser, password changed, sign-in with the new one. Migration `007` applied in production the same day (DevLog `60de009`). A failure while opening a reset is caught so the answer stays the same, and goes to the normal log (`ILogger`) with the error type and message only, never the username: it is whatever an anonymous caller typed.
+**State (2026-10-19):** built in DevLog_Backend `master` (`53c6ef8`, migration `007`) and DevLog_Frontend `master` (`61993d4`, pages `/forgot-password` and `/reset-password`). Tested locally with a test mail server (Mailpit): 24 checks pass, including the same answer for unknown users, refused reused or expired links, rate limits, and no token in the logs. On 2026-10-19 also tested end to end with the owner's real Gmail (app password), against the local database: email received, link opened in the browser, password changed, sign-in with the new one. Migration `007` applied in production the same day (DevLog `60de009`). A failure while opening a reset is caught so the answer stays the same, and goes to the normal log (`ILogger`) with the error type and message, plus the request's payload (see "DevLog\_Backend: logging").
+
+## DevLog\_Backend: logging
+
+**Decision (owner, 2026-10-19):** keep what the caller sent with every error, so it can be reproduced later. The caller never learns error details. Production logs errors only.
+
+- **How:** a middleware (`Services/RequestPayloadLogging.cs`) reads each request once and attaches `Payload: <method> <path> query ... body ...` to every log line written while the request runs. In the console it shows on the line after the category; in a structured log (Azure later) it is a separate `Payload` field you can search.
+- **What is never logged:** any field or query parameter named like a password, token, secret or key, at any depth, becomes `"[redacted]"`; headers are not logged (they carry the JWT and device tokens). This keeps the earlier rule: never log a password, a reset token, its hash or the link.
+- **Limits:** only JSON bodies up to 64 KB are read; the logged text is cut at 4096 characters. Audio never goes through the API (uploads go straight to storage by SAS), so this does not touch meeting content.
+- **Levels:** production `Error` and above; Development and QA `Information`.
+- **Tested (2026-10-19)** with the database unreachable: login, reset request and reset confirm each logged their payload with the password, token, new password, a query-string token and a nested `apiKey` redacted; none of the test secrets appeared anywhere in the output; with Production settings no `info` or `warn` line was written. With the normal database, login and reset still read their bodies (401 and 400 as expected). DevLog `1808b54`.
+- **Trade-off accepted:** usernames, emails and other non-secret fields now sit in the logs. A new secret field whose name doesn't match the redaction list would be logged; the rule is in DevLog's `CLAUDE.md`.
 
 ## Data and configuration
 
@@ -168,3 +180,4 @@ These risks were accepted knowingly; each has a mitigation in place and a condit
 | DevLog login timing shows which usernames exist | An unknown username answers faster than a wrong password, since no hash is computed | None yet; login rate limits come with Phase 8 step A | Before the API is reachable from the internet |
 | Personal mailbox credential on the DevLog server | Whoever reads the server's settings can send mail as the owner | An app password (revocable alone, not the main password), only in untracked settings or the host's secret settings | The mailbox is used for anything sensitive, or other people get accounts |
 | Reset emails from a personal address | They can land in spam; the sender looks personal | None | Users miss reset emails |
+| Caller payloads in the DevLog logs | Whoever reads the logs sees usernames, emails and other non-secret request data | Secret-looking fields and all headers redacted; production keeps errors only; body size and log text capped | Other people get accounts, or a request carries a secret under an unexpected name |
