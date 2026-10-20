@@ -10,6 +10,8 @@ Every decision below was taken by the project owner and is in force as of this d
 
 | Date | Area | Decision | Chosen over |
 | --- | --- | --- | --- |
+| 2026-10-19 | DevLog users | `Select_Users` options: 0 = login check, 1 = one user by id, 2 = all; the frontend lists with 2 and never calls 0 (the renumbering closed a login that checked no password) | The original numbering (0 = all, 2 = password check) |
+| 2026-10-19 | DevLog logging | .NET's built-in `ILogger`, plus one custom middleware that adds the payload as a scope | A custom logger class; `Console.Error` |
 | 2026-10-19 | DevLog logging | Every log line written during a request carries the caller's payload (method, path, query, JSON body), secrets redacted, for reproducing errors; production logs errors only; callers never see error details | Logging only the error type and message, without the payload |
 | 2026-10-19 | Records | Decision log kept as `decision-log.md` in the repo root | A Claude Doc outside the repo |
 | 2026-10-19 | DevLog passwords | Password reset by email, sent over SMTP from the owner's personal mailbox; the owner fills in the credentials by hand | Azure Communication Services Email; a dedicated email service |
@@ -130,6 +132,17 @@ With hashing, a forgotten password can only be replaced, so users need a way to 
 - **Levels:** production `Error` and above; Development and QA `Information`.
 - **Tested (2026-10-19)** with the database unreachable: login, reset request and reset confirm each logged their payload with the password, token, new password, a query-string token and a nested `apiKey` redacted; none of the test secrets appeared anywhere in the output; with Production settings no `info` or `warn` line was written. With the normal database, login and reset still read their bodies (401 and 400 as expected). DevLog `1808b54`.
 - **Trade-off accepted:** usernames, emails and other non-secret fields now sit in the logs. A new secret field whose name doesn't match the redaction list would be logged; the rule is in DevLog's `CLAUDE.md`.
+- **Built-in logger, one custom piece (2026-10-19).** Logging uses .NET's built-in `ILogger` (Microsoft.Extensions.Logging): classes receive it in their constructor, and levels and destinations come from settings, so moving to Azure's log storage needs no code change. Chosen over a custom logger class or `Console.Error`, which writes only to a console window that does not exist in Container Apps, has no levels, and cannot be filtered. The only custom piece is the middleware above; it adds the payload through a built-in logging *scope*, so the classes that log (DL, BL) don't know it exists.
+- **Errors inside the API are caught where the caller must not learn anything.** The reset request catches its own failures and still answers the same 202 (the owner's idea), logging through `ILogger`. Cancellation (the caller hung up) is not logged as an error.
+
+## DevLog\_Backend: `Select_Users` options
+
+**Decision (2026-10-18, confirmed by the owner 2026-10-19):** `per_select_users` options mean 0 = login check (username + password), 1 = one user by id, 2 = all active users. The frontend never calls option 0.
+
+- **Why the renumbering:** in the original function (migration `001`), option 0 returned every active user with no filter, and option 2 was the password check. The login called option 0 and then kept whichever row had the typed username, so **the login never checked the password**: any password worked for an existing username. Making 0 the real check closed that hole; production got it with migration `006` on 2026-10-19.
+- **Why the frontend doesn't use option 0:** it's the password check. A users page has no reason to test passwords, and leaving it out means a logged-in user can't use the list endpoint to guess another user's password from the frontend.
+- **The bug it caused:** the backend was renumbered but the frontend was not. Its users page asked for option 1 with id 0 ("the user whose id is 0"), which matches no one, so the list was empty. Fixed 2026-10-19: it asks for option 2 (DevLog_Frontend `af8c11d`). Verified against the local database (option 1 with id 0 returned 0 users, option 2 returned all 8), and the owner confirmed the page works. **Closed.**
+- **Lesson:** a change to a stored function's meaning has to be checked against every caller, including the frontend, in the same turn.
 
 ## Data and configuration
 

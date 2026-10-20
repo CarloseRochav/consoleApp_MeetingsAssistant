@@ -1496,7 +1496,9 @@ están en servidores Neon distintos).
   pedir el reset va al log (`ILogger`).
 - **Lista de usuarios del frontend arreglada (2026-10-19).** Pedía la opción 1
   (un usuario por id) con `idUser 0` y recibía una lista vacía; ahora pide la 2
-  (todos). DevLog_Frontend `af8c11d`.
+  (todos). DevLog_Frontend `af8c11d`. Probado por el dueño: **cerrado**. Por qué
+  esa numeración (0 = login, 1 = por id, 2 = todos) en `decision-log.md`,
+  sección "DevLog_Backend: `Select_Users` options".
 - **Logs de DevLog con el payload: hecho (2026-10-19, decisión del dueño).** Cada
   línea de log de una petición lleva lo que mandó el cliente (método, ruta,
   query, cuerpo JSON), con contraseñas, tokens, secretos y claves tachados y
