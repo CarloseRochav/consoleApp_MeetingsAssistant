@@ -10,6 +10,8 @@ Every decision below was taken by the project owner and is in force as of this d
 
 | Date | Area | Decision | Chosen over |
 | --- | --- | --- | --- |
+| 2026-10-20 | DevLog login | Login limited to 10 attempts per 15 minutes per client address, plus equal timing (one bcrypt always, against a dummy hash when the user doesn't exist) | A per-username limit; both (a stranger could lock the owner out) |
+| 2026-10-20 | Phase 8 | Uploads built: the API signs a 60-minute create+write link to one blob it names, the client uploads straight to Storage, and the API checks the file before queuing the job | Uploading through the API |
 | 2026-10-20 | Cost history | The 20 old transcripts stay without a price; their cost stays "unknown" | Back-filling their cost with today's Deepgram price (a write to Postgres) |
 | 2026-10-20 | DevLog config | DevLog's production database credentials stay in plain text in the untracked `appsettings.Production.json`; not rotated now | Moving them to user-secrets or environment variables; rotating the Neon password |
 | 2026-10-20 | DevLog config | `appsettings.QA.json` stays with `YOUR_*` placeholders; there is no QA environment | Setting up a QA database |
@@ -138,6 +140,34 @@ With hashing, a forgotten password can only be replaced, so users need a way to 
 - **Built-in logger, one custom piece (2026-10-19).** Logging uses .NET's built-in `ILogger` (Microsoft.Extensions.Logging): classes receive it in their constructor, and levels and destinations come from settings, so moving to Azure's log storage needs no code change. Chosen over a custom logger class or `Console.Error`, which writes only to a console window that does not exist in Container Apps, has no levels, and cannot be filtered. The only custom piece is the middleware above; it adds the payload through a built-in logging *scope*, so the classes that log (DL, BL) don't know it exists.
 - **Errors inside the API are caught where the caller must not learn anything.** The reset request catches its own failures and still answers the same 202 (the owner's idea), logging through `ILogger`. Cancellation (the caller hung up) is not logged as an error.
 
+## DevLog\_Backend: login protection
+
+**Decision (owner, 2026-10-20): option A plus equal timing.** Options weighed:
+
+| Option | Experience for the owner | Cost | Effort | Trade-off |
+| --- | --- | --- | --- | --- |
+| **A. Per IP address (chosen)** | A typo or two never blocks you | Free | Small | An attacker with many IPs gets around it; people behind one IP share the limit |
+| B. Per username | An attack on your account blocks you too | Free | Medium | Stops guessing from any number of IPs, but a stranger can lock you out on purpose |
+| C. Both | Same as B | Free | Medium | Strongest, same lock-out problem |
+
+- **Why A:** two personal users with strong bcrypt passwords. A per-IP limit stops casual guessing without handing strangers a way to lock the owner out. Revisit B if other people get accounts.
+- **Why equal timing too:** the limit slows guessing but doesn't hide *which* usernames exist; the timing difference did. Migration 008 makes the database always compute one bcrypt, against a dummy hash (same cost 12, of a random string nobody knows) when the user doesn't exist.
+- **How:** the built-in ASP.NET rate limiter (same as the reset endpoints), policy `login`, 10 per 15 minutes per address, 429 past it; `per.per_check_login` in the database.
+- **Tested (2026-10-20, local):** unknown user about 175 ms, wrong password about 191 ms (before: about 1 ms vs 170 ms); right password still logs in; options 1 and 2 unchanged; the 11th and 12th login in a window answered 429. DevLog `0ecacb2`. Migration 008 is **not in production yet**.
+
+## Phase 8: uploads and jobs (built 2026-10-20)
+
+The decision (2026-10-19) was a new private container in the existing storage account, with the audio never going through the API. Built in DevLog `0ecacb2`, migration 009:
+
+- **Flow:** the client asks `Jobs/InsertUpdate_Jobs` option 0 and gets a job id and a link. It uploads the WAV straight to Storage with that link. Then it calls option 1; the API checks that the file is really in Storage before marking the job `queued`.
+- **Link limits, and why:** it covers **one blob whose name the API chooses** (`u<idUser>/<yyyy>/<MM>/<guid>.wav`), so a client can't overwrite someone else's file or pick paths. It allows **create + write only**, so a stolen link can't read meetings, list files or delete anything. It lasts **60 minutes**: long enough for a slow phone upload, short enough to be useless later. The storage key never leaves the server.
+- **Size limit 1 GiB** (about 3 hours of WAV), checked when the upload is confirmed: a SAS link cannot cap size, so a larger file is deleted and the job marked `failed`.
+- **Jobs live in Postgres** (`mtg.mtg_jobs`: awaiting_upload → queued → processing → done / failed), as decided: the worker reads queued jobs from there, no queue service.
+- **Who can use it:** the user login or a device token; jobs record which device asked; another user's job looks like it doesn't exist.
+- **Credential:** `Uploads:ConnectionString` (with the account key, needed to sign links) goes in DevLog's untracked `appsettings.json`, filled in by the owner, like SMTP. Until then the endpoints answer 503.
+- **Tested (2026-10-20)** against Azurite, Microsoft's local Storage emulator, not the real account: 27 checks pass. Among them: the link uploads (201), but can't read back, write another name, or list (403 each); it expires; confirming before uploading is refused; a file over the limit is deleted; another user gets 404; the link never appears in the log; the container is private.
+- **Not done yet:** the real storage account (needs the owner's connection string); migration 009 in production; cleanup of jobs that never get their file; the clients (desktop, phone) actually using this; the worker.
+
 ## DevLog\_Backend: `Select_Users` options
 
 **Decision (2026-10-18, confirmed by the owner 2026-10-19):** `per_select_users` options mean 0 = login check (username + password), 1 = one user by id, 2 = all active users. The frontend never calls option 0.
@@ -193,7 +223,8 @@ These risks were accepted knowingly; each has a mitigation in place and a condit
 | SAS link leaks | Anyone can download the installer, which holds no secrets, until 2028 | Read-only; revocable by replacing the access policy | A link is shared beyond the owner |
 | Keyterm list over 500 tokens | Deepgram rejects the request; the meeting is transcribed without the terms | Since 2026-10-18 the app retries without keyterms and warns; tested against Deepgram. The cost estimate then includes the keyterm extra that was not charged | — |
 | 9-minute segments with the SDK's 30-second request limit | A slow response fails a long meeting's segment | Known, closed by the owner after review | Failures appear in real meetings |
-| DevLog login timing shows which usernames exist | An unknown username answers faster than a wrong password, since no hash is computed | None yet; login rate limits come with Phase 8 step A | Before the API is reachable from the internet |
+| DevLog login timing shows which usernames exist | An unknown username answered faster than a wrong password, since no hash was computed | Closed by migration 008 (2026-10-20): one bcrypt always; measured 175 ms vs 191 ms. Applied locally; production needs the owner's yes | 008 is not in production when the API goes on the internet |
+| Login rate limit shares one bucket behind a proxy | In Container Apps every client looks like the proxy's address, so 10 logins per 15 minutes would apply to everyone together | Noted in DevLog's `CLAUDE.md`: add forwarded headers, trusting only the platform's proxy | At deployment (step 6) |
 | Personal mailbox credential on the DevLog server | Whoever reads the server's settings can send mail as the owner | An app password (revocable alone, not the main password), only in untracked settings or the host's secret settings | The mailbox is used for anything sensitive, or other people get accounts |
 | Reset emails from a personal address | They can land in spam; the sender looks personal | None | Users miss reset emails |
 | DevLog production credentials in plain text (owner's decision, 2026-10-20) | Whoever reads the developer's disk, or the early pushed commit that held a connection string, can reach the production database | File is git-ignored; never printed or copied into tracked files, logs or output | Before deploying to Container Apps (secrets then go in the host's secret settings), or if the disk or repo is exposed |

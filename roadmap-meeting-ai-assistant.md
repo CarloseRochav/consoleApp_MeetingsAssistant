@@ -1504,8 +1504,24 @@ están en servidores Neon distintos).
   query, cuerpo JSON), con contraseñas, tokens, secretos y claves tachados y
   sin cabeceras; producción solo registra errores; el cliente nunca ve el
   detalle. DevLog `1808b54`, probado con la base caída y en marcha.
-- Falta en el paso A: subida por SAS, el worker (transcribir y extraer en el
-  servidor), límite de peticiones y tope de gasto, despliegue.
+- **Login protegido: hecho (2026-10-20, decisión del dueño: opción A + tiempo
+  igual).** 10 intentos cada 15 minutos por dirección (429 después) y la
+  migración `008`: siempre un bcrypt, contra un hash de mentira si el usuario no
+  existe (medido: 175 ms vs 191 ms; antes 1 ms vs 170 ms). DevLog `0ecacb2`.
+  **Falta:** `008` en producción (con el sí del dueño) y, al desplegar,
+  cabeceras reenviadas sólo del proxy de la plataforma, o todos los clientes
+  comparten el mismo límite.
+- **Subida directa a Storage: hecha (2026-10-20).** `Jobs/InsertUpdate_Jobs`
+  opción 0 da un enlace SAS de 60 min, sólo crear+escribir, a un blob cuyo nombre
+  elige la API; el cliente sube el WAV directo; la opción 1 comprueba el archivo
+  en Storage y deja el trabajo `queued` en `mtg.mtg_jobs` (migración `009`), que
+  es la cola del worker. Tope 1 GiB. Probado contra Azurite (emulador local):
+  27 comprobaciones. **Falta:** la cadena de conexión real (la pone el dueño en
+  `Uploads:ConnectionString` del `appsettings.json` de DevLog), `009` en
+  producción, limpiar trabajos que nunca reciben su archivo, y que los clientes
+  la usen.
+- Falta en el paso A: el worker (transcribir y extraer en el servidor), tope de
+  gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
 Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que
@@ -1535,9 +1551,10 @@ warnings, 0 errores; Core con 0 paquetes). `--verify-api` queda para la CI.
 `--verify-postgres` los cubre, pero hay que correrlo donde el harness no esté
 bloqueado.
 
-**Falta en el paso A:** subida por enlace SAS, cola de trabajos con el pipeline
-(transcribir, extraer) del lado del servidor, tope de gasto diario, escritura
-de prompts y ajustes, Dockerfile y despliegue a Container Apps.
+**Falta en el paso A:** ~~subida por enlace SAS~~ (hecha 2026-10-20), el worker
+que toma la cola de trabajos y corre el pipeline (transcribir, extraer) del lado
+del servidor, tope de gasto diario, escritura de prompts y ajustes, Dockerfile y
+despliegue a Container Apps.
 
 ### Consecuencias de Container Apps para el paso A
 
