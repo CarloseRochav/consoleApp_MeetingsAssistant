@@ -10,6 +10,7 @@ Every decision below was taken by the project owner and is in force as of this d
 
 | Date | Area | Decision | Chosen over |
 | --- | --- | --- | --- |
+| 2026-10-20 | DevLog users | Editing a user (email, name) doesn't ask for their password; an empty password keeps the current one. Creating a user still requires one | Requiring the user's password on every edit |
 | 2026-10-20 | DevLog login | Login limited to 10 attempts per 15 minutes per client address, plus equal timing (one bcrypt always, against a dummy hash when the user doesn't exist) | A per-username limit; both (a stranger could lock the owner out) |
 | 2026-10-20 | Phase 8 | Uploads built: the API signs a 60-minute create+write link to one blob it names, the client uploads straight to Storage, and the API checks the file before queuing the job | Uploading through the API |
 | 2026-10-20 | Cost history | The 20 old transcripts stay without a price; their cost stays "unknown" | Back-filling their cost with today's Deepgram price (a write to Postgres) |
@@ -178,6 +179,7 @@ The decision (2026-10-19) was a new private container in the existing storage ac
 - **Why the frontend doesn't use option 0:** it's the password check. A users page has no reason to test passwords, and leaving it out means a logged-in user can't use the list endpoint to guess another user's password from the frontend.
 - **The bug it caused:** the backend was renumbered but the frontend was not. Its users page asked for option 1 with id 0 ("the user whose id is 0"), which matches no one, so the list was empty. Fixed 2026-10-19: it asks for option 2 (DevLog_Frontend `af8c11d`). Verified against the local database (option 1 with id 0 returned 0 users, option 2 returned all 8), and the owner confirmed the page works. **Closed.**
 - **Lesson:** a change to a stored function's meaning has to be checked against every caller, including the frontend, in the same turn.
+- **Editing without the password (owner, 2026-10-20):** an admin edits any user's email or name without knowing their password, which bcrypt makes impossible to read anyway. The database already kept the current password when the update brings an empty one; only the form demanded it. Now the field is optional when editing ("Leave empty to keep the current password") and still required when creating. Tested through the API with the form's exact request: 200, email changed, the old password still logs in. DevLog_Frontend `43cae6f`.
 
 ## Data and configuration
 
