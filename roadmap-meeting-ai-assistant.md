@@ -1516,9 +1516,9 @@ están en servidores Neon distintos).
   elige la API; el cliente sube el WAV directo; la opción 1 comprueba el archivo
   en Storage y deja el trabajo `queued` en `mtg.mtg_jobs` (migración `009`), que
   es la cola del worker. Tope 1 GiB. Probado contra Azurite (emulador local):
-  27 comprobaciones. **Falta:** la cadena de conexión real (la pone el dueño en
-  `Uploads:ConnectionString` del `appsettings.json` de DevLog), `009` en
-  producción, limpiar trabajos que nunca reciben su archivo, y que los clientes
+  27 comprobaciones; y contra la cuenta real (cadena puesta a mano por el dueño,
+  2026-10-20): 14 comprobaciones, contenedor `uploads` creado privado, sin
+  archivos de prueba dejados. **Falta:** `009` en producción, limpiar trabajos que nunca reciben su archivo, y que los clientes
   la usen.
 - Falta en el paso A: el worker (transcribir y extraer en el servidor), tope de
   gasto, escritura de prompts y ajustes, despliegue.

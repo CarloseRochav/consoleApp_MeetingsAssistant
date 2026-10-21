@@ -166,7 +166,8 @@ The decision (2026-10-19) was a new private container in the existing storage ac
 - **Who can use it:** the user login or a device token; jobs record which device asked; another user's job looks like it doesn't exist.
 - **Credential:** `Uploads:ConnectionString` (with the account key, needed to sign links) goes in DevLog's untracked `appsettings.json`, filled in by the owner, like SMTP. Until then the endpoints answer 503.
 - **Tested (2026-10-20)** against Azurite, Microsoft's local Storage emulator, not the real account: 27 checks pass. Among them: the link uploads (201), but can't read back, write another name, or list (403 each); it expires; confirming before uploading is refused; a file over the limit is deleted; another user gets 404; the link never appears in the log; the container is private.
-- **Not done yet:** the real storage account (needs the owner's connection string); migration 009 in production; cleanup of jobs that never get their file; the clients (desktop, phone) actually using this; the worker.
+- **Real account (2026-10-20):** the owner set `Uploads:ConnectionString` by hand (HTTPS, with the account key; git-ignored file). Tested against it with the size limit lowered to 5 bytes for the run, so the API deleted its own 10-byte test file: 14 checks pass. The API created the private `uploads` container; the link is HTTPS-only with create+write; the upload worked (201); reading, writing another name and listing were refused (403); confirming read the real file size; the link and the key never appeared in the log. The deletion of the test file was not checked independently (the link can't read, by design); the API reported no error.
+- **Not done yet:** migration 009 in production; cleanup of jobs that never get their file; the clients (desktop, phone) actually using this; the worker.
 
 ## DevLog\_Backend: `Select_Users` options
 
