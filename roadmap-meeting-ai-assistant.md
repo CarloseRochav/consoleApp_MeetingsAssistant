@@ -1521,8 +1521,11 @@ están en servidores Neon distintos).
   archivos de prueba dejados. `009` aplicada en producción el 2026-10-20 (sí
   del dueño). **Falta:** limpiar trabajos que nunca reciben su archivo, y que los clientes
   la usen.
-- Falta en el paso A: el worker (transcribir y extraer en el servidor), tope de
-  gasto, escritura de prompts y ajustes, despliegue.
+- **Worker: en curso (decidido 2026-10-20).** Repo propio y nuevo
+  (`C:\Projects\MeetingAssistant_Worker`, GitHub privado), con el código del
+  pipeline copiado de Meeting Assistant (decisión del dueño, en
+  `decision-log.md`). Lee y escribe la base de DevLog sólo por funciones `mtg_*`.
+- Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
 Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que

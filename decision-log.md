@@ -10,6 +10,7 @@ Every decision below was taken by the project owner and is in force as of this d
 
 | Date | Area | Decision | Chosen over |
 | --- | --- | --- | --- |
+| 2026-10-20 | Phase 8 worker | The worker lives in its own new repo (`C:\Projects\MeetingAssistant_Worker`, private GitHub), with the pipeline code it needs **copied** from Meeting Assistant | The worker inside the Meeting Assistant repo; inside DevLog; reusing the code by git submodule or a private NuGet package |
 | 2026-10-20 | DevLog users | Editing a user (email, name) doesn't ask for their password; an empty password keeps the current one. Creating a user still requires one | Requiring the user's password on every edit |
 | 2026-10-20 | DevLog login | Login limited to 10 attempts per 15 minutes per client address, plus equal timing (one bcrypt always, against a dummy hash when the user doesn't exist) | A per-username limit; both (a stranger could lock the owner out) |
 | 2026-10-20 | Phase 8 | Uploads built: the API signs a 60-minute create+write link to one blob it names, the client uploads straight to Storage, and the API checks the file before queuing the job | Uploading through the API |
@@ -170,6 +171,23 @@ The decision (2026-10-19) was a new private container in the existing storage ac
 - **Real account (2026-10-20):** the owner set `Uploads:ConnectionString` by hand (HTTPS, with the account key; git-ignored file). Tested against it with the size limit lowered to 5 bytes for the run, so the API deleted its own 10-byte test file: 14 checks pass. The API created the private `uploads` container; the link is HTTPS-only with create+write; the upload worked (201); reading, writing another name and listing were refused (403); confirming read the real file size; the link and the key never appeared in the log. The deletion of the test file was not checked independently (the link can't read, by design); the API reported no error.
 - **Production:** migration 009 applied 2026-10-20 (owner's yes); `mtg_jobs` exists and is empty, users and sessions unchanged.
 - **Not done yet:** cleanup of jobs that never get their file; the clients (desktop, phone) actually using this; the worker.
+
+## Phase 8: the worker's repo (decided 2026-10-20)
+
+**Decision (owner):** a dedicated repo and project for the worker, with the pipeline code copied in. Options weighed for where it lives:
+
+| Option | Experience for the owner | Cost | Effort | Trade-off |
+| --- | --- | --- | --- | --- |
+| A. In the Meeting Assistant repo, reusing its pipeline | One fix covers desktop and server | Free | Medium | Two repos to deploy |
+| B. In DevLog, rewritten | All server code in one repo | Free | Large | Two copies that can drift |
+| C. In DevLog, pointing at Meeting Assistant's code | One server repo, no copies | Free | Medium | Fragile build across two checkouts |
+| **New dedicated repo (chosen by the owner)** | The worker is its own thing: own repo, own container, own history | Free | Medium | See below |
+
+And for how that repo gets the pipeline code: **copy (chosen)**, over a git submodule (one copy, pinned) or a private NuGet package (needs a feed and a publish step).
+
+- **Why (owner's choice):** the worker is a separate service and gets a separate home; copying keeps it fully independent, with the simplest build and nothing to fetch from another repo.
+- **Trade-off accepted:** prompts, report parsing, the Deepgram client and the cost rules exist twice (desktop and worker). Until the desktop stops processing meetings locally, a fix to any of them has to be made in both repos. The worker's copy records which Meeting Assistant commit it came from, so differences can be found.
+- **Still DevLog's database:** the worker reads and writes only through `mtg_*` stored functions defined in DevLog's migrations, as the rest of the server does.
 
 ## DevLog\_Backend: `Select_Users` options
 
