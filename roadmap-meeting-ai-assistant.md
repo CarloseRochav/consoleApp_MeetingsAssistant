@@ -1531,8 +1531,12 @@ están en servidores Neon distintos).
   escribe la base de DevLog sólo por funciones `mtg_*` (migración `010`, DevLog
   `64f3eeb`). Probado: 4 pruebas de integración contra una copia desechable del
   esquema de DevLog y Azurite, con Deepgram y LLM de mentira; la imagen Docker
-  compila y arranca en Linux. **Falta:** `010` en producción (con el sí del
-  dueño); una prueba real con Deepgram y Gemini (el dueño pone las claves y la
+  compila y arranca en Linux. **`010` aplicada en producción el 2026-10-21** (sí
+  del dueño, corrida por él con psql desde un contenedor `postgres:18`): las 3
+  columnas del worker y las funciones `mtg_worker_*` existen, la transacción
+  terminó en COMMIT y tomar un trabajo con la cola vacía no devuelve nada. El
+  reconteo de usuarios y sesiones no corrió (la consulta de control estaba mal).
+  **Falta:** una prueba real con Deepgram y Gemini (el dueño pone las claves y la
   cadena de la base en el `appsettings.json` del worker); desplegarlo.
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
