@@ -1508,9 +1508,9 @@ están en servidores Neon distintos).
   igual).** 10 intentos cada 15 minutos por dirección (429 después) y la
   migración `008`: siempre un bcrypt, contra un hash de mentira si el usuario no
   existe (medido: 175 ms vs 191 ms; antes 1 ms vs 170 ms). DevLog `0ecacb2`.
-  **Falta:** `008` en producción (con el sí del dueño) y, al desplegar,
-  cabeceras reenviadas sólo del proxy de la plataforma, o todos los clientes
-  comparten el mismo límite.
+  `008` aplicada en producción el 2026-10-20 (sí del dueño): allí 266 ms vs
+  252 ms. **Falta:** al desplegar, cabeceras reenviadas sólo del proxy de la
+  plataforma, o todos los clientes comparten el mismo límite.
 - **Subida directa a Storage: hecha (2026-10-20).** `Jobs/InsertUpdate_Jobs`
   opción 0 da un enlace SAS de 60 min, sólo crear+escribir, a un blob cuyo nombre
   elige la API; el cliente sube el WAV directo; la opción 1 comprueba el archivo
@@ -1518,7 +1518,8 @@ están en servidores Neon distintos).
   es la cola del worker. Tope 1 GiB. Probado contra Azurite (emulador local):
   27 comprobaciones; y contra la cuenta real (cadena puesta a mano por el dueño,
   2026-10-20): 14 comprobaciones, contenedor `uploads` creado privado, sin
-  archivos de prueba dejados. **Falta:** `009` en producción, limpiar trabajos que nunca reciben su archivo, y que los clientes
+  archivos de prueba dejados. `009` aplicada en producción el 2026-10-20 (sí
+  del dueño). **Falta:** limpiar trabajos que nunca reciben su archivo, y que los clientes
   la usen.
 - Falta en el paso A: el worker (transcribir y extraer en el servidor), tope de
   gasto, escritura de prompts y ajustes, despliegue.

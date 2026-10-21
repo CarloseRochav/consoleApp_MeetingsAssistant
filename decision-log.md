@@ -153,7 +153,7 @@ With hashing, a forgotten password can only be replaced, so users need a way to 
 - **Why A:** two personal users with strong bcrypt passwords. A per-IP limit stops casual guessing without handing strangers a way to lock the owner out. Revisit B if other people get accounts.
 - **Why equal timing too:** the limit slows guessing but doesn't hide *which* usernames exist; the timing difference did. Migration 008 makes the database always compute one bcrypt, against a dummy hash (same cost 12, of a random string nobody knows) when the user doesn't exist.
 - **How:** the built-in ASP.NET rate limiter (same as the reset endpoints), policy `login`, 10 per 15 minutes per address, 429 past it; `per.per_check_login` in the database.
-- **Tested (2026-10-20, local):** unknown user about 175 ms, wrong password about 191 ms (before: about 1 ms vs 170 ms); right password still logs in; options 1 and 2 unchanged; the 11th and 12th login in a window answered 429. DevLog `0ecacb2`. Migration 008 is **not in production yet**.
+- **Tested (2026-10-20, local):** unknown user about 175 ms, wrong password about 191 ms (before: about 1 ms vs 170 ms); right password still logs in; options 1 and 2 unchanged; the 11th and 12th login in a window answered 429. DevLog `0ecacb2`. Migration 008 applied in production 2026-10-20 (owner's yes): there, a wrong password and an unknown user both match nobody and take about the same time (266 ms vs 252 ms).
 
 ## Phase 8: uploads and jobs (built 2026-10-20)
 
@@ -167,7 +167,8 @@ The decision (2026-10-19) was a new private container in the existing storage ac
 - **Credential:** `Uploads:ConnectionString` (with the account key, needed to sign links) goes in DevLog's untracked `appsettings.json`, filled in by the owner, like SMTP. Until then the endpoints answer 503.
 - **Tested (2026-10-20)** against Azurite, Microsoft's local Storage emulator, not the real account: 27 checks pass. Among them: the link uploads (201), but can't read back, write another name, or list (403 each); it expires; confirming before uploading is refused; a file over the limit is deleted; another user gets 404; the link never appears in the log; the container is private.
 - **Real account (2026-10-20):** the owner set `Uploads:ConnectionString` by hand (HTTPS, with the account key; git-ignored file). Tested against it with the size limit lowered to 5 bytes for the run, so the API deleted its own 10-byte test file: 14 checks pass. The API created the private `uploads` container; the link is HTTPS-only with create+write; the upload worked (201); reading, writing another name and listing were refused (403); confirming read the real file size; the link and the key never appeared in the log. The deletion of the test file was not checked independently (the link can't read, by design); the API reported no error.
-- **Not done yet:** migration 009 in production; cleanup of jobs that never get their file; the clients (desktop, phone) actually using this; the worker.
+- **Production:** migration 009 applied 2026-10-20 (owner's yes); `mtg_jobs` exists and is empty, users and sessions unchanged.
+- **Not done yet:** cleanup of jobs that never get their file; the clients (desktop, phone) actually using this; the worker.
 
 ## DevLog\_Backend: `Select_Users` options
 
@@ -224,7 +225,7 @@ These risks were accepted knowingly; each has a mitigation in place and a condit
 | SAS link leaks | Anyone can download the installer, which holds no secrets, until 2028 | Read-only; revocable by replacing the access policy | A link is shared beyond the owner |
 | Keyterm list over 500 tokens | Deepgram rejects the request; the meeting is transcribed without the terms | Since 2026-10-18 the app retries without keyterms and warns; tested against Deepgram. The cost estimate then includes the keyterm extra that was not charged | — |
 | 9-minute segments with the SDK's 30-second request limit | A slow response fails a long meeting's segment | Known, closed by the owner after review | Failures appear in real meetings |
-| DevLog login timing shows which usernames exist | An unknown username answered faster than a wrong password, since no hash was computed | Closed by migration 008 (2026-10-20): one bcrypt always; measured 175 ms vs 191 ms. Applied locally; production needs the owner's yes | 008 is not in production when the API goes on the internet |
+| DevLog login timing shows which usernames exist | An unknown username answered faster than a wrong password, since no hash was computed | Closed by migration 008, applied in production 2026-10-20 (owner's yes): one bcrypt always; measured there 252 ms (unknown user) vs 266 ms (wrong password) | Someone replaces `per_check_login` without the dummy hash |
 | Login rate limit shares one bucket behind a proxy | In Container Apps every client looks like the proxy's address, so 10 logins per 15 minutes would apply to everyone together | Noted in DevLog's `CLAUDE.md`: add forwarded headers, trusting only the platform's proxy | At deployment (step 6) |
 | Personal mailbox credential on the DevLog server | Whoever reads the server's settings can send mail as the owner | An app password (revocable alone, not the main password), only in untracked settings or the host's secret settings | The mailbox is used for anything sensitive, or other people get accounts |
 | Reset emails from a personal address | They can land in spam; the sender looks personal | None | Users miss reset emails |
