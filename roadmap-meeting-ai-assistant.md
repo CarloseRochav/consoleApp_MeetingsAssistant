@@ -1521,10 +1521,19 @@ están en servidores Neon distintos).
   archivos de prueba dejados. `009` aplicada en producción el 2026-10-20 (sí
   del dueño). **Falta:** limpiar trabajos que nunca reciben su archivo, y que los clientes
   la usen.
-- **Worker: en curso (decidido 2026-10-20).** Repo propio y nuevo
-  (`C:\Projects\MeetingAssistant_Worker`, GitHub privado), con el código del
-  pipeline copiado de Meeting Assistant (decisión del dueño, en
-  `decision-log.md`). Lee y escribe la base de DevLog sólo por funciones `mtg_*`.
+- **Worker: construido (2026-10-20).** Repo propio
+  (`C:\Projects\MeetingAssistant_Worker`, GitHub privado
+  `CarloseRochav/MeetingAssistant_Worker`, `055046e`), con el código del
+  pipeline copiado de Meeting Assistant `b214269` (decisión del dueño; lista y
+  cambios en su `COPIED.md`). Toma trabajos `queued`, baja el WAV, transcribe,
+  guarda el transcript enseguida, extrae con el prompt activo y guarda el
+  reporte; hasta 3 intentos, el audio en silencio falla sin reintentar. Lee y
+  escribe la base de DevLog sólo por funciones `mtg_*` (migración `010`, DevLog
+  `64f3eeb`). Probado: 4 pruebas de integración contra una copia desechable del
+  esquema de DevLog y Azurite, con Deepgram y LLM de mentira; la imagen Docker
+  compila y arranca en Linux. **Falta:** `010` en producción (con el sí del
+  dueño); una prueba real con Deepgram y Gemini (el dueño pone las claves y la
+  cadena de la base en el `appsettings.json` del worker); desplegarlo.
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.

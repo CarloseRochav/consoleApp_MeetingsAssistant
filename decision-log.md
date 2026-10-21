@@ -188,6 +188,15 @@ And for how that repo gets the pipeline code: **copy (chosen)**, over a git subm
 - **Why (owner's choice):** the worker is a separate service and gets a separate home; copying keeps it fully independent, with the simplest build and nothing to fetch from another repo.
 - **Trade-off accepted:** prompts, report parsing, the Deepgram client and the cost rules exist twice (desktop and worker). Until the desktop stops processing meetings locally, a fix to any of them has to be made in both repos. The worker's copy records which Meeting Assistant commit it came from, so differences can be found.
 - **Still DevLog's database:** the worker reads and writes only through `mtg_*` stored functions defined in DevLog's migrations, as the rest of the server does.
+- **Built (2026-10-20):** `CarloseRochav/MeetingAssistant_Worker` (private), `055046e`; DevLog migration 010 (`64f3eeb`). How it behaves, and why:
+  - **Transcript saved before the LLM runs**, as on the desktop: it is the one result that costs money to make again, so a failed extraction is retried without paying Deepgram twice.
+  - **Up to 3 attempts per job**; **silent audio fails at once** (retrying would only pay again); a job left half-done by a worker that died is taken again after 60 minutes.
+  - **Several workers can run side by side**: a job is claimed with `FOR UPDATE SKIP LOCKED`, so two never take the same one.
+  - **Same settings as the desktop**, read again for every job: the worker's own file, then the shared cloud settings (never secrets, filtered by the copied `SettingKeyPolicy`), then environment variables on top. A price or model changed from the desktop applies to the next meeting without restarting.
+  - **The uploaded WAV is kept** in Storage as the backup of the original audio; the worker's temporary copy is deleted.
+  - **The report goes to the database only**; writing it into the Obsidian vault stays on the desktop.
+  - **Copied code:** 20 files, verbatim except one marked change (no Windows-only audio reader). The list, the source commit and a command to find drift are in the worker's `COPIED.md`.
+- **Tested:** 4 integration tests against a throwaway copy of DevLog's schema and Azurite with fake Deepgram and LLM clients (full job with exact costs, retry without re-transcribing, silent audio, missing audio); the Linux container image builds, runs as a non-root user and holds no settings file. **Not yet tested with the real Deepgram and Gemini**: that needs the owner's keys in the worker's settings.
 
 ## DevLog\_Backend: `Select_Users` options
 
