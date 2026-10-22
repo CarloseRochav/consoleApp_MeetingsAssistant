@@ -8,9 +8,14 @@ namespace MeetingAssistant.Core.Models;
 /// </summary>
 public static class MeetingReportMarkdownRenderer
 {
-    public static string Render(MeetingReport report)
+    /// <param name="timeZone">Zona de la hora del título; null = UTC.</param>
+    public static string Render(MeetingReport report, TimeZoneInfo? timeZone = null)
     {
         DateTimeOffset generatedAt = report.Metadata?.GeneratedAtUtc ?? DateTimeOffset.UtcNow;
+        if (timeZone is not null)
+        {
+            generatedAt = TimeZoneInfo.ConvertTime(generatedAt, timeZone);
+        }
         var sb = new StringBuilder();
 
         sb.AppendLine($"# Meeting report — {generatedAt:yyyy-MM-dd HH:mm}");

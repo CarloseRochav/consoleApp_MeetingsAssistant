@@ -1536,8 +1536,42 @@ están en servidores Neon distintos).
   columnas del worker y las funciones `mtg_worker_*` existen, la transacción
   terminó en COMMIT y tomar un trabajo con la cola vacía no devuelve nada. El
   reconteo de usuarios y sesiones no corrió (la consulta de control estaba mal).
-  **Falta:** una prueba real con Deepgram y Gemini (el dueño pone las claves y la
-  cadena de la base en el `appsettings.json` del worker); desplegarlo.
+  **Prueba real con Deepgram y Gemini: hecha (2026-10-21, opción B del dueño).**
+  Base local de DevLog (Docker), API de DevLog local, Storage y proveedores
+  reales. Usuario local de prueba (`idUser 24`), login, enlace SAS, subida del
+  WAV del spike de Fase 0 (30 s, con voz) al contenedor `uploads` real (201),
+  confirmación → trabajo 28 `queued`; el worker (base cambiada sólo por
+  `ConnectionStrings__DevLog`) lo tomó, transcribió (290 caracteres, texto
+  correcto), guardó la sesión 7 y el reporte (prompt `assignment-meeting` v1,
+  `gemini-3.5-flash-lite`, 834/211 tokens) en 6 s, primer intento. Costo de
+  Deepgram guardado: US$0.0026 (30 s × 0.0052/min, correcto). Antes de correrlo
+  se cerraron como `failed` 5 trabajos sobrantes de las pruebas de subida en la
+  base local. **Hallazgos:** (1) sin precio del LLM se guarda costo 0 en vez de
+  NULL ("desconocido"): `EstimateCostUsd` copiado del escritorio devuelve 0, a
+  diferencia de la transcripción, que devuelve null; (2) el título del reporte
+  sale en UTC ("2026-10-22 00:39" para las 17:39 locales); (3) el transcript no
+  guarda el modelo (`model` vacío). El blob de prueba queda en `uploads`.
+  **(1) y (2) arreglados el mismo día (pedido del dueño), en los dos repos:**
+  `ICostEstimator.EstimateCostUsd` devuelve `decimal?` (null si falta cualquiera
+  de los dos precios); el `.md` del vault no escribe `cost-usd` sin precio; el
+  render del título acepta una zona horaria opcional (null = UTC, lo que sigue
+  usando el escritorio) y el worker la toma de `Worker:TimeZone` (IANA, p. ej.
+  `America/Los_Angeles`; una zona desconocida lo para al arrancar). Probado:
+  `--verify-render` con 8 comprobaciones nuevas y los demás autotests offline
+  del escritorio en verde; 6/6 pruebas de integración del worker (2 nuevas); la
+  imagen `dotnet/runtime:10.0` (Ubuntu 24.04) trae `tzdata`. **No probado:** el
+  mensaje nuevo de "costo desconocido" en la app real (sólo aparece al
+  re-extraer con un modelo sin precio), ni el worker con zona dentro del
+  contenedor. **(3) arreglado también (2026-10-21):** `TranscriptionResult` lleva
+  un `Model` opcional, el cliente de Deepgram devuelve `nova-3` (constante, la
+  misma que pide), y el escritorio y el worker lo guardan en el transcript (el
+  worker por `p_transcript_model`, que ya existía en `010`). Probado: comprobación
+  nueva en `--verify-reextraction`, todos los autotests offline en verde, 6/6 del
+  worker. **Dueño (2026-10-21):** `Worker:TimeZone = America/Tijuana`, puesto en
+  el `appsettings.json` del worker; el blob de prueba se borró de `uploads`
+  (comprobado: ya no existe); `log.txt` del SDK de Deepgram ignorado en el repo
+  del worker.
+  **Falta:** desplegarlo.
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.

@@ -636,7 +636,7 @@ public partial class HistoryViewModel : ObservableObject
                 session.SessionId, Transcript, prompt.Id);
 
             StatusMessage = $"Reporte nuevo guardado en el vault: {result.SavedReportPath} " +
-                $"(US${result.Metadata.EstimatedCostUsd:F6}).";
+                (result.Metadata.EstimatedCostUsd is { } cost ? $"(US${cost:F6})." : "(costo desconocido: el modelo no tiene precio).");
 
             await RefreshAsync();
             await LoadSessionDetailAsync(session.SessionId);

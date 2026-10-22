@@ -348,7 +348,7 @@ public sealed class MeetingPipeline : IMeetingPipeline
                         id,
                         transcription.Transcript,
                         Provider: TranscriptionProviderName,
-                        Model: null,
+                        Model: transcription.Model,
                         CostUsd: _transcriptionCostEstimator?.EstimateTranscriptionCostUsd(
                             TranscriptionProviderName, transcription.AudioDuration),
                         CreatedAtUtc: DateTimeOffset.UtcNow),

@@ -104,17 +104,24 @@ public sealed class LlmReportExtractor : ILlmReportExtractor
     private readonly ICostEstimator _costEstimator;
     private readonly IPromptCatalog _promptCatalog;
     private readonly int _maxOutputTokens;
+    private readonly TimeZoneInfo? _reportTimeZone;
 
+    /// <param name="reportTimeZone">
+    /// Zona de la hora en el título del reporte. null = UTC, como hasta ahora en
+    /// el escritorio; el worker, que corre en UTC, pasa la del dueño.
+    /// </param>
     public LlmReportExtractor(
         ILlmClient llmClient,
         ICostEstimator costEstimator,
         IPromptCatalog promptCatalog,
-        int maxOutputTokens = 4096)
+        int maxOutputTokens = 4096,
+        TimeZoneInfo? reportTimeZone = null)
     {
         _llmClient = llmClient;
         _costEstimator = costEstimator;
         _promptCatalog = promptCatalog;
         _maxOutputTokens = maxOutputTokens;
+        _reportTimeZone = reportTimeZone;
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -143,7 +150,7 @@ public sealed class LlmReportExtractor : ILlmReportExtractor
                 $"{_llmClient.Provider} ({_llmClient.Model}) no devolvió texto para extraer el reporte.");
         }
 
-        decimal estimatedCost = _costEstimator.EstimateCostUsd(
+        decimal? estimatedCost = _costEstimator.EstimateCostUsd(
             _llmClient.Provider, _llmClient.Model, response.InputTokens, response.OutputTokens);
 
         var metadata = new MeetingReportMetadata(
@@ -158,16 +165,16 @@ public sealed class LlmReportExtractor : ILlmReportExtractor
 
         return prompt.OutputKind switch
         {
-            PromptOutputKind.StructuredMeetingReport => BuildMeetingReport(response.Text, metadata, prompt),
+            PromptOutputKind.StructuredMeetingReport => BuildMeetingReport(response.Text, metadata, prompt, _reportTimeZone),
             PromptOutputKind.FunctionalSpecification => BuildFunctionalSpec(response.Text, metadata, prompt),
             _ => throw new InvalidOperationException($"Output kind no soportado: {prompt.OutputKind}.")
         };
     }
 
-    private static ExtractionResult BuildMeetingReport(string raw, MeetingReportMetadata metadata, PromptDefinition prompt)
+    private static ExtractionResult BuildMeetingReport(string raw, MeetingReportMetadata metadata, PromptDefinition prompt, TimeZoneInfo? timeZone)
     {
         MeetingReport report = MeetingReportParser.Parse(raw) with { Metadata = metadata };
-        return new ExtractionResult(MeetingReportMarkdownRenderer.Render(report), report, metadata, prompt);
+        return new ExtractionResult(MeetingReportMarkdownRenderer.Render(report, timeZone), report, metadata, prompt);
     }
 
     private static ExtractionResult BuildFunctionalSpec(string raw, MeetingReportMetadata metadata, PromptDefinition prompt)

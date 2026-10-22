@@ -88,7 +88,7 @@ internal sealed class FakeTranscriptionClient : ITranscriptionClient
 
     public Task<TranscriptionResult> TranscribeAsync(string audioPath, CancellationToken cancellationToken = default) =>
         Task.FromResult(new TranscriptionResult(
-            _transcript, TimeSpan.FromMinutes(3), TimeSpan.FromSeconds(2), "es", []));
+            _transcript, TimeSpan.FromMinutes(3), TimeSpan.FromSeconds(2), "es", [], "fake-nova"));
 }
 
 /// <summary>

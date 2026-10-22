@@ -85,7 +85,11 @@ public sealed class MarkdownReportStorage : IReportStorage
             sb.AppendLine($"prompt-version: {metadata.PromptVersion}");
             sb.AppendLine($"tokens-input: {metadata.InputTokens}");
             sb.AppendLine($"tokens-output: {metadata.OutputTokens}");
-            sb.AppendLine($"cost-usd: {metadata.EstimatedCostUsd:F6}");
+            // Sin precio no se escribe: un 0 en el frontmatter parecería medido.
+            if (metadata.EstimatedCostUsd is { } cost)
+            {
+                sb.AppendLine($"cost-usd: {cost:F6}");
+            }
         }
         sb.AppendLine("---");
         sb.AppendLine();

@@ -7,7 +7,8 @@ namespace MeetingAssistant.Core.Abstractions;
 /// </summary>
 public interface ICostEstimator
 {
-    decimal EstimateCostUsd(string provider, string model, int inputTokens, int outputTokens);
+    /// <summary>null cuando el modelo no tiene precio configurado: costo desconocido, no gratis.</summary>
+    decimal? EstimateCostUsd(string provider, string model, int inputTokens, int outputTokens);
 }
 
 /// <summary>

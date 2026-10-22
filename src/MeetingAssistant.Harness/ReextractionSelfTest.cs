@@ -88,6 +88,7 @@ internal static class ReextractionSelfTest
             TranscriptRecord? todayTranscript = await history.GetTranscriptAsync(afterRecording[0].SessionId);
             Check("el pipeline guarda el costo de transcripcion cuando hay precio (3 min x 0.01)",
                 todayTranscript?.CostUsd == 0.03m);
+            Check("y el modelo con que se transcribio (antes quedaba vacio)", todayTranscript?.Model == "fake-nova");
             Check("no hubo fallos de historial", historyFailures.Count == 0);
             if (historyFailures.Count > 0) historyFailures.ForEach(f => Console.WriteLine($"        {f}"));
 

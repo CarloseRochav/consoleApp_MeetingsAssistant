@@ -10,7 +10,8 @@ public sealed record TranscriptionResult(
     TimeSpan AudioDuration,
     TimeSpan Latency,
     string? DetectedLanguage,
-    IReadOnlyList<DiarizedUtterance> Utterances);
+    IReadOnlyList<DiarizedUtterance> Utterances,
+    string? Model = null);
 
 public sealed record DiarizedUtterance(string Speaker, string Transcript);
 

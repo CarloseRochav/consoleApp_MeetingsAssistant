@@ -11,6 +11,9 @@ namespace MeetingAssistant.Infrastructure.Transcription;
 
 public sealed class DeepgramTranscriptionClient : ITranscriptionClient
 {
+    /// <summary>El modelo que se pide, y el que queda guardado con el transcript.</summary>
+    public const string Model = "nova-3";
+
     // Deepgram's synchronous pre-recorded endpoint returns 504 for Nova requests
     // over 10 minutes. Leave one minute of margin for WAV metadata and rounding.
     private static readonly TimeSpan MaximumSegmentDuration = TimeSpan.FromMinutes(9);
@@ -79,7 +82,7 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
                 }
             }
 
-            return new TranscriptionResult(string.Join(Environment.NewLine + Environment.NewLine, transcripts), audioDuration, latency, language, utterances);
+            return new TranscriptionResult(string.Join(Environment.NewLine + Environment.NewLine, transcripts), audioDuration, latency, language, utterances, Model);
         }
         finally
         {
@@ -111,7 +114,7 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
         requestCancellation.CancelAfter(Deepgram.Abstractions.v1.Constants.DefaultRESTTimeout);
 
         var stopwatch = Stopwatch.StartNew();
-        var schema = new PreRecordedSchema { Model = "nova-3", Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true };
+        var schema = new PreRecordedSchema { Model = Model, Language = "multi", SmartFormat = true, DiarizeModel = "latest", Utterances = true };
         // Sin términos no se manda el parámetro: Deepgram cobra el extra sólo si viene.
         if (keyterms.Count > 0) schema.Keyterm = [.. keyterms];
 
@@ -122,7 +125,7 @@ public sealed class DeepgramTranscriptionClient : ITranscriptionClient
         JsonElement root = document.RootElement;
         string transcript = ReadString(root, "results", "channels", 0, "alternatives", 0, "transcript") ?? string.Empty;
         string? language = ReadString(root, "results", "channels", 0, "detected_language");
-        return new TranscriptionResult(transcript, ReadAudioDuration(segmentPath), stopwatch.Elapsed, language, ReadUtterances(root));
+        return new TranscriptionResult(transcript, ReadAudioDuration(segmentPath), stopwatch.Elapsed, language, ReadUtterances(root), Model);
     }
 
     private static IReadOnlyList<string> CreateSegments(string audioPath, TimeSpan audioDuration)

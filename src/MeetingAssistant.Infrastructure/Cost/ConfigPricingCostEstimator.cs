@@ -26,22 +26,21 @@ public sealed class ConfigPricingCostEstimator : ICostEstimator, ITranscriptionC
         _configuration = configuration;
     }
 
-    public decimal EstimateCostUsd(string provider, string model, int inputTokens, int outputTokens)
+    /// <summary>
+    /// Sin precio —falta cualquiera de los dos, o el 0 que trae el archivo de
+    /// ejemplo como marcador— devuelve <b>null</b>, igual que la transcripción:
+    /// un cero guardado parecería medido. No lanza: que falte un precio no
+    /// tumba la extracción del reporte.
+    /// </summary>
+    public decimal? EstimateCostUsd(string provider, string model, int inputTokens, int outputTokens)
     {
         string key = $"Pricing:{provider}:{model}";
-        decimal inputPerMillion = _configuration.GetValue<decimal?>($"{key}:InputPerMillion") ?? 0m;
-        decimal outputPerMillion = _configuration.GetValue<decimal?>($"{key}:OutputPerMillion") ?? 0m;
+        decimal? inputPerMillion = _configuration.GetValue<decimal?>($"{key}:InputPerMillion");
+        decimal? outputPerMillion = _configuration.GetValue<decimal?>($"{key}:OutputPerMillion");
+        if (inputPerMillion is null or <= 0m || outputPerMillion is null or <= 0m) return null;
 
-        if (inputPerMillion == 0m && outputPerMillion == 0m)
-        {
-            // No hay precio configurado para este proveedor/modelo todavía.
-            // Devolver 0 en vez de lanzar — no queremos que falte un precio en
-            // el config tumbe el pipeline completo de extracción del reporte.
-            return 0m;
-        }
-
-        decimal inputCost = inputTokens / 1_000_000m * inputPerMillion;
-        decimal outputCost = outputTokens / 1_000_000m * outputPerMillion;
+        decimal inputCost = inputTokens / 1_000_000m * inputPerMillion.Value;
+        decimal outputCost = outputTokens / 1_000_000m * outputPerMillion.Value;
         return inputCost + outputCost;
     }
 

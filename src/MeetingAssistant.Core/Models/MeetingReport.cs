@@ -73,7 +73,7 @@ public sealed record MeetingReportMetadata(
     string PromptVersion,
     int InputTokens,
     int OutputTokens,
-    decimal EstimatedCostUsd,
+    decimal? EstimatedCostUsd,
     string? PromptId = null);
 
 /// <summary>

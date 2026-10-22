@@ -189,7 +189,9 @@ internal static class PipelineRunCommand
             Console.WriteLine($"Model: {report.Metadata.LlmModel}");
             Console.WriteLine($"Prompt version: {report.Metadata.PromptVersion}");
             Console.WriteLine($"Tokens: {report.Metadata.InputTokens} input, {report.Metadata.OutputTokens} output");
-            Console.WriteLine($"Estimated cost: US${report.Metadata.EstimatedCostUsd:F6}");
+            Console.WriteLine(report.Metadata.EstimatedCostUsd is { } cost
+                ? $"Estimated cost: US${cost:F6}"
+                : "Estimated cost: unknown (no price for this model)");
         }
     }
 
