@@ -1602,6 +1602,17 @@ están en servidores Neon distintos).
   afectada, y una primera entrada falsa no cambia el balde. **Falta comprobar ya
   desplegado** que el proxy de Container Apps agrega la dirección y no la
   reemplaza.
+- **Opción C construida y probada en local (2026-10-21).** DevLog: `JobWakeQueue`
+  manda el id del trabajo a la cola `mtg-jobs` después de dejarlo `queued` (con la
+  cola caída la confirmación igual responde 200 en ~4 s y queda en el log; antes
+  esperaba 36 s). Worker: `Worker:Mode = Drain` limpia los avisos, procesa todo lo
+  `queued` y termina; con la base caída devuelve un aviso demorado y sale con
+  código 1. Probado: DevLog contra Azurite (cola y blob); worker 8/8 pruebas de
+  integración (2 nuevas de drain). DevLog tiene `Dockerfile` (ningún `appsettings`
+  en la imagen; probado corriendo sólo con variables de entorno) y
+  `tools/Deploy-Azure.ps1` (Images, Api, Worker; secretos sólo como secretos de
+  Container Apps). **Falta:** `011` en producción, precios del LLM para el worker,
+  y correr el despliegue (lo corre el dueño).
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
