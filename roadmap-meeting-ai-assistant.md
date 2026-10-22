@@ -1572,6 +1572,36 @@ están en servidores Neon distintos).
   (comprobado: ya no existe); `log.txt` del SDK de Deepgram ignorado en el repo
   del worker.
   **Falta:** desplegarlo.
+- **Despliegue: cómo despierta el worker (decisión del dueño, 2026-10-21): opción C.**
+  Al quedar `queued` un trabajo, la API deja un mensaje en una cola de Azure
+  Storage (la cuenta existente); un **Container Apps Job** arranca con ese
+  mensaje, procesa los trabajos `queued` y termina, así que escala a cero y Neon
+  sólo despierta cuando hay trabajo. El estado sigue en Postgres; la cola es sólo
+  el aviso. Revisa la decisión del 2026-10-19 de no usar un servicio de cola.
+  Descartadas: worker siempre encendido consultando cada 10 s (Neon despierto
+  todo el mes) o cada 5–10 min (igual paga el contenedor, reportes tarde). Precios
+  de Container Apps y horas de Neon **sin verificar**. **Orden decidido:** primero
+  el tope de gasto y las cabeceras reenviadas del límite de login, después la
+  cola y el despliegue (API de DevLog + worker como Job, en el entorno
+  `cae-devlog-agent` y el registro `crdevlogagent` existentes, `eastus2`).
+  Registrado en `decision-log.md`.
+- **Tope de gasto: hecho y probado en local (2026-10-21).** Migración `011`
+  (`mtg_select_spend`) en DevLog; se revisa antes de dar un enlace de subida: 429
+  si el gasto conocido del día llega a US$2 (`Jobs:DailyCapUsd`) **o** si hay 3
+  trabajos sin terminar (`Jobs:MaxInFlight`), que acota lo que un día se puede
+  pasar porque el costo de un trabajo se sabe recién al procesarlo. El día empieza
+  a medianoche de `Jobs:TimeZone` (`America/Tijuana` en producción). Un precio
+  faltante cuenta como nada: **el worker necesita precio para su modelo de LLM**.
+  Probado contra la base local: tope de prueba → 429 con el reinicio a las 07:00
+  UTC; tope real → 3 subidas aceptadas, la cuarta 429. `011` **no** está en
+  producción todavía.
+- **Cabeceras reenviadas: hechas y probadas en local (2026-10-21).**
+  `ForwardedHeaders:Enabled` (sólo en el despliegue) con `ForwardLimit = 1`: cuenta
+  sólo la última dirección de `X-Forwarded-For`, la que agrega el proxy. Probado:
+  11 logins fallidos de una dirección → 429 en el 11, otra dirección no se ve
+  afectada, y una primera entrada falsa no cambia el balde. **Falta comprobar ya
+  desplegado** que el proxy de Container Apps agrega la dirección y no la
+  reemplaza.
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.

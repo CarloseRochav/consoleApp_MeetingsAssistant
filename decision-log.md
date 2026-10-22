@@ -10,6 +10,8 @@ Every decision below was taken by the project owner and is in force as of this d
 
 | Date | Area | Decision | Chosen over |
 | --- | --- | --- | --- |
+| 2026-10-21 | Phase 8 deploy | The worker wakes by signal: when a job is queued, the API drops a message on an Azure Storage queue (existing account); a Container Apps **Job** starts on it, works through the queued jobs and exits, scaling to zero. Job state stays in Postgres; the queue is only the wake-up. This revises "no separate queue service" (2026-10-19) | An always-on worker checking every 10 s (keeps Neon awake 24/7); an always-on worker checking every 5–10 min (still pays the container; reports start late) |
+| 2026-10-21 | Phase 8 deploy | Before deploying: build the $2/day spending cap and the forwarded-headers fix for the login rate limit | Deploying first and adding them later |
 | 2026-10-20 | Phase 8 worker | The worker lives in its own new repo (`C:\Projects\MeetingAssistant_Worker`, private GitHub), with the pipeline code it needs **copied** from Meeting Assistant | The worker inside the Meeting Assistant repo; inside DevLog; reusing the code by git submodule or a private NuGet package |
 | 2026-10-20 | DevLog users | Editing a user (email, name) doesn't ask for their password; an empty password keeps the current one. Creating a user still requires one | Requiring the user's password on every edit |
 | 2026-10-20 | DevLog login | Login limited to 10 attempts per 15 minutes per client address, plus equal timing (one bcrypt always, against a dummy hash when the user doesn't exist) | A per-username limit; both (a stranger could lock the owner out) |
