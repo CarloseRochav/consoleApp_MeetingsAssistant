@@ -1611,7 +1611,7 @@ están en servidores Neon distintos).
   integración (2 nuevas de drain). DevLog tiene `Dockerfile` (ningún `appsettings`
   en la imagen; probado corriendo sólo con variables de entorno) y
   `tools/Deploy-Azure.ps1` (Images, Api, Worker; secretos sólo como secretos de
-  Container Apps). **Falta:** `011` en producción, precios del LLM para el worker,
+  Container Apps). `011` aplicada en producción el 2026-10-21 (la corrió el dueño; mismos 2 usuarios, 24 sesiones, 0 trabajos antes y después). **Falta:** precios del LLM para el worker,
   y correr el despliegue (lo corre el dueño).
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
