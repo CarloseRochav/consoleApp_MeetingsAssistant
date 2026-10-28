@@ -1613,6 +1613,21 @@ están en servidores Neon distintos).
   `tools/Deploy-Azure.ps1` (Images, Api, Worker; secretos sólo como secretos de
   Container Apps). `011` aplicada en producción el 2026-10-21 (la corrió el dueño; mismos 2 usuarios, 24 sesiones, 0 trabajos antes y después). **Falta:** precios del LLM para el worker,
   y correr el despliegue (lo corre el dueño).
+- **Precio del LLM del worker (2026-10-27).** Leído en producción (sólo lectura):
+  `mtg_settings` tiene `Llm:Provider = AzureFoundry`, `AzureFoundry:Deployment =
+  grok-4.6`, el endpoint y los dos precios de Deepgram, y **ningún precio de LLM**.
+  Esa capa tapa al archivo del worker (que dice Gemini), así que el worker usa
+  grok-4.6 y busca `Pricing:Azure AI Foundry:grok-4.6:*`. El único precio estaba en
+  el archivo local (2.00 / 6.00, sin verificar), y el script de despliegue lo
+  saltaría: Container Apps no acepta espacios en el nombre de una variable.
+  **Decisión del dueño: opción A**, los dos precios como filas de `mtg_settings`
+  (registrado en `decision-log.md`). **Precio aceptado por el dueño
+  (2026-10-28): US$2.00 entrada / US$6.00 salida por millón de tokens**, los del
+  archivo del worker; no se comparó con la página de precios en esta sesión.
+  **grok-4.6 es elección deliberada del dueño** (registrado 2026-10-28; reemplaza
+  a Gemini Flash-Lite de Fase 0 como modelo en uso). **Falta:** escribir las dos
+  filas en producción (lo corre el dueño: simulación y luego `-Apply`), releerlas,
+  y comprobar en el primer trabajo de Stage 3 que el reporte guarda costo.
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
