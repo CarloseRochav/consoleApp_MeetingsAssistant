@@ -1625,9 +1625,16 @@ están en servidores Neon distintos).
   (2026-10-28): US$2.00 entrada / US$6.00 salida por millón de tokens**, los del
   archivo del worker; no se comparó con la página de precios en esta sesión.
   **grok-4.6 es elección deliberada del dueño** (registrado 2026-10-28; reemplaza
-  a Gemini Flash-Lite de Fase 0 como modelo en uso). **Falta:** escribir las dos
-  filas en producción (lo corre el dueño: simulación y luego `-Apply`), releerlas,
-  y comprobar en el primer trabajo de Stage 3 que el reporte guarda costo.
+  a Gemini Flash-Lite de Fase 0 como modelo en uso). **Escrito en producción
+  (2026-10-28, lo corrió el dueño):** la simulación mostró que no había filas
+  `Pricing:Azure AI Foundry:*`; con `-Apply`, `mtg_import_settings` escribió 2
+  filas (`...:grok-4.6:InputPerMillion = 2`, `...:OutputPerMillion = 6`), se
+  releyeron dentro de la misma transacción y se confirmó (`COMMIT`). La entrada
+  `Azure AI Foundry:grok-4.6` del `appsettings.json` del worker queda: es la capa
+  de abajo, así que la fila de producción la tapa; el despliegue la salta con un
+  aviso, y su recuento de precios cuenta los de Gemini, que no se usan.
+  **Falta:** comprobar en el primer trabajo real (Stage 3) que el reporte guarda
+  costo.
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
