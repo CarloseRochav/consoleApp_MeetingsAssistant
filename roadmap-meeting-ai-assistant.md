@@ -1653,7 +1653,19 @@ están en servidores Neon distintos).
   comprobado:** que la cola `mtg-jobs` exista ya (la crea la API con el primer
   aviso; hasta entonces el disparador no tiene qué leer), ni ninguna ejecución del
   worker. **Falta:** Stage 3, el primer trabajo real de punta a punta.
-- Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
+- **Stage 3 hecho (2026-10-29, lo corrió el dueño con `tools\Run-Stage3.cmd` de
+  DevLog, sin commitear todavía).** Login → enlace de subida (trabajo 1) → WAV a
+  Storage → confirmación (`queued`, 23:48:22 UTC) → la cola `mtg-jobs` despertó a
+  `caj-mtg-worker` a los 14 s (ejecución `caj-mtg-worker-f8z7m`, 23:48:36–23:50:37,
+  `Succeeded`) → `done` con 1 intento → sesión 25, reporte 14, Azure AI Foundry /
+  grok-4.6, 739 tokens de entrada / 245 de salida, `cost_micro_usd = 2948`, que
+  cuadra con 739 × 2 + 245 × 6 por millón. Markdown de 1085 bytes; **su contenido
+  no se revisó en esta sesión**. **No comprobado:** el costo de Deepgram del
+  transcript (el script sólo lee el reporte).
+- Falta en el paso A (al 2026-10-29): comprobar ya desplegado que el proxy agrega la dirección en
+  `X-Forwarded-For`; limpiar trabajos que nunca reciben su archivo; escritura de
+  prompts y ajustes. ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
+  ~~despliegue~~ (hecho 2026-10-29) y ~~Stage 3~~ (hecho 2026-10-29).
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
 Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que
