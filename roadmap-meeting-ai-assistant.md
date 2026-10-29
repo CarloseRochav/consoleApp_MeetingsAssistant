@@ -1635,6 +1635,24 @@ están en servidores Neon distintos).
   aviso, y su recuento de precios cuenta los de Gemini, que no se usan.
   **Falta:** comprobar en el primer trabajo real (Stage 3) que el reporte guarda
   costo.
+- **Despliegue hecho (2026-10-29, lo corrió el dueño con `tools\Deploy-Azure.ps1`).**
+  `ca-devlog-api` corre `devlog-api:8ed4d1b` (`Succeeded`, `Running`), con CORS y
+  `PasswordReset:ResetUrl` apuntando al frontend desplegado (`ca-devlog-frontend`);
+  comprobado con un preflight real: el origen del frontend recibe
+  `access-control-allow-origin`, `localhost:5173` no. `caj-mtg-worker` creado con
+  `meeting-assistant-worker:2c3bfb7`: disparo por la cola `mtg-jobs` de
+  `stdevlogagent`, `Worker:Mode = Drain`, una ejecución a la vez, 2 h de plazo, sin
+  reintento; secretos `db`, `storage`, `deepgram`, `gemini`, `foundry` (sólo
+  nombres revisados). La migración `012` (roles, de DevLog) ya estaba en
+  producción: encontrada con una consulta de sólo lectura, sin registro de quién ni
+  cuándo. Tres arreglos al script en el camino, todos en `master` de DevLog: CORS y
+  enlace de reinicio desde `$FrontendUrl` (antes salían del `appsettings.json` de
+  desarrollo, localhost); el spec para `az` sin BOM (Windows PowerShell 5.1 lo
+  agregaba y `az` fallaba con "mapping values are not allowed here"); `Exists`
+  devuelve falso en 5.1 cuando el recurso no existe (antes lanzaba). **No
+  comprobado:** que la cola `mtg-jobs` exista ya (la crea la API con el primer
+  aviso; hasta entonces el disparador no tiene qué leer), ni ninguna ejecución del
+  worker. **Falta:** Stage 3, el primer trabajo real de punta a punta.
 - Falta en el paso A: tope de gasto, escritura de prompts y ajustes, despliegue.
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
