@@ -1738,6 +1738,40 @@ están en servidores Neon distintos).
   worker nuevo (que use los ajustes de su dueño y borre el audio): se cubre con
   `Verify-Api.cmd -WithStage3`.
 - **Paso A: ✅ hecho (2026-10-30).** Sigue el paso C (spike Android).
+
+### Paso C — spike Android (empezado 2026-10-30)
+
+Decisiones del dueño (2026-10-30, en `decision-log.md`): repo privado nuevo
+`C:\Projects\MeetingAssistant_Android`; el audio va por la API real (token de
+dispositivo); el `.md` se escribe en una carpeta que elige el dueño (todavía no
+hay vault en el teléfono); pruebas en el teléfono del dueño por USB.
+
+Hallazgo antes de empezar: la API y el worker **sólo aceptan WAV** (la API firma
+`audio/wav` y el worker lee la duración y parte el WAV en segmentos de 9 min). El
+spike sube WAV de 16 kHz mono (≈115 MB/h, contra ≈320 MB/h del escritorio); la
+calidad de AAC/Opus contra WAV se mide aparte, mandando los tres archivos a
+Deepgram desde la PC. Aceptar audio comprimido en el servidor queda para después
+del spike, si la medición lo justifica.
+
+Qué responde el spike: (1) 60 min de micrófono con la pantalla apagada en un
+servicio en primer plano, sin cortes; (2) si una llamada en el mismo teléfono
+deja al micrófono en silencio; (3) calidad de AAC/Opus a 16 kHz contra WAV en
+Deepgram; (4) subida que sobrevive a cerrar la app, sin red y reinicio; (5)
+escritura del `.md` en una carpeta elegida.
+
+**App del spike construida (2026-10-30)**, `CarloseRochav/MeetingAssistant_Android`
+(privado, `8953c65`): Kotlin con el Kotlin integrado de AGP 9.4.1, Gradle 9.7.1,
+compileSdk 36.1, minSdk 29, vistas del framework, WorkManager como única
+librería. `RecorderService` (servicio en primer plano de tipo micrófono, 16 kHz
+mono, una línea por minuto en `spike.log` con audio contra reloj, dBFS, segundos
+en cero, la marca "silenced" de Android, modo de audio, pantalla y batería),
+`Encoder` (AAC-LC .m4a 32 kbps y Opus .ogg 24 kbps con los codificadores del
+teléfono), `UploadWorker` (trabajo → PUT a Storage → confirmar → esperar →
+reporte, reanudable por pasos), token de dispositivo cifrado con el Keystore, y
+en la PC `tools\Install-Spike.ps1`, `tools\Pull-Recordings.ps1` y
+`tools\Compare-Encodings.ps1` (WER de AAC/Opus contra el WAV en Deepgram).
+**Comprobado:** compila sin warnings. **Sin probar todavía:** nada corrió en un
+teléfono (ninguno conectado al construirlo); las cinco preguntas siguen abiertas.
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
   ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
