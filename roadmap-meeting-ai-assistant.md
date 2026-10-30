@@ -1304,7 +1304,7 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 
 ---
 
-## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A en curso)
+## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A hecho 2026-10-30)
 
 **Objetivo:** que el escritorio y una app Android en Kotlin sean dos clientes
 delgados de una API propia. La API es la única que habla con la base y con los
@@ -1658,7 +1658,7 @@ están en servidores Neon distintos).
   aviso; hasta entonces el disparador no tiene qué leer), ni ninguna ejecución del
   worker. **Falta:** Stage 3, el primer trabajo real de punta a punta.
 - **Stage 3 hecho (2026-10-29, lo corrió el dueño con `tools\Run-Stage3.cmd` de
-  DevLog, sin commitear todavía).** Login → enlace de subida (trabajo 1) → WAV a
+  DevLog, ya commiteado).** Login → enlace de subida (trabajo 1) → WAV a
   Storage → confirmación (`queued`, 23:48:22 UTC) → la cola `mtg-jobs` despertó a
   `caj-mtg-worker` a los 14 s (ejecución `caj-mtg-worker-f8z7m`, 23:48:36–23:50:37,
   `Succeeded`) → `done` con 1 intento → sesión 25, reporte 14, Azure AI Foundry /
@@ -1702,8 +1702,44 @@ están en servidores Neon distintos).
   `baseline -Through 012 -Apply` y `up -Apply` (013 aplicada); según el dueño
   "todo funcionó", sin la salida pegada en la sesión. El `status` previo al
   despliegue lo confirma: 12 aplicadas (001, 003–013), ninguna pendiente.
-- Falta en el paso A (al 2026-10-29): escritura de prompts y ajustes.
-  ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
+- **Cierre del paso A: decisiones del dueño (2026-10-29)**, registradas en
+  `decision-log.md`. (1) Los precios sólo los escribe un admin, en la base
+  compartida; un usuario elige proveedor, modelo y términos clave, pero sólo un
+  modelo con precio (si no, 400), porque el tope diario sólo cuenta costos con
+  precio. (2) Por la API se escriben las secciones de la lista del escritorio
+  (`Pricing`, `Llm`, `Gemini`, `AzureFoundry`, `Deepgram`, nunca un secreto) menos
+  las direcciones (`*:Endpoint`): el worker manda su clave de Foundry a esa
+  dirección. (3) La salida del paso A es un solo comando de DevLog que llama a
+  todos los endpoints en producción con un usuario de prueba (reemplaza "los
+  autotests del harness contra la API", que pasan al paso B). (4) El worker borra
+  el audio de `uploads` apenas el trabajo queda `done`; uno que falla del todo lo
+  conserva. (5) **Configuración por usuario en dos capas:** una base compartida
+  (las filas de hoy, la escriben los admins) y las filas propias de cada usuario
+  (ajustes y versiones de prompt); lo propio gana sobre la base. Cualquier
+  usuario con sesión escribe sólo lo suyo; el worker arma cada trabajo con las
+  capas de su dueño. Hoy no cambia nada al desplegar.
+- **Configuración por usuario, verificación y borrado del audio: desplegados
+  (2026-10-30).** DevLog PR #9 (`8915615`): migración `014` (capas base + propias,
+  CHECK que deja los precios fuera de las filas de usuario; las opciones 0/1 de
+  siempre no cambian), `Meetings/Select_Settings`, `Meetings/InsertUpdate_Settings`,
+  `Meetings/Insert_Prompt_Versions` y opciones 2/3 en `Select_Prompt_Versions`, y
+  `tools\Verify-Api.cmd`. Worker PR #2 (`e67a204`): cada trabajo lee los ajustes y
+  prompts de su dueño sobre la base (los precios sólo de la base) y borra su audio
+  de `uploads` al quedar `done`. Probado en local: API 60/60 casos con tres
+  usuarios de prueba; worker 12/12 pruebas de integración. En producción: `014`
+  aplicada con dbmate (la corrió el dueño; 13 aplicadas, ninguna pendiente);
+  `Release-Api.ps1 -Pr 9 -Apply -AutoRollback` → `devlog-api:d1bdd01` →
+  `8915615`, revisión `ca-devlog-api--0000005` lista, 401 anónimo, Healthy;
+  `Deploy-Azure -Step Worker` → `caj-mtg-worker` con
+  `meeting-assistant-worker:e67a204`. **Prueba de salida del paso A:**
+  `Verify-Api.cmd` contra producción como admin (usuario 1): **53 pasan, 0
+  fallan** (2026-10-30). **No comprobado en producción:** el 403 de una escritura
+  compartida de un usuario no admin (cubierto en local), y un trabajo real con el
+  worker nuevo (que use los ajustes de su dueño y borre el audio): se cubre con
+  `Verify-Api.cmd -WithStage3`.
+- **Paso A: ✅ hecho (2026-10-30).** Sigue el paso C (spike Android).
+  ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
+  (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
   ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
   ~~despliegue~~ (hecho 2026-10-29), ~~Stage 3~~ (hecho 2026-10-29) y
   ~~cabeceras reenviadas ya desplegado~~ (comprobado 2026-10-29).
@@ -1736,10 +1772,9 @@ warnings, 0 errores; Core con 0 paquetes). `--verify-api` queda para la CI.
 `--verify-postgres` los cubre, pero hay que correrlo donde el harness no esté
 bloqueado.
 
-**Falta en el paso A:** ~~subida por enlace SAS~~ (hecha 2026-10-20), el worker
-que toma la cola de trabajos y corre el pipeline (transcribir, extraer) del lado
-del servidor, tope de gasto diario, escritura de prompts y ajustes, Dockerfile y
-despliegue a Container Apps.
+**Falta en el paso A (lista de esta rama abandonada, ya cerrada):** todo hecho
+en DevLog_Backend y el worker; ver "Avance del paso A" arriba (paso A hecho el
+2026-10-30).
 
 ### Consecuencias de Container Apps para el paso A
 
