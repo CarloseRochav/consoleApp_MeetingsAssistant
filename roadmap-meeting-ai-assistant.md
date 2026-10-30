@@ -1599,9 +1599,13 @@ están en servidores Neon distintos).
   `ForwardedHeaders:Enabled` (sólo en el despliegue) con `ForwardLimit = 1`: cuenta
   sólo la última dirección de `X-Forwarded-For`, la que agrega el proxy. Probado:
   11 logins fallidos de una dirección → 429 en el 11, otra dirección no se ve
-  afectada, y una primera entrada falsa no cambia el balde. **Falta comprobar ya
-  desplegado** que el proxy de Container Apps agrega la dirección y no la
-  reemplaza.
+  afectada, y una primera entrada falsa no cambia el balde. **Comprobado ya
+  desplegado (2026-10-29):** `ForwardedHeaders__Enabled = true` en
+  `ca-devlog-api` (1 réplica como máximo); 11 logins fallidos de un usuario
+  inexistente, cada uno con un `X-Forwarded-For` falso distinto (`203.0.113.1`–`.11`):
+  10 × 401 y el 11 → 429. La dirección que cuenta es la que pone el proxy, no la
+  que escribe el cliente. **No comprobado:** que otra dirección real tenga su
+  propio balde (sólo había una a mano; en local sí se probó).
 - **Opción C construida y probada en local (2026-10-21).** DevLog: `JobWakeQueue`
   manda el id del trabajo a la cola `mtg-jobs` después de dejarlo `queued` (con la
   cola caída la confirmación igual responde 200 en ~4 s y queda en el log; antes
@@ -1662,10 +1666,44 @@ están en servidores Neon distintos).
   cuadra con 739 × 2 + 245 × 6 por millón. Markdown de 1085 bytes; **su contenido
   no se revisó en esta sesión**. **No comprobado:** el costo de Deepgram del
   transcript (el script sólo lee el reporte).
-- Falta en el paso A (al 2026-10-29): comprobar ya desplegado que el proxy agrega la dirección en
-  `X-Forwarded-For`; limpiar trabajos que nunca reciben su archivo; escritura de
-  prompts y ajustes. ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
-  ~~despliegue~~ (hecho 2026-10-29) y ~~Stage 3~~ (hecho 2026-10-29).
+- **Limpieza de enlaces de subida abandonados: decisión del dueño (2026-10-29),
+  opción A** (registrada en `decision-log.md`). Al pedir un enlace nuevo
+  (opción 0), la API marca `failed` los trabajos `awaiting_upload` **del mismo
+  usuario** cuyo enlace venció hace más de **1 hora**, y borra su archivo de
+  `uploads` si quedó. Descartadas: que lo haga el worker al final de cada
+  ejecución, un trabajo de limpieza diario programado, dejarlo. **Aparte, sin
+  decidir:** el audio de los trabajos procesados también queda en `uploads`.
+  **Construido y probado en local (2026-10-29)**, rama `expire-abandoned-uploads`
+  de DevLog: migración `013` (`mtg_select_jobs` opción 2, interna; `Select_Jobs`
+  la rechaza desde clientes con 400), `Uploads:ExpiredGraceMinutes = 60`, y la
+  limpieza en `CreateUploadAsync` (primero el archivo, después `failed`; un error
+  sólo avisa en el log). Probado contra el Postgres de Docker y Azurite con dos
+  usuarios de prueba (borrados después): los vencidos hace 2 h quedan `failed` y
+  su archivo se borra; uno vencido hace 30 min (dentro de la gracia) y los del
+  otro usuario no se tocan; confirmar uno limpiado → 409; con Azurite apagado el
+  enlace nuevo igual sale (200) y el trabajo se limpia en el siguiente. `013`
+  re-ejecutable. `013` aplicada en producción con dbmate (2026-10-29, el dueño).
+  **Falta:** redesplegar la API (la corre el dueño).
+- **Migraciones de DevLog con dbmate (decisión del dueño, 2026-10-29)**, por npx,
+  versión fija 2.36.0, envuelto en `tools\Db.ps1` (`status`, `up`, `baseline`;
+  producción sólo con `-Apply`). 001–012 se registran como ya aplicadas; el
+  formato de dbmate empieza en 013; la 002 obsoleta sale de `db/migrations`;
+  `--no-dump-schema` para no pisar `db/schema.sql`. Descartadas: script propio con
+  psql en Docker, el editor SQL de Neon, Flyway/grate. Registrado en
+  `decision-log.md`. **Montado y probado en local (2026-10-29)**, en Windows
+  PowerShell 5.1: `status` es de sólo lectura (no crea su tabla); `baseline
+  -Through 012` registró 001, 003–012; `up` aplicó 013 y lo registró; un segundo
+  `up` no hace nada; una migración rota de prueba se revirtió y no quedó
+  registrada. dbmate 2.36 exige un bloque `-- migrate:down` (vacío). **En
+  producción (2026-10-29, lo corrió el dueño):** `status` conectó con Neon,
+  `baseline -Through 012 -Apply` y `up -Apply` (013 aplicada); según el dueño
+  "todo funcionó", sin la salida pegada en la sesión. **Falta:** redesplegar la
+  API.
+- Falta en el paso A (al 2026-10-29): redesplegar la API con la limpieza de
+  enlaces abandonados (`013` ya está en producción); escritura de prompts y
+  ajustes. ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
+  ~~despliegue~~ (hecho 2026-10-29), ~~Stage 3~~ (hecho 2026-10-29) y
+  ~~cabeceras reenviadas ya desplegado~~ (comprobado 2026-10-29).
 
 **Tanda 1 vieja, 2026-10-18 — esqueleto, tokens y lectura, en la rama `fase-8-api`.
 Abandonada como código el mismo día** (ver "Cambio de decisión" arriba): lo que
