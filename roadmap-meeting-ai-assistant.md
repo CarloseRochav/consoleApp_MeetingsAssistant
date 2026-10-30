@@ -1683,7 +1683,10 @@ están en servidores Neon distintos).
   otro usuario no se tocan; confirmar uno limpiado → 409; con Azurite apagado el
   enlace nuevo igual sale (200) y el trabajo se limpia en el siguiente. `013`
   re-ejecutable. `013` aplicada en producción con dbmate (2026-10-29, el dueño).
-  **Falta:** redesplegar la API (la corre el dueño).
+  **Desplegado (2026-10-29)** con `tools\Release-Api.ps1 -Pr 6 -Apply -AutoRollback`:
+  PR #6 de DevLog fusionado, `devlog-api:5aa22cb` → `d1bdd01`, revisión
+  `ca-devlog-api--0000004` lista, `POST /Jobs/Select_Jobs` anónimo → 401, salud
+  Healthy. No se probó todavía un enlace vencido real en producción.
 - **Migraciones de DevLog con dbmate (decisión del dueño, 2026-10-29)**, por npx,
   versión fija 2.36.0, envuelto en `tools\Db.ps1` (`status`, `up`, `baseline`;
   producción sólo con `-Apply`). 001–012 se registran como ya aplicadas; el
@@ -1697,11 +1700,11 @@ están en servidores Neon distintos).
   registrada. dbmate 2.36 exige un bloque `-- migrate:down` (vacío). **En
   producción (2026-10-29, lo corrió el dueño):** `status` conectó con Neon,
   `baseline -Through 012 -Apply` y `up -Apply` (013 aplicada); según el dueño
-  "todo funcionó", sin la salida pegada en la sesión. **Falta:** redesplegar la
-  API.
-- Falta en el paso A (al 2026-10-29): redesplegar la API con la limpieza de
-  enlaces abandonados (`013` ya está en producción); escritura de prompts y
-  ajustes. ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
+  "todo funcionó", sin la salida pegada en la sesión. El `status` previo al
+  despliegue lo confirma: 12 aplicadas (001, 003–013), ninguna pendiente.
+- Falta en el paso A (al 2026-10-29): escritura de prompts y ajustes.
+  ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
+  ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
   ~~despliegue~~ (hecho 2026-10-29), ~~Stage 3~~ (hecho 2026-10-29) y
   ~~cabeceras reenviadas ya desplegado~~ (comprobado 2026-10-29).
 
