@@ -1772,6 +1772,28 @@ en la PC `tools\Install-Spike.ps1`, `tools\Pull-Recordings.ps1` y
 `tools\Compare-Encodings.ps1` (WER de AAC/Opus contra el WAV en Deepgram).
 **Comprobado:** compila sin warnings. **Sin probar todavía:** nada corrió en un
 teléfono (ninguno conectado al construirlo); las cinco preguntas siguen abiertas.
+
+**Primera prueba en el teléfono (2026-10-30, Samsung SM-S931B, Android 16):** la
+app instala y abre; login y elección de carpeta funcionan (lo dice `spike.log`).
+Pregunta 3 con un clip de 59 s (el protocolo pide 3 a 5 min): AAC 236 KB, 9.6% de
+WER contra el WAV (1850 KB); Opus 248 KB, 11.0%. Un clip tan corto no decide entre
+ambos, y el WER es contra el WAV, no contra la verdad: **la pregunta 3 sigue
+abierta**, falta repetir con 3 a 5 min. Preguntas 1, 2, 4 y 5: sin medir.
+
+Una primera medida de Opus (16.9%, 51.5 s) no era un corte del codificador: el
+`.ogg` se copió a la PC mientras se escribía (el teléfono codificó los 59.18 s y
+terminó 4 s después). Corregido: `Encoder` escribe en `.part` y renombra al
+terminar (`aa3fb8f`, comprobado en el teléfono 2026-11-02). Un clip de 15 s de ese día no
+sirve para la pregunta 3: casi silencio (−55 a −65 dBFS, contra −26 a −32 con voz
+en el de 59 s); Deepgram sacó 13 palabras del WAV y ninguna de AAC ni Opus.
+Clip de 100 s del 2026-11-02 (voz, mediana −40.6 dBFS): WAV 3128 KB 247 palabras;
+AAC 399 KB 247 palabras, **1.2%** de WER contra el WAV; Opus 427 KB 240 palabras,
+**4.0%**, con más diferencias al principio (7 de las primeras 12 palabras del WAV,
+contra 12 de AAC; causa no investigada). Dos clips cortos favorecen a AAC; falta
+uno de 3 a 5 min. Codificar tarda bastante: 8.8 s AAC
+y 31.6 s Opus para 59 s de audio. También corregido: `tools\Compare-Encodings.ps1`
+fallaba en Windows PowerShell 5.1 sin `-Folder`.
+
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
   ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
