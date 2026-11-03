@@ -1854,10 +1854,11 @@ peor caso (3 intentos × 2 llamadas × 10 min = 60 min) cabe en las 2 h de
 **Comprobado:** compilan worker y escritorio (0 warnings), pruebas de integración
 del worker 12/12 (con LLM falso: no tocan el timeout), y un servidor local que
 contesta a los 130 s ahora recibe respuesta en una sola llamada (antes se cortaba
-a los 100 s). Worker: rama `foundry-llm-timeout` (`db007e8`), PR #3. **Falta:**
-fusionar el PR #3 (necesita la aprobación del dueño), desplegar el worker
-(`Deploy-Azure.ps1 -Step Images` y `-Step Worker`), volver a procesar el trabajo 5
-y medir cuánto tarda de verdad el reporte de 60 min.
+a los 100 s). Worker: PR #3 (`db007e8`) fusionado en `dc1a76b` y **desplegado**
+el 2026-11-03: `Deploy-Azure.ps1 -Step Images` (imágenes sin `appsettings`) y
+`-Step Worker` → `caj-mtg-worker` con `meeting-assistant-worker:dc1a76b`
+(`Succeeded`, plazo 7200 s). **Falta:** volver a procesar el trabajo 5 y medir
+cuánto tarda de verdad el reporte de 60 min.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
