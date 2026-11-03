@@ -10,6 +10,13 @@ namespace MeetingAssistant.Infrastructure.Llm;
 public sealed class AzureFoundryLlmClient : ILlmClient
 {
     private const string FoundryScope = "https://ai.azure.com/.default";
+    // El SDK corta cada llamada a los 100 s y la reintenta 3 veces: el reporte de una reunión de
+    // 60 min con grok-4.6 tardó más y fallaron los 4 intentos (2026-11-03). 10 min por llamada y
+    // un solo reintento del SDK, porque el worker ya reintenta el trabajo entero (3 veces): en el
+    // peor caso 3 x 2 x 10 min caben en las 2 h de una ejecución, y un intento (2 x 10 min) queda
+    // bajo los 60 min de Worker:StaleMinutes, así que otra ejecución no retoma un trabajo vivo.
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(10);
+    private const int SdkRetries = 1;
     private readonly ResponsesClient client;
 
     public AzureFoundryLlmClient(string endpoint, string deployment, string? apiKey = null)
@@ -18,9 +25,15 @@ public sealed class AzureFoundryLlmClient : ILlmClient
         ArgumentException.ThrowIfNullOrWhiteSpace(deployment);
         Uri baseEndpoint = NormalizeEndpoint(endpoint);
         Model = deployment;
+        var options = new ResponsesClientOptions
+        {
+            Endpoint = baseEndpoint,
+            NetworkTimeout = RequestTimeout,
+            RetryPolicy = new ClientRetryPolicy(SdkRetries),
+        };
         client = string.IsNullOrWhiteSpace(apiKey)
-            ? new ResponsesClient(new BearerTokenPolicy(new DefaultAzureCredential(), FoundryScope), new ResponsesClientOptions { Endpoint = baseEndpoint })
-            : new ResponsesClient(new ApiKeyCredential(apiKey), new ResponsesClientOptions { Endpoint = baseEndpoint });
+            ? new ResponsesClient(new BearerTokenPolicy(new DefaultAzureCredential(), FoundryScope), options)
+            : new ResponsesClient(new ApiKeyCredential(apiKey), options);
     }
 
     public string Provider => "Azure AI Foundry";

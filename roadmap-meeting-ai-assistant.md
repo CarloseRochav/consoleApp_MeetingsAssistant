@@ -1343,7 +1343,7 @@ de IA. Las filas de abajo que dicen "reutilizando Core + Infrastructure" o
 
 | Decisión | Elegido | Nota |
 |---|---|---|
-| Uso de la app Android | **Reuniones presenciales** | Android no deja grabar una llamada (Teams/Meet/Zoom) que corre en el mismo teléfono: el audio de la llamada no se puede capturar y el micrófono llega en silencio mientras la llamada lo tiene. Sacado de la documentación de Android, **sin probar todavía en el teléfono** (paso C). |
+| Uso de la app Android | **Reuniones presenciales** | Android no deja grabar una llamada (Teams/Meet/Zoom) que corre en el mismo teléfono: el audio de la llamada no se puede capturar y el micrófono llega en silencio mientras la llamada lo tiene. Sacado de la documentación de Android y **comprobado en el teléfono el 2026-11-03** (paso C: llamada telefónica y de VoIP, el micrófono entrega ceros mientras dura). |
 | Acceso a la base | **API dedicada, dueña de Neon** | Ningún cliente se conecta directo. Un solo dueño del esquema y las migraciones; acceso revocable por dispositivo. |
 | Proveedores de IA | **La API llama a Deepgram, Gemini y Foundry** | Claves en un solo lugar. Prompts, precios y términos clave cambian sin publicar clientes. Resuelve el pendiente de Fase 7 de reescribir las claves en cada máquina. |
 | Rol del escritorio | **Cliente delgado, igual que el teléfono** | Graba, dispara (hotkey, bandeja, endpoint local) y escribe el `.md` en el vault. Deja de funcionar sin la API. |
@@ -1789,10 +1789,75 @@ en el de 59 s); Deepgram sacó 13 palabras del WAV y ninguna de AAC ni Opus.
 Clip de 100 s del 2026-11-02 (voz, mediana −40.6 dBFS): WAV 3128 KB 247 palabras;
 AAC 399 KB 247 palabras, **1.2%** de WER contra el WAV; Opus 427 KB 240 palabras,
 **4.0%**, con más diferencias al principio (7 de las primeras 12 palabras del WAV,
-contra 12 de AAC; causa no investigada). Dos clips cortos favorecen a AAC; falta
-uno de 3 a 5 min. Codificar tarda bastante: 8.8 s AAC
+contra 12 de AAC; causa no investigada). Clip de 203 s del 2026-11-03 (voz
+baja: mediana −44 dBFS, sólo 23 s por encima de −40): WAV 6366 KB 773 palabras;
+AAC 810 KB 763 palabras, **16.2%**; Opus 881 KB 758 palabras, **17.6%**; las
+diferencias repartidas por todo el clip (no es un corte). **Resultado de la
+pregunta 3:** AAC gana a Opus en los tres clips (9.6/11.0, 1.2/4.0, 16.2/17.6) y
+pesa menos; ninguno iguala al WAV, y la diferencia crece cuando la voz es baja
+(1.2% a −40.6 dBFS de mediana, 16.2% a −44). No se midió cuál transcript acierta
+(el WER es contra el WAV, no contra la verdad). **Decisión del dueño (2026-11-03,
+`decision-log.md`): el teléfono sube WAV; pregunta 3 cerrada.** Codificar tarda bastante: 8.8 s AAC
 y 31.6 s Opus para 59 s de audio. También corregido: `tools\Compare-Encodings.ps1`
 fallaba en Windows PowerShell 5.1 sin `-Folder`.
+
+**Preguntas 4 y 5, primera prueba (2026-11-03, Wi-Fi):** dos grabaciones (100 s y
+203 s) mandadas por la API real con el token del teléfono: trabajos 2 y 3, los dos
+`done` en el primer intento del worker, reportes 15 y 16 (grok-4.6 en Foundry,
+5708 y 5912 µUSD según el reporte), y el `.md` de cada uno escrito junto al WAV
+**y en la carpeta elegida** (`MA-mobile-app`): **pregunta 5 respondida.** Es
+también el primer trabajo real del worker nuevo en producción. Muchos toques de
+"Send" (13 `queued` en el log) dieron un solo trabajo por grabación (trabajo
+único por archivo). El teléfono se reinició a las 12:22:25, en medio de la espera
+del reporte, y el trabajo siguió en una corrida nueva a las 12:24:42 con los pasos
+ya hechos (trabajo, subida, confirmación): **reinicio comprobado.** Otra corrida
+nueva a las 12:21:48 muestra una interrupción anterior (avión o cerrar la app; el
+log no dice cuál). **Sin probar:** cortar la red o la app **durante la subida**
+(duró 2-3 s) y por datos móviles; se prueba con la grabación de 60 min. Que el
+worker borró el audio de `uploads` no se comprobó desde el teléfono.
+
+**Preguntas 1 y 2 (2026-11-03, `20261103-132216.wav`, 113 MB):** 60 min de
+grabación (13:22-14:22) con la pantalla bloqueada y la optimización de batería
+**sin** excluir (configuración de fábrica): **0 s de corte** en los 60 minutos
+(3614 s de audio contra 3615 s de reloj al parar, redondeo), 2827 s con la
+pantalla apagada (el tramo más largo ≈15.6 min), batería del 74% al 69%.
+**Pregunta 1 respondida: sí.** Llamada en el mismo teléfono a los 35 min: una
+llamada telefónica (modo `in-call`, 13:57:27-13:58:07) y una de VoIP (modo
+`in-communication`, 13:58:12-13:58:48). En las dos Android marcó la grabación
+como **silenciada** y entregó ceros (75 s silenciados, 73 s en cero); la grabación
+siguió sin cortes y volvió a tener voz al colgar. **Pregunta 2 respondida:** una
+llamada en el teléfono deja al micrófono en silencio, tal como decía la
+documentación; el uso "reuniones presenciales" se mantiene.
+
+**Pregunta 4, la de 60 min (2026-11-03):** corrida 1 cortada por el modo avión
+(14:26:50, `SocketException` al crear el trabajo); la corrida 2, 38 s después,
+creó el trabajo 5 y **subió los 113 MB en 29 s por Wi-Fi** (el teléfono volvió a
+Wi-Fi al salir del modo avión: **datos móviles sin probar**, y nada cortó la
+subida misma). La corrida 3 fue el reintento previsto de los 8 min de espera.
+Hallazgo: el trabajo 5 viene después del 3, así que la corrida 1 probablemente
+creó un trabajo 4 que quedó sin subida (la respuesta se perdió con la red); crear
+el trabajo no es idempotente. **El trabajo 5 falló en el servidor** (14:49, 3
+intentos): `AzureFoundryLlmClient` del worker crea su `ResponsesClient` sin
+`NetworkTimeout`, así que usa el del SDK, **100 s** con 3 reintentos, y extraer el
+reporte de 60 min con grok-4.6 tarda más. El transcript se guarda antes del LLM y
+se reutiliza en cada intento (Deepgram se paga una vez); lo que Foundry cobró por
+las llamadas cortadas no se midió. **Falta:** subir el timeout en el worker (y en
+la copia del escritorio, si usa el mismo cliente), volver a procesar el audio y
+probar la subida por datos móviles.
+
+**Arreglo del timeout (2026-11-03, decisión del dueño en `decision-log.md`):** 10
+min por llamada y 1 reintento del SDK en `AzureFoundryLlmClient.cs`, el mismo
+cambio en el worker y en el escritorio (el escritorio usa el mismo cliente, así
+que una reunión larga con Foundry fallaba igual ahí). Por qué esos números: el
+peor caso (3 intentos × 2 llamadas × 10 min = 60 min) cabe en las 2 h de
+`caj-mtg-worker`, y un intento (20 min) queda bajo `Worker:StaleMinutes` (60).
+**Comprobado:** compilan worker y escritorio (0 warnings), pruebas de integración
+del worker 12/12 (con LLM falso: no tocan el timeout), y un servidor local que
+contesta a los 130 s ahora recibe respuesta en una sola llamada (antes se cortaba
+a los 100 s). Worker: rama `foundry-llm-timeout` (`db007e8`), PR #3. **Falta:**
+fusionar el PR #3 (necesita la aprobación del dueño), desplegar el worker
+(`Deploy-Azure.ps1 -Step Images` y `-Step Worker`), volver a procesar el trabajo 5
+y medir cuánto tarda de verdad el reporte de 60 min.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
@@ -1847,8 +1912,8 @@ en DevLog_Backend y el worker; ver "Avance del paso A" arriba (paso A hecho el
   audio queda en el dispositivo y se procesa cuando vuelve.
 - **Un token filtrado gasta plata:** por eso el tope de gasto es condición, no
   extra.
-- **El límite de Android sobre llamadas no está probado en el teléfono:** si el
-  paso C lo contradice, se revisa el uso de la app Android.
+- ~~**El límite de Android sobre llamadas no está probado en el teléfono**~~:
+  comprobado el 2026-11-03 en el paso C; el uso de la app Android no cambia.
 
 ---
 
