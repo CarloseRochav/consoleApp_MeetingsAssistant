@@ -1857,8 +1857,26 @@ contesta a los 130 s ahora recibe respuesta en una sola llamada (antes se cortab
 a los 100 s). Worker: PR #3 (`db007e8`) fusionado en `dc1a76b` y **desplegado**
 el 2026-11-03: `Deploy-Azure.ps1 -Step Images` (imágenes sin `appsettings`) y
 `-Step Worker` → `caj-mtg-worker` con `meeting-assistant-worker:dc1a76b`
-(`Succeeded`, plazo 7200 s). **Falta:** volver a procesar el trabajo 5 y medir
-cuánto tarda de verdad el reporte de 60 min.
+(`Succeeded`, plazo 7200 s).
+
+**60 min de punta a punta con el worker nuevo (2026-11-03, trabajo 6):** la misma
+grabación mandada otra vez como trabajo nuevo (no hay forma de reencolar un
+trabajo fallido; el estado del teléfono del trabajo 5 quedó aparte como
+`.json.job5`). Subida: la corrida 1 empezó por **datos móviles (LTE)** y el modo
+avión la **cortó a media subida** (15:49:03); la corrida 2 siguió con el mismo
+trabajo y enlace pero **volvió a mandar los 113 MB desde cero**, y la cortó el paso
+a Wi-Fi (el teléfono volvió a prender el Wi-Fi solo); la corrida 3 subió en 50 s
+por Wi-Fi. Servidor: `processing` 15:52:24 → `done` 15:55:27, **3 min 3 s con
+transcripción incluida, primer intento**, reporte 17 (13 536 caracteres,
+grok-4.6, 52 184 µUSD según el reporte), `.md` en la carpeta elegida. **El
+timeout de 10 min queda comprobado** (antes fallaba a los 100 s; la duración del
+LLM solo no se midió: `az containerapp job logs show` falló). **Pregunta 4:**
+sobrevive reinicio, red caída esperando y red caída **a media subida**; la subida
+no se reanuda a mitad de archivo (riesgo en datos móviles lentos, para el paso D:
+subida por bloques). Sin comprobar: cerrar la app (el log no lo distingue de un
+corte de red) y una subida completa por datos móviles. Pendiente de limpieza: el
+audio del trabajo 5 en `uploads` (los fallidos lo guardan) y el probable
+trabajo 4 (lo limpia el servidor al vencer su enlace).
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
