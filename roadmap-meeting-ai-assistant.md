@@ -2017,8 +2017,29 @@ teléfono (capturas revisadas); **inicio de sesión real contra producción: sí
 la clave cifrada, la contraseña no); cerrar la app y reabrirla entra directo a
 Inicio; Inicio se ve como se diseñó (saludo, tarjetas de Reuniones y Video,
 tarjeta "This phone" con el dispositivo). Sin errores en el log de fallos.
-**Sin probar todavía:** cerrar sesión, una clave revocada (debe volver al inicio
-de sesión con el aviso), y entrar a las pantallas vacías de Reuniones y Video.
+Después el dueño probó las pantallas vacías y cerrar sesión (el diálogo sale), y
+**revocó los dispositivos 1, 2 (los del spike) y 3** con un script que pide su
+contraseña sin guardarla (2026-11-04; el spike ya no puede subir). Hallazgo del
+script: `powershell -File ... -Revoke 1,2,3` pasa "1,2,3" como un solo texto y
+`[int[]]` lo leyó como 123 (el servidor lo rechazó); el script ahora parte la
+lista él mismo. **Sin probar:** que una clave revocada devuelva al inicio de
+sesión con el aviso.
+
+**Tanda 2, Reuniones, construida (2026-11-04, decisión del dueño):** en `:core`
+el cliente de trabajos y reportes y un `MeetingPipeline` (trabajo y enlace →
+WAV por bloques → confirmar → esperar al servidor → el reporte más nuevo al
+teléfono; cada paso guardado, así que se reanuda tras matar la app, reiniciar o
+perder la red; un enlace vencido pide un trabajo nuevo; una confirmación cuya
+respuesta se perdió se reconoce por el estado del trabajo). En
+`:feature-meetings`: grabación en un servicio en primer plano (pantalla
+bloqueada, como probó el spike), WAV 16 kHz mono, temporizador y nivel en vivo,
+aviso cuando una llamada silencia el micrófono, notificación con "Stop and
+send"; **reparación del WAV** de una grabación que Android cortó (encabezado
+reescrito desde el largo del archivo, una de las necesidades del paso D);
+subida con WorkManager; el `.md` a la carpeta elegida y siempre una copia en la
+app; lista con estados, progreso, reintentar y borrar; lector del reporte.
+**Comprobado:** 23/23 pruebas de `:core`, compila sin warnings. **Sin probar en
+el teléfono** (no estaba conectado).
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
