@@ -1929,8 +1929,34 @@ en primer plano de tipo cámara y micrófono con CameraX 1.6.2, grabación
 persistente para que cambiar de cámara no corte el archivo, una línea por minuto
 en `spike.log` (video contra reloj, MB, estado del audio, cámara, pantalla,
 estado térmico, batería y su temperatura). Preguntas V1-V5 y protocolo en el
-README del spike. **Comprobado:** compila e instala en el SM-S931B. **Sin
-probar todavía:** todas las preguntas V.
+README del spike. **Comprobado:** compila e instala en el SM-S931B.
+
+**Primeras pruebas de video (2026-11-03, 720p, pruebas cortas: el teléfono tiene
+3.7 GB libres de 219 GB, la de 60 min queda pendiente):**
+- **V2 (cambiar de cámara): sí.** 70 s con 3 cambios (atrás → frente → atrás →
+  frente): un solo MP4 completo (`moov` presente), una pista de video de 70.5 s a
+  1280x720 y una de sonido de 70.4 s; 1 s de diferencia con el reloj en total.
+  Que la imagen cambie de verdad en cada cambio no se miró (falta verlo).
+- **V5 (micrófono compartido): sí.** Con el WAV grabando a la vez, el sonido del
+  video quedó `active` todo el tiempo y el WAV sin segundos silenciados ni en
+  cero (voz normal, −28 a −46 dBFS de promedio).
+- **V3 (tamaño): 720p ≈ 5.2 GB por hora** (5156 y 5228 MB/h en las dos pruebas,
+  ≈12 Mbit/s), **más que los 2-4 GB estimados**: con el límite decidido, 50 GB son
+  ≈9.6 h de 720p por usuario y 16 GB por video ≈3 h. 1080p sin medir.
+- **V1 (pantalla bloqueada): parcial.** 8 min 39 s con la pantalla apagada desde
+  el primer minuto, sin corte (0-1 s). A los 17 s (16:54:49-16:54:56, con la
+  pantalla todavía prendida) la cámara se perdió 7 s (`ERROR_CAMERA_IN_USE` y
+  luego `ERROR_MAX_CAMERAS_IN_USE`, otra app la tomó) y CameraX la recuperó sola;
+  la grabación no se cortó, qué hay en la imagen esos 7 s no se miró.
+- **V4 (batería y calor):** de 27.2 a 30.5 °C en 10 min de video, estado térmico
+  0 (sin estrés). **Batería sin medir:** se quedó en 100% (el teléfono cargaba por
+  USB).
+- Arreglado: las líneas de estado de la cámara salían repetidas después de un
+  cambio (un observador de más por cada cambio); sólo el log, no la grabación.
+
+**Pendiente:** la de 60 min con el teléfono **desenchufado** (batería), 1080p, y
+decidir el bitrate: con el de fábrica (≈12 Mbit/s a 720p) el almacenamiento y la
+subida pesan más del doble de lo estimado.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
