@@ -2010,9 +2010,15 @@ revocarla queda en DevLog (sólo el login del usuario puede revocar).
 **Comprobado:** 16/16 pruebas de `:core` (API, inicio de sesión, subida por
 bloques: corte y reanudación, enlace vencido, ids del mismo largo), compila sin
 warnings. Versiones una generación de Compose atrás porque esta PC tiene
-compileSdk 36.1 (ver `decision-log.md`). **Sin probar todavía en el teléfono**
-(no estaba conectado): inicio de sesión real contra producción, la sesión al
-reabrir, la interfaz en claro y oscuro.
+compileSdk 36.1 (ver `decision-log.md`). **En el teléfono (2026-11-04,
+SM-S931B):** la pantalla de inicio de sesión en oscuro y en claro, según el
+teléfono (capturas revisadas); **inicio de sesión real contra producción: sí**
+(usuario 1, dispositivo 3 "Meeting Assistant · SM-S931B"; la sesión guardada con
+la clave cifrada, la contraseña no); cerrar la app y reabrirla entra directo a
+Inicio; Inicio se ve como se diseñó (saludo, tarjetas de Reuniones y Video,
+tarjeta "This phone" con el dispositivo). Sin errores en el log de fallos.
+**Sin probar todavía:** cerrar sesión, una clave revocada (debe volver al inicio
+de sesión con el aviso), y entrar a las pantallas vacías de Reuniones y Video.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
