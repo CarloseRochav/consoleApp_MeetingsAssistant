@@ -1957,9 +1957,14 @@ README del spike. **Comprobado:** compila e instala en el SM-S931B.
 
 **Bitrate decidido (2026-11-03, `decision-log.md`):** 4 Mbit/s a 720p (≈1.8 GB
 por hora, 50 GB ≈27 h) y 8 Mbit/s a 1080p, puestos en el spike (`Recorder`
-`setTargetVideoEncodingBitRate`); compila, sin instalar todavía (el teléfono se
-desconectó). **Pendiente:** medir el tamaño real con el bitrate nuevo y que la
-imagen se vea bien; la de 60 min con el teléfono **desenchufado** (batería); 1080p.
+`setTargetVideoEncodingBitRate`). **Medido (2026-11-03):** 114 s a 720p con 4
+cambios de cámara, 57 MB, **1824 MB por hora** (≈4.1 Mbit/s, en el objetivo),
+sin corte; el dueño lo vio en la PC: **imagen buena** y los cambios de cámara
+bien. **V2 cerrada.** Mejora pedida al verlo: la pantalla no decía qué cámara
+grababa; ahora el botón dice "Flip camera (now: back/front)" (en el paso D, un
+indicador en la vista de grabación). **Pendiente:** la de 60 min con el teléfono
+**desenchufado** (batería; necesita ≈1.8 GB libres, el teléfono tiene 1.9 GB);
+1080p.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
