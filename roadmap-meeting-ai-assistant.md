@@ -1977,10 +1977,13 @@ no se comen el último espacio); subida **por bloques** que se reanuda, también
 un enlace nuevo (paso 3 del plan, la parte del servidor); los videos abandonados
 se borran en la siguiente subida, como los trabajos. **Comprobado en local** contra
 Azurite: 58/58 (detalle en el `CLAUDE.md` de DevLog), `schema.sql` en una base
-vacía, ningún enlace, token ni contraseña en el log. **Falta:** aplicar `015` en
-producción y publicar la API (lo corre el dueño: `Db.ps1 up -Environment
-Production -Apply`, luego `Release-Api.ps1 -Pr 11 -Apply -AutoRollback`); el
-cliente Android (paso D).
+vacía, ningún enlace, token ni contraseña en el log. **En producción (2026-11-04,
+lo corrió el dueño):** `015` aplicada (14 aplicadas, ninguna pendiente), PR #11
+fusionado (`2d6999c`), API `devlog-api:2d6999c` revisión `ca-devlog-api--0000006`
+lista; `Videos__ConnectionString` desde el secreto `storage`; los 5 endpoints de
+video contestan 401 sin token y con un token de dispositivo inventado
+(comprobado). **Sin comprobar en producción:** una subida real con sesión (el
+contenedor `videos` se crea con la primera). **Falta:** el cliente Android (paso D).
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
