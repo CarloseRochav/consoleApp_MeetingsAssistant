@@ -1962,9 +1962,25 @@ cambios de cámara, 57 MB, **1824 MB por hora** (≈4.1 Mbit/s, en el objetivo),
 sin corte; el dueño lo vio en la PC: **imagen buena** y los cambios de cámara
 bien. **V2 cerrada.** Mejora pedida al verlo: la pantalla no decía qué cámara
 grababa; ahora el botón dice "Flip camera (now: back/front)" (en el paso D, un
-indicador en la vista de grabación). **Pendiente:** la de 60 min con el teléfono
-**desenchufado** (batería; necesita ≈1.8 GB libres, el teléfono tiene 1.9 GB);
-1080p.
+indicador en la vista de grabación). **Pendiente (para mucho después, decisión del dueño 2026-11-03):** la de 60 min
+con el teléfono **desenchufado** (batería; necesita ≈1.8 GB libres); 1080p.
+
+**Servidor de video construido (2026-11-03, paso 2 del plan),** DevLog rama
+`videos`, PR #11 (`f3ebbc5`), **sin fusionar ni desplegar**: migración `015`
+(esquema `vid`: `vid_videos`, `vid_quotas` y 4 funciones), `VideosController`
+(subir, confirmar, borrar, enlace nuevo para reanudar, listar, enlace de lectura
+de 15 min, uso, límites por admin), `Services/VideoStorage` aparte de
+`UploadStorage`, sección `Videos` (50 GiB por usuario, 16 GiB por video).
+Decisiones de diseño: la subida **reserva** su tamaño declarado mientras vive el
+enlace y el límite se comprueba bajo un candado por usuario (dos subidas a la vez
+no se comen el último espacio); subida **por bloques** que se reanuda, también con
+un enlace nuevo (paso 3 del plan, la parte del servidor); los videos abandonados
+se borran en la siguiente subida, como los trabajos. **Comprobado en local** contra
+Azurite: 58/58 (detalle en el `CLAUDE.md` de DevLog), `schema.sql` en una base
+vacía, ningún enlace, token ni contraseña en el log. **Falta:** aplicar `015` en
+producción y publicar la API (lo corre el dueño: `Db.ps1 up -Environment
+Production -Apply`, luego `Release-Api.ps1 -Pr 11 -Apply -AutoRollback`); el
+cliente Android (paso D).
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
