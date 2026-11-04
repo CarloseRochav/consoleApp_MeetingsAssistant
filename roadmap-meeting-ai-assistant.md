@@ -1874,9 +1874,11 @@ LLM solo no se midió: `az containerapp job logs show` falló). **Pregunta 4:**
 sobrevive reinicio, red caída esperando y red caída **a media subida**; la subida
 no se reanuda a mitad de archivo (riesgo en datos móviles lentos, para el paso D:
 subida por bloques). Sin comprobar: cerrar la app (el log no lo distingue de un
-corte de red) y una subida completa por datos móviles. Pendiente de limpieza: el
-audio del trabajo 5 en `uploads` (los fallidos lo guardan) y el probable
-trabajo 4 (lo limpia el servidor al vencer su enlace).
+corte de red) y una subida completa por datos móviles. Limpieza: el audio del
+trabajo 5 (113 MB, los fallidos lo guardan) **borrado de `uploads` a mano el
+2026-11-03** (pedido del dueño); el del trabajo 6 ya lo había borrado el worker.
+Queda el WAV de Stage 3 (trabajo 1, 2026-10-29, de antes del borrado automático).
+El probable trabajo 4 lo limpia el servidor al vencer su enlace.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
