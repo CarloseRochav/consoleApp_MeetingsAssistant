@@ -1921,7 +1921,16 @@ módulo `:feature-video` junto a `:feature-meetings`, los dos sobre un `:core`
 chico (login, cliente de la API, subida reanudable); en DevLog **se mantiene su
 regla** (un `BL`/`DL`/interfaz), con el video aislado por esquema `vid`,
 `VideosController`, `modVideos`, contenedor `videos` y sección `Videos` de
-ajustes. Todo en `decision-log.md`. Sigue: el spike de video en el teléfono.
+ajustes. Todo en `decision-log.md`.
+
+**Spike de video construido (2026-11-03)**, rama `video-spike` del repo Android
+(`b5b3714`): `VideoRecorderService` en su propio paquete (`spike.video`), servicio
+en primer plano de tipo cámara y micrófono con CameraX 1.6.2, grabación
+persistente para que cambiar de cámara no corte el archivo, una línea por minuto
+en `spike.log` (video contra reloj, MB, estado del audio, cámara, pantalla,
+estado térmico, batería y su temperatura). Preguntas V1-V5 y protocolo en el
+README del spike. **Comprobado:** compila e instala en el SM-S931B. **Sin
+probar todavía:** todas las preguntas V.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
