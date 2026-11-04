@@ -1912,9 +1912,16 @@ Pasos propuestos:
 4. **En la app (paso D):** grabar, cambiar de cámara, elegir calidad, lista de
    videos, ver y borrar.
 
-**Por decidir:** el límite de almacenamiento por usuario; si el video sube sólo
-por Wi-Fi (recomendado: una hora son gigas de datos móviles); si un video queda
-ligado a la reunión cuyo audio se grabó al mismo tiempo.
+**Decidido (2026-11-03):** el video sube **sólo por Wi-Fi** y es **independiente de
+las reuniones** (sin vínculo con la reunión grabada al mismo tiempo; el pipeline
+de reuniones no sabe que existen los videos). Límite: **50 GB por usuario**
+(ajustable por un admin) y **16 GB por video**, comprobado al pedir la subida y al
+confirmarla, con aviso al 80%. Código: **función autocontenida**; en Android un
+módulo `:feature-video` junto a `:feature-meetings`, los dos sobre un `:core`
+chico (login, cliente de la API, subida reanudable); en DevLog **se mantiene su
+regla** (un `BL`/`DL`/interfaz), con el video aislado por esquema `vid`,
+`VideosController`, `modVideos`, contenedor `videos` y sección `Videos` de
+ajustes. Todo en `decision-log.md`. Sigue: el spike de video en el teléfono.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
