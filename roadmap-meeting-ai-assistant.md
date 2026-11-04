@@ -1739,7 +1739,7 @@ están en servidores Neon distintos).
   `Verify-Api.cmd -WithStage3`.
 - **Paso A: ✅ hecho (2026-10-30).** Sigue el paso C (spike Android).
 
-### Paso C — spike Android (empezado 2026-10-30)
+### Paso C — spike Android (empezado 2026-10-30, ✅ cerrado 2026-11-03)
 
 Decisiones del dueño (2026-10-30, en `decision-log.md`): repo privado nuevo
 `C:\Projects\MeetingAssistant_Android`; el audio va por la API real (token de
@@ -1879,6 +1879,15 @@ trabajo 5 (113 MB, los fallidos lo guardan) **borrado de `uploads` a mano el
 2026-11-03** (pedido del dueño); el del trabajo 6 ya lo había borrado el worker.
 Queda el WAV de Stage 3 (trabajo 1, 2026-10-29, de antes del borrado automático).
 El probable trabajo 4 lo limpia el servidor al vencer su enlace.
+
+**Paso C: ✅ cerrado (2026-11-03, decisión del dueño en `decision-log.md`).** Las
+cinco preguntas tienen respuesta; la 4 se da por buena con dos huecos aceptados
+(cerrar la app a mano y una subida completa por datos móviles, sin comprobar). La
+salida del paso (audio del teléfono → `.md`) se cumplió con una reunión de 60 min.
+Lo que el paso D tiene que resolver, sacado del spike: subida que se reanuda a
+mitad de archivo; recuperar una grabación si Android mata la app (hoy se corta y
+el WAV queda con el encabezado en cero); crear el trabajo sin duplicados si se
+pierde la respuesta; reintentar un trabajo fallido sin volver a pagar Deepgram.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
