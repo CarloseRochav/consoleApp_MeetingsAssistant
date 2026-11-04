@@ -1985,6 +1985,35 @@ video contestan 401 sin token y con un token de dispositivo inventado
 (comprobado). **Sin comprobar en producción:** una subida real con sesión (el
 contenedor `videos` se crea con la primera). **Falta:** el cliente Android (paso D).
 
+### Paso D — app Android (empezado 2026-11-04)
+
+Decisiones del dueño (2026-11-04, con razones y lo aceptado en `decision-log.md`):
+repo privado nuevo `C:\Projects\MeetingAssistant_App` (el spike queda como
+referencia y evidencia: era de calidad desechable a propósito, lo que pasa al
+app es lo que probó, no su código); se construye por tandas y la primera es el
+esqueleto con el inicio de sesión; la interfaz sigue el lenguaje de diseño de
+DevLog (`DevLog_Frontend/CLAUDE.md`).
+
+**Tanda 1 construida (2026-11-04):** módulos `:core` (Kotlin puro en la JVM: la
+compilación misma impide una dependencia de Android), `:core-android` (sesión con
+el Keystore, progreso de subidas, lectura de archivos), `:core-ui` (sistema de
+diseño: la paleta slate/indigo/red de DevLog en Material 3, claro y oscuro según
+el teléfono, botones, campos, contraseña con mostrar/ocultar, banner de error,
+estados de carga y vacío, tarjetas), `:feature-meetings` y `:feature-video`
+(vacíos, sin depender uno del otro) y `:app` (Hilt, la puerta de sesión, Inicio,
+navegación). En `:core`: cliente de la API de DevLog, inicio de sesión (login →
+clave del dispositivo → guardada cifrada; la contraseña no se guarda), y el
+subidor por bloques reanudable para audio y video. Al abrir, una sesión guardada
+entra directo a Inicio y la clave se comprueba en segundo plano: revocada → vuelve
+al inicio de sesión con el aviso. Cerrar sesión olvida la clave en el teléfono;
+revocarla queda en DevLog (sólo el login del usuario puede revocar).
+**Comprobado:** 16/16 pruebas de `:core` (API, inicio de sesión, subida por
+bloques: corte y reanudación, enlace vencido, ids del mismo largo), compila sin
+warnings. Versiones una generación de Compose atrás porque esta PC tiene
+compileSdk 36.1 (ver `decision-log.md`). **Sin probar todavía en el teléfono**
+(no estaba conectado): inicio de sesión real contra producción, la sesión al
+reabrir, la interfaz en claro y oscuro.
+
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
   ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
