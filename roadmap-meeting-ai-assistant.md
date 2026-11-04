@@ -1946,17 +1946,20 @@ README del spike. **Comprobado:** compila e instala en el SM-S931B.
 - **V1 (pantalla bloqueada): parcial.** 8 min 39 s con la pantalla apagada desde
   el primer minuto, sin corte (0-1 s). A los 17 s (16:54:49-16:54:56, con la
   pantalla todavía prendida) la cámara se perdió 7 s (`ERROR_CAMERA_IN_USE` y
-  luego `ERROR_MAX_CAMERAS_IN_USE`, otra app la tomó) y CameraX la recuperó sola;
-  la grabación no se cortó, qué hay en la imagen esos 7 s no se miró.
+  luego `ERROR_MAX_CAMERAS_IN_USE`: el dueño abrió la app de Cámara) y CameraX la
+  recuperó sola al cerrarla; la grabación no se cortó, qué hay en la imagen esos
+  7 s no se miró.
 - **V4 (batería y calor):** de 27.2 a 30.5 °C en 10 min de video, estado térmico
   0 (sin estrés). **Batería sin medir:** se quedó en 100% (el teléfono cargaba por
   USB).
 - Arreglado: las líneas de estado de la cámara salían repetidas después de un
   cambio (un observador de más por cada cambio); sólo el log, no la grabación.
 
-**Pendiente:** la de 60 min con el teléfono **desenchufado** (batería), 1080p, y
-decidir el bitrate: con el de fábrica (≈12 Mbit/s a 720p) el almacenamiento y la
-subida pesan más del doble de lo estimado.
+**Bitrate decidido (2026-11-03, `decision-log.md`):** 4 Mbit/s a 720p (≈1.8 GB
+por hora, 50 GB ≈27 h) y 8 Mbit/s a 1080p, puestos en el spike (`Recorder`
+`setTargetVideoEncodingBitRate`); compila, sin instalar todavía (el teléfono se
+desconectó). **Pendiente:** medir el tamaño real con el bitrate nuevo y que la
+imagen se vea bien; la de 60 min con el teléfono **desenchufado** (batería); 1080p.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
