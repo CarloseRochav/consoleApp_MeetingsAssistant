@@ -1889,6 +1889,33 @@ mitad de archivo; recuperar una grabación si Android mata la app (hoy se corta 
 el WAV queda con el encabezado en cero); crear el trabajo sin duplicados si se
 pierde la respuesta; reintentar un trabajo fallido sin volver a pagar Deepgram.
 
+### Video en la app Android (decidido 2026-11-03, sin empezar)
+
+Decisión del dueño en `decision-log.md`: grabar video desde la app, una cámara a
+la vez con botón para cambiar entre frontal y trasera **aun grabando** (un solo
+archivo), calidad a elección del usuario (720p por defecto), guardado **en la nube
+por usuario**, sin IA, hasta que el usuario lo borre. El audio de la reunión sigue
+subiendo como WAV: transcripción y reportes no cambian.
+
+Pasos propuestos:
+1. **Spike de video en el teléfono (unos días):** 60 min de cámara con la pantalla
+   bloqueada (cortes, tamaño real por hora a 720p y 1080p, batería, temperatura);
+   que cambiar de cámara grabando deje un solo archivo; que el video y la
+   grabación del WAV compartan el micrófono (si no, video sin sonido o el WAV
+   sacado del video).
+2. **Servidor (DevLog):** contenedor privado `videos`, tabla y funciones
+   almacenadas por usuario (migración nueva), endpoints para crear la subida,
+   confirmar, listar, ver (enlace de lectura de corta vida) y borrar, y un límite
+   de almacenamiento por usuario.
+3. **Subida por bloques que se reanuda a mitad de archivo:** la necesita el video
+   (varios GB) y arregla también la debilidad de la subida del audio.
+4. **En la app (paso D):** grabar, cambiar de cámara, elegir calidad, lista de
+   videos, ver y borrar.
+
+**Por decidir:** el límite de almacenamiento por usuario; si el video sube sólo
+por Wi-Fi (recomendado: una hora son gigas de datos móviles); si un video queda
+ligado a la reunión cuyo audio se grabó al mismo tiempo.
+
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
   ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
