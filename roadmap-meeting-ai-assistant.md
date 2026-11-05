@@ -2122,7 +2122,14 @@ corrida, `2358c4d`).** Un corte a los 4 s no sirve: la segunda corrida empezó c
 API va primero). Con el corte al ≈30%: video `20261105-114145` (≈2 min 40 s, 11
 bloques), subida desde 11:44:26, Wi-Fi cortado 11:44:36, de vuelta 11:45:46;
 la segunda corrida **empezó con 4 de 11 bloques ya en Storage** y terminó en 13
-s (Done). **Sin probar:** un enlace vencido a mitad de subida o de reproducción.
+s (Done). **Reproducir tras vencer el enlace (2026-11-05):** video abierto
+11:52:11 (enlace hasta ≈12:07), pausado con la pantalla apagada hasta 12:10,
+siguió reproduciendo y el dueño movió la barra: **sin errores, se vio bien**. Pero
+el log no muestra ningún error ni enlace nuevo: lo reproducido salió de lo ya
+cargado o de la conexión abierta (Storage sólo valida el enlace al abrir una
+conexión), así que **la renovación del enlace no corrió en el teléfono** (la
+cubre la lógica del ViewModel, sin prueba en el teléfono). **Sin probar:** un
+enlace de subida vencido a mitad (3 h; cubierto por las pruebas de `:core`).
 **Elecciones de la tanda, confirmadas por el dueño el 2026-11-05 (1-3, en
 `decision-log.md`; la 4 la reemplazó la vista en vivo sin cambios de sesión):** (1) al confirmarse la
 subida se **borra la copia del teléfono** (el teléfono tenía 3.7 GB libres; el
