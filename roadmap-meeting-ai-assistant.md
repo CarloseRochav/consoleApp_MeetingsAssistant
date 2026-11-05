@@ -2088,7 +2088,27 @@ el spike con cambios); codificador a 1280x720 y 4 Mbit/s; subida por Wi-Fi en
 muestra (29 s · 720p · 16 MB, ≈4.4 Mbit/s con el sonido) y el uso "16 MB de 50
 GB". Es también la **primera subida real al contenedor `videos` de producción**.
 Sin fallos en el log. **Verlo en la app: sí** (Media3, 19:13:58-19:14:15, sin
-errores; el dueño lo vio bien). **Sin probar:** pantalla bloqueada grabando, un enlace vencido a mitad de subida o de reproducción, 1080p.
+errores; el dueño lo vio bien).
+**Pantalla bloqueada: encontrado y arreglado (2026-11-04/05).** (a) Con la vista
+previa de la pantalla dentro de la sesión de la cámara, al bloquear Android
+destruyó su superficie y **el video quedó congelado** hasta desbloquear (19:17,
+14 s apagada: 20 s de video en 5 MB, ≈2 Mbit/s, casi todo imagen quieta; el log
+muestra los cuadros empujados a la superficie muerta). (b) Quitar y devolver la
+vista previa al bloquear y desbloquear sacó el congelamiento pero **perdía 1-2 s
+en cada cambio**: este teléfono tiene `CloseCaptureSessionOnVideoQuirk` y cada
+cambio rehace la sesión (lo vio el dueño al reproducir). (c) **Decisión del dueño
+(2026-11-05): vista en vivo sin cortes.** Grabando, la sesión es sólo
+`VideoCapture` + `ImageAnalysis` (≈640x360) y **no cambia de Start a Stop**
+(salvo al cambiar de cámara); la pantalla recibe ≈12 cuadros por segundo
+mientras la mira, y sin nadie mirando cada cuadro se suelta al llegar. Antes de
+grabar sigue la vista previa normal para encuadrar. **Medido (2026-11-05
+09:46:51-09:47:58):** 4 bloqueos y desbloqueos (uno de 11 s con la pantalla
+apagada) **sin ningún cambio de la sesión**; los dos cambios fueron los dos
+cambios de cámara (uno con un hueco de 1.4 s en los avisos del grabador); 38 MB
+en ≈67 s (≈4.5 Mbit/s: imagen viva todo el tiempo); subido, copia borrada.
+**Sin medir:** el costo en batería y calor de los cuadros (el teléfono estaba al
+5-10% y descargando; 29.6 → 35.6 °C con otro uso de por medio, no sirve).
+**Sin probar:** un enlace vencido a mitad de subida o de reproducción, 1080p.
 **Elecciones de la tanda, a confirmar por el dueño:** (1) al confirmarse la
 subida se **borra la copia del teléfono** (el teléfono tenía 3.7 GB libres; el
 video queda en la nube); (2) una grabación que Android corta **no se repara**: un
