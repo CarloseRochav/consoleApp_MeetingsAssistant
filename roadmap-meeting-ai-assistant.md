@@ -2063,7 +2063,15 @@ Compila y 23/23. **Comprobado en el teléfono (2026-11-04, `-RepairAtStart`,
 Inicio sin abrir Reuniones: reparada y subiendo 3 s después del corte, 33 s
 conservados, reporte en el teléfono (trabajo 12, sesión 35) unos 70 s después de
 la subida.
-**Sin medir:** matar la app en la subida, llamada.
+**Llamada grabando (2026-11-05): comprobada.** Reunión `20261105-151814`, 220 s
+(15:18:14-15:21:55) con tres llamadas: WhatsApp sin contestar (hasta 15:19:47),
+WhatsApp contestada (silenciada 15:20:04, activa 15:20:20-15:20:49) y llamada
+telefónica (silenciada 15:21:10, activa 15:21:21-15:21:29); Android silenció el
+micrófono al marcar y lo devolvió ≤1 s después de colgar, en las dos clases de
+llamada, como en el spike; la grabación **no se cortó** (el WAV mide los 220 s);
+el dueño vio el aviso; reporte listo 15:23 (trabajo 15, sesión 38).
+**Sin medir:** matar la app en la subida (la reanudación por bloques quedó
+probada en video, mismo `BlockUploader`).
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
