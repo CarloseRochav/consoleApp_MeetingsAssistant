@@ -2058,7 +2058,11 @@ reinicio una grabación cortada espera ahí hasta que el usuario la abra.
 **Corregido (decisión del dueño, 2026-11-04):** `resumeAll` corre también en
 `MeetingAssistantApp.onCreate`, en el hilo principal (el servicio de grabación
 arranca en ese hilo, así que una grabación que empieza nunca se toma por cortada).
-Compila y 23/23; **sin comprobar en el teléfono** que repare sin abrir Reuniones.
+Compila y 23/23. **Comprobado en el teléfono (2026-11-04, `-RepairAtStart`,
+11/11):** grabación `20261104-185055` matada a los 33 s, la app reabierta en
+Inicio sin abrir Reuniones: reparada y subiendo 3 s después del corte, 33 s
+conservados, reporte en el teléfono (trabajo 12, sesión 35) unos 70 s después de
+la subida.
 **Sin medir:** matar la app en la subida, llamada.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
