@@ -2038,8 +2038,28 @@ send"; **reparación del WAV** de una grabación que Android cortó (encabezado
 reescrito desde el largo del archivo, una de las necesidades del paso D);
 subida con WorkManager; el `.md` a la carpeta elegida y siempre una copia en la
 app; lista con estados, progreso, reintentar y borrar; lector del reporte.
-**Comprobado:** 23/23 pruebas de `:core`, compila sin warnings. **Sin probar en
-el teléfono** (no estaba conectado).
+**Comprobado:** 23/23 pruebas de `:core`, compila sin warnings. **En el teléfono
+(2026-11-04, SM-S931B, revisado por adb):** dos reuniones de punta a punta,
+`Ready` y sin error: 314 s (trabajo 7, sesión 30, 10.1 MB) y 1128 s (trabajo 8,
+sesión 31, 36.1 MB); el WAV mide lo que dice la duración (16 kHz mono 16 bit, ≈0.3 s
+de diferencia); subida completa (bytes enviados = total); reporte en el teléfono
+≈2 min y ≈4 min después de parar (hora de los archivos, resolución de minutos).
+Sin fallos en el log. Más largas que las del spike (100 s y 203 s). **Según el
+dueño:** la pantalla estuvo bloqueada durante la grabación y el reporte está en la
+carpeta elegida. **Reparación de un WAV cortado: comprobada (2026-11-04,
+`tools\Test-CutRecording.ps1`, 11/11):** grabación `20261104-172209` matada con
+`am force-stop` a los 60 s; quedó como la deja Android (1 936 044 bytes en disco,
+encabezado en 0, estado Recording); al abrir Reuniones el encabezado se reescribió
+desde el largo del archivo (60 s, sin perder audio), pasó a Waiting 7 s después del
+corte, subió y el reporte llegó (trabajo 11, sesión 34) unos 80 s después de
+empezar a subir. Hallazgo: la reparación sólo corre al abrir la pantalla de
+Reuniones (`MeetingsViewModel` → `resumeAll`), no al arrancar la app; tras un
+reinicio una grabación cortada espera ahí hasta que el usuario la abra.
+**Corregido (decisión del dueño, 2026-11-04):** `resumeAll` corre también en
+`MeetingAssistantApp.onCreate`, en el hilo principal (el servicio de grabación
+arranca en ese hilo, así que una grabación que empieza nunca se toma por cortada).
+Compila y 23/23; **sin comprobar en el teléfono** que repare sin abrir Reuniones.
+**Sin medir:** matar la app en la subida, llamada.
 
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
