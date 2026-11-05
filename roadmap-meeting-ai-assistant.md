@@ -2116,7 +2116,13 @@ el trabajo **arrancó solo** medio segundo después; terminó 10:40:32, confirma
 copia borrada, en la nube. **Que reanudó y no reenvió todo: sin comprobar** (la
 app no registra bloques y el registro de bloques se borra al terminar); el tiempo
 encaja con reanudar (25 s ≈ 78 MB a los 3.1 MB/s de la subida anterior), pero no
-lo prueba. **Sin probar:** un enlace vencido a mitad de subida o de reproducción.
+lo prueba. **Reanudar: comprobado (2026-11-05, con una línea de log nueva por
+corrida, `2358c4d`).** Un corte a los 4 s no sirve: la segunda corrida empezó con
+0 de 10 bloques (en 4 s no llegó a terminar ninguno, el pedido del enlace a la
+API va primero). Con el corte al ≈30%: video `20261105-114145` (≈2 min 40 s, 11
+bloques), subida desde 11:44:26, Wi-Fi cortado 11:44:36, de vuelta 11:45:46;
+la segunda corrida **empezó con 4 de 11 bloques ya en Storage** y terminó en 13
+s (Done). **Sin probar:** un enlace vencido a mitad de subida o de reproducción.
 **Elecciones de la tanda, confirmadas por el dueño el 2026-11-05 (1-3, en
 `decision-log.md`; la 4 la reemplazó la vista en vivo sin cambios de sesión):** (1) al confirmarse la
 subida se **borra la copia del teléfono** (el teléfono tenía 3.7 GB libres; el
