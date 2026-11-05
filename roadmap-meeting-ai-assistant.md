@@ -2106,9 +2106,10 @@ grabar sigue la vista previa normal para encuadrar. **Medido (2026-11-05
 apagada) **sin ningún cambio de la sesión**; los dos cambios fueron los dos
 cambios de cámara (uno con un hueco de 1.4 s en los avisos del grabador); 38 MB
 en ≈67 s (≈4.5 Mbit/s: imagen viva todo el tiempo); subido, copia borrada.
-**Sin medir:** el costo en batería y calor de los cuadros (el teléfono estaba al
-5-10% y descargando; 29.6 → 35.6 °C con otro uso de por medio, no sirve).
-**Sin probar:** un enlace vencido a mitad de subida o de reproducción, 1080p.
+El dueño lo reprodujo: **se ve bien**. **Descartado por el dueño (2026-11-05,
+`decision-log.md`):** medir el costo en batería y calor de los cuadros, y el
+tamaño real por hora de 1080p (queda el estimado de 8 Mbit/s, ≈3.6 GB por hora).
+**Sin probar:** un enlace vencido a mitad de subida o de reproducción.
 **Elecciones de la tanda, a confirmar por el dueño:** (1) al confirmarse la
 subida se **borra la copia del teléfono** (el teléfono tenía 3.7 GB libres; el
 video queda en la nube); (2) una grabación que Android corta **no se repara**: un
