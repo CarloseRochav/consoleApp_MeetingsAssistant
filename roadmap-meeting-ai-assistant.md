@@ -2087,8 +2087,8 @@ el spike con cambios); codificador a 1280x720 y 4 Mbit/s; subida por Wi-Fi en
 ≈5 s, confirmada, **la copia del teléfono borrada**; la lista "En la nube" la
 muestra (29 s · 720p · 16 MB, ≈4.4 Mbit/s con el sonido) y el uso "16 MB de 50
 GB". Es también la **primera subida real al contenedor `videos` de producción**.
-Sin fallos en el log. **Sin probar:** pantalla bloqueada grabando, verlo en la
-app, un enlace vencido a mitad de subida o de reproducción, 1080p.
+Sin fallos en el log. **Verlo en la app: sí** (Media3, 19:13:58-19:14:15, sin
+errores; el dueño lo vio bien). **Sin probar:** pantalla bloqueada grabando, un enlace vencido a mitad de subida o de reproducción, 1080p.
 **Elecciones de la tanda, a confirmar por el dueño:** (1) al confirmarse la
 subida se **borra la copia del teléfono** (el teléfono tenía 3.7 GB libres; el
 video queda en la nube); (2) una grabación que Android corta **no se repara**: un
