@@ -2065,6 +2065,38 @@ conservados, reporte en el teléfono (trabajo 12, sesión 35) unos 70 s después
 la subida.
 **Sin medir:** matar la app en la subida, llamada.
 
+**Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
+cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
+lectura, uso), un `VideoPipeline` (enlace con el tamaño declarado → bloques de 8
+MiB → confirmar; un enlace vencido pide **otro al mismo blob** con la opción 3 y
+**conserva los bloques ya enviados**; los tres 409 de confirmar se distinguen
+leyendo la fila: lista → listo, esperando → reenviar lo que falta, borrada →
+no cabía) y `VideoLibrary` (lista en la nube, uso, enlace para ver, descartar).
+En `:feature-video`: servicio de cámara y micrófono con CameraX 1.6.2 como el
+spike (grabación persistente, cambiar de cámara sin cortar el archivo, 4/8
+Mbit/s), tope de archivo en 16 GiB menos 64 MiB, vista previa en pantalla,
+subida **sólo por Wi-Fi** (WorkManager, red sin medición), lista con "en este
+teléfono" y "en la nube", uso con aviso al 80%, reproductor Media3 1.9.0 que
+pide un enlace nuevo y sigue desde la misma posición si el de 15 min vence,
+borrar con confirmación; claro y oscuro con previews. **Comprobado:** 33/33
+pruebas de `:core` (10 nuevas), compila sin warnings, instala y abre sin fallos.
+**En el teléfono (2026-11-04, SM-S931B, revisado por adb):** primera grabación
+19:12:35-19:13:06, empezó con la cámara trasera y **cambió a la frontal grabando**
+(19:12:52): **un solo archivo**, 29 s de video contra ≈30 s de reloj (≈1 s, como
+el spike con cambios); codificador a 1280x720 y 4 Mbit/s; subida por Wi-Fi en
+≈5 s, confirmada, **la copia del teléfono borrada**; la lista "En la nube" la
+muestra (29 s · 720p · 16 MB, ≈4.4 Mbit/s con el sonido) y el uso "16 MB de 50
+GB". Es también la **primera subida real al contenedor `videos` de producción**.
+Sin fallos en el log. **Sin probar:** pantalla bloqueada grabando, verlo en la
+app, un enlace vencido a mitad de subida o de reproducción, 1080p.
+**Elecciones de la tanda, a confirmar por el dueño:** (1) al confirmarse la
+subida se **borra la copia del teléfono** (el teléfono tenía 3.7 GB libres; el
+video queda en la nube); (2) una grabación que Android corta **no se repara**: un
+MP4 sin índice no se reproduce, queda como fallida para borrarla; (3) se ve
+**dentro de la app** (Media3), así el enlace firmado no sale a otra app; (4) la
+vista previa se presta al servicio mientras la pantalla está visible: **sin
+medir** si quitarla o ponerla durante la grabación deja un salto en el video.
+
   ~~Escritura de prompts y ajustes, comando de verificación, borrado del audio~~
   (hechos 2026-10-30), ~~Redespliegue de la API~~ (hecho 2026-10-29, `d1bdd01`),
   ~~Tope de gasto~~ (hecho 2026-10-21, `011` en producción),
