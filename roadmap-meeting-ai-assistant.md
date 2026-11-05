@@ -2109,8 +2109,16 @@ en ≈67 s (≈4.5 Mbit/s: imagen viva todo el tiempo); subido, copia borrada.
 El dueño lo reprodujo: **se ve bien**. **Descartado por el dueño (2026-11-05,
 `decision-log.md`):** medir el costo en batería y calor de los cuadros, y el
 tamaño real por hora de 1080p (queda el estimado de 8 Mbit/s, ≈3.6 GB por hora).
-**Sin probar:** un enlace vencido a mitad de subida o de reproducción.
-**Elecciones de la tanda, a confirmar por el dueño:** (1) al confirmarse la
+**Subida cortada (2026-11-05):** video de ≈2 min, 92 MB (12 bloques de 8 MiB);
+la subida empezó 10:39:06, el Wi-Fi se cortó 10:39:10 y WorkManager detuvo el
+trabajo (la condición de red sin medición dejó de cumplirse); volvió 10:40:07 y
+el trabajo **arrancó solo** medio segundo después; terminó 10:40:32, confirmado,
+copia borrada, en la nube. **Que reanudó y no reenvió todo: sin comprobar** (la
+app no registra bloques y el registro de bloques se borra al terminar); el tiempo
+encaja con reanudar (25 s ≈ 78 MB a los 3.1 MB/s de la subida anterior), pero no
+lo prueba. **Sin probar:** un enlace vencido a mitad de subida o de reproducción.
+**Elecciones de la tanda, confirmadas por el dueño el 2026-11-05 (1-3, en
+`decision-log.md`; la 4 la reemplazó la vista en vivo sin cambios de sesión):** (1) al confirmarse la
 subida se **borra la copia del teléfono** (el teléfono tenía 3.7 GB libres; el
 video queda en la nube); (2) una grabación que Android corta **no se repara**: un
 MP4 sin índice no se reproduce, queda como fallida para borrarla; (3) se ve
