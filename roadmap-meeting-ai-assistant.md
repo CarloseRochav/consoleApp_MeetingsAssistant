@@ -2093,7 +2093,38 @@ el toque de 16:57:28.9, también desde la pantalla bloqueada, la paró y envió 
 tile pasó a apagado 0.1 s después); 36 s, sonido real todo el tiempo (0.4% de
 muestras en cero), reporte listo 16:59:17 (trabajo 20, sesión 42). Nota: cualquiera con el teléfono en la
 mano puede empezar o parar una grabación desde la pantalla bloqueada (no puede
-ver reportes: abrir la app sí pide desbloquear).
+ver reportes: abrir la app sí pide desbloquear). Decisión del dueño
+(2026-11-05): se queda así.
+
+**Lo que falta del paso D (plan del 2026-11-05, decisiones en `decision-log.md`;
+cada parte la hace otra sesión en su repo, con el prompt de
+`handoff-step-D.md`):**
+
+- **Push: descartado.** El teléfono sigue consultando al servidor y muestra una
+  **notificación local** cuando baja el reporte.
+- **Servidor primero, para D (antes del paso B).** Lo que el servidor tiene ya:
+  `Select_Sessions`, `Select_Search`, `Select_Reports`, `Select_Transcripts`,
+  `Select_Costs`, `Select_Prompt_Versions` / `Insert_Prompt_Versions` (sólo las
+  **ediciones**). Lo que falta:
+  1. **Catálogo de prompts originales** (DevLog, migración 016 + worker): los
+     originales (id, versión, nombre, texto) viven sólo en el código del
+     escritorio y en la copia del worker (`Copied/.../PromptCatalog.cs`); el
+     worker los publica en una tabla nueva al empezar cada corrida y la API los
+     devuelve, para que el teléfono pueda mostrarlos y editarlos.
+  2. **Re-extracción como trabajo del servidor** (DevLog + worker): un trabajo de
+     tipo `reextract` sobre una sesión que ya tiene transcript y un `prompt_id`;
+     nace `queued` (sin subida), despierta al worker, cuenta para el tope diario
+     y los trabajos en curso; el worker lee el transcript, extrae con ese prompt
+     (`ExtractAsync(transcript, promptId)` ya lo admite) y guarda un reporte
+     nuevo en la misma sesión, sin tocar Deepgram ni audio. El teléfono no tiene
+     ninguna clave de proveedor.
+- **App (después, o en paralelo la parte que no depende del servidor):**
+  notificación de reporte listo; historial de todas las sesiones (también las del
+  escritorio), búsqueda, lector de reportes y transcript; costos (totales y por
+  mes); y, cuando el servidor tenga 1 y 2 desplegados, editor de prompts (capa
+  propia, volver al original) y re-extraer una sesión con otro prompt.
+- **Orden:** DevLog (016 y API) → worker → despliegue (lo corre el dueño) → app.
+  Luego el paso B.
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
