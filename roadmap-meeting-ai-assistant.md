@@ -2125,6 +2125,35 @@ cada parte la hace otra sesión en su repo, con el prompt de
   propia, volver al original) y re-extraer una sesión con otro prompt.
 - **Orden:** DevLog (016 y API) → worker → despliegue (lo corre el dueño) → app.
   Luego el paso B.
+- **DevLog 016 construido (2026-11-05, rama `reextract-and-prompt-catalog`, PR en
+  DevLog; sin aplicar a producción).** Contratos completos en el `CLAUDE.md` de
+  DevLog, sección "Prompt catalog and re-extraction (migration 016)". En corto:
+  - Tabla `mtg.mtg_prompt_catalog` (prompt_id, version, name = DisplayName,
+    description, output_kind, system_prompt, updated_at). El worker llama
+    `mtg.mtg_worker_publish_prompts(p_prompts jsonb)` al empezar cada corrida con
+    **todo** el catálogo (`[{prompt_id, version, name, description, output_kind,
+    system_prompt}]`); lo que falta del arreglo se borra; un arreglo vacío o mal
+    formado no cambia nada.
+  - La app lee los originales con **`Meetings/Select_Prompt_Catalog`** `{option: 0
+    todos | 1 uno, prompt_id}` (acción nueva, no la opción 4: otra forma de fila).
+    `Insert_Prompt_Versions` rechaza (400) un prompt_id que no esté en el catálogo,
+    **salvo mientras el catálogo esté vacío** (decisión en `decision-log.md`).
+  - Re-extraer: **`Jobs/InsertUpdate_Jobs` opción 2** `{idSession, prompt_id}` → la
+    fila del trabajo `queued` (`kind = reextract`); 404 sesión ajena, 409 sin
+    transcript, 400 prompt desconocido, 429 tope/en curso con el mismo cuerpo que
+    las subidas. `Select_Jobs` muestra `kind` y `prompt_id`.
+  - Worker: `mtg_worker_claim_job(..., p_kinds => ARRAY['transcribe','reextract'])`
+    (por omisión sólo transcribe, así el worker de hoy nunca toma uno) devuelve
+    además `kind` y `prompt_id`; `mtg_worker_update_jobs` opción 0 falla con un
+    reextract, opción 1 exige el mismo prompt_id y agrega un reporte nuevo a la
+    sesión. **El worker no necesita otra función:** el transcript se lee con
+    `mtg_select_transcripts`, como ya lo hace.
+  - **Comprobado en local** (Postgres en Docker + Azurite blob y cola): 72 de 73
+    chequeos (el que falló era el orden esperado por el script de prueba), más
+    `Verify-Api` ampliado. **Sin comprobar:** el worker real, producción.
+  - Al desplegar: 016 en producción cuando quiera el dueño (la API y el worker de hoy
+    siguen funcionando), luego la API, luego el worker. Arrancar el worker una vez
+    tras desplegarlo llena el catálogo.
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
