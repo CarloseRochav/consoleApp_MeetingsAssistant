@@ -2077,6 +2077,18 @@ el dueño vio el aviso; reporte listo 15:23 (trabajo 15, sesión 38).
 **Sin medir:** matar la app en la subida (la reanudación por bloques quedó
 probada en video, mismo `BlockUploader`).
 
+**Tile de Configuración rápida (2026-11-05, pedido del dueño; primer ítem pendiente
+del paso D):** tile "Meeting" en `:feature-meetings`: tocarlo graba, tocarlo de
+nuevo para y envía; muestra "Recording mm:ss" con el panel abierto. Para empezar
+pasa por una pantalla invisible (`StartMeetingActivity`, también sobre la
+pantalla bloqueada) porque desde Android 14 una grabación de micrófono sólo puede
+empezar con la app al frente: empezada desde segundo plano graba silencio. **En
+el teléfono:** con la app cerrada, el toque arrancó el proceso (16:37:03.55) y la
+reunión se creó 0.2 s después; **el audio no es silencio** (pico −14 dBFS en
+todo el archivo); 81 s, reporte 16:39 (trabajo 19, sesión 41): tile → `.md` con
+la app cerrada. **Sin probar:** parar desde el tile (se paró con el botón de la
+notificación) y empezar desde la pantalla bloqueada.
+
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
 lectura, uso), un `VideoPipeline` (enlace con el tamaño declarado → bloques de 8
