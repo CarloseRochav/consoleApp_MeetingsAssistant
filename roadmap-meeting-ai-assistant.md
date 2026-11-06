@@ -2022,8 +2022,12 @@ Después el dueño probó las pantallas vacías y cerrar sesión (el diálogo sa
 contraseña sin guardarla (2026-11-04; el spike ya no puede subir). Hallazgo del
 script: `powershell -File ... -Revoke 1,2,3` pasa "1,2,3" como un solo texto y
 `[int[]]` lo leyó como 123 (el servidor lo rechazó); el script ahora parte la
-lista él mismo. **Sin probar:** que una clave revocada devuelva al inicio de
-sesión con el aviso.
+lista él mismo. **Clave revocada: comprobada (2026-11-05).** DevLog no tiene
+pantalla de dispositivos (ni web ni escritorio), así que se revoca con
+`tools\Revoke-Device.ps1` del repo de la app (pide la contraseña oculta, la usa
+una vez, lista o revoca por id; no imprime ni guarda secretos). El dueño revocó
+el dispositivo 4; la app, cerrada y reabierta (16:15:44), volvió al inicio de
+sesión; tras entrar de nuevo Inicio muestra **dispositivo 5**. Sin fallos.
 
 **Tanda 2, Reuniones, construida (2026-11-04, decisión del dueño):** en `:core`
 el cliente de trabajos y reportes y un `MeetingPipeline` (trabajo y enlace →
