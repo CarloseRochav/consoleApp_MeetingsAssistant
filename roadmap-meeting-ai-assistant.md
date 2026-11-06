@@ -2086,8 +2086,14 @@ empezar con la app al frente: empezada desde segundo plano graba silencio. **En
 el teléfono:** con la app cerrada, el toque arrancó el proceso (16:37:03.55) y la
 reunión se creó 0.2 s después; **el audio no es silencio** (pico −14 dBFS en
 todo el archivo); 81 s, reporte 16:39 (trabajo 19, sesión 41): tile → `.md` con
-la app cerrada. **Sin probar:** parar desde el tile (se paró con el botón de la
-notificación) y empezar desde la pantalla bloqueada.
+la app cerrada. **Pantalla bloqueada y parar desde el tile: comprobado
+(2026-11-05).** Con el teléfono bloqueado, el toque de 16:56:52 empezó a grabar
+**sin pedir desbloquear** (la pantalla invisible se abrió sobre la de bloqueo) y
+el toque de 16:57:28.9, también desde la pantalla bloqueada, la paró y envió (el
+tile pasó a apagado 0.1 s después); 36 s, sonido real todo el tiempo (0.4% de
+muestras en cero), reporte listo 16:59:17 (trabajo 20, sesión 42). Nota: cualquiera con el teléfono en la
+mano puede empezar o parar una grabación desde la pantalla bloqueada (no puede
+ver reportes: abrir la app sí pide desbloquear).
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
