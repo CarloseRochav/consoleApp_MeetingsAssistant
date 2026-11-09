@@ -2154,6 +2154,35 @@ cada parte la hace otra sesión en su repo, con el prompt de
   - Al desplegar: 016 en producción cuando quiera el dueño (la API y el worker de hoy
     siguen funcionando), luego la API, luego el worker. Arrancar el worker una vez
     tras desplegarlo llena el catálogo.
+- **Worker para 016 construido (2026-11-08, rama `reextract-and-prompt-catalog`, PR en
+  el repo del worker; sin desplegar).** Sin cambios en el código copiado ni en DevLog
+  (no hizo falta otra función).
+  - **Catálogo:** al empezar cada corrida, antes del primer trabajo, publica
+    `BuiltInPromptCatalog.GetAll()` con `mtg_worker_publish_prompts`. Si falla, lo
+    registra como error (sin texto de prompts) y los trabajos siguen. En modo `Loop`,
+    una vez al arrancar.
+  - **Re-extracción:** reclama con `p_kinds => {transcribe, reextract}`. Un trabajo
+    `reextract` lee el transcript de la sesión (`mtg_select_transcripts`, como el
+    dueño del trabajo), arma la configuración y los prompts del dueño como cualquier
+    trabajo, extrae con `ExtractAsync(transcript, promptId)` y guarda un reporte nuevo
+    en la sesión (opción 1, con costo). Sin Deepgram, sin bajar ni borrar audio.
+    Reintentos como en transcribe; un prompt desconocido o una sesión sin transcript
+    fallan de una, sin llamar al LLM (decisión en `decision-log.md`). Los trabajos
+    `transcribe` no cambian.
+  - **El worker nuevo necesita 016 en la base** (sin respaldo al claim de dos
+    argumentos): el orden de despliegue 016 → API → worker es obligatorio.
+  - **Comprobado en local** (`tools/Run-IntegrationTests.ps1`: base desechable desde el
+    `schema.sql` de DevLog con 016, Azurite, Deepgram y LLM falsos): **20 de 20**, las
+    12 de antes (transcribe igual que siempre) y 8 nuevas: re-extracción con la edición
+    del usuario y su modelo, con un prompt original y la sesión de otro usuario,
+    reintento y luego hecho, rendirse al tercer intento, prompt desconocido sin LLM,
+    el claim de dos argumentos que nunca ve un reextract, la publicación del catálogo
+    (filas idénticas al código, prompt viejo borrado, 0 cambios la segunda vez) y una
+    publicación fallida (tabla bloqueada) con el trabajo hecho igual. Nada de
+    transcripts, reportes ni prompts en los logs. Arreglado de paso: el script leía
+    Postgres en el puerto 5432 fijo, y `devlog-pg` publica ahora el 5433; se lo
+    pregunta a Docker. **Sin comprobar:** producción (lo despliega el dueño con
+    `tools\Deploy-Azure.ps1 -Step Images/Worker` de DevLog, después de 016 y la API).
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
