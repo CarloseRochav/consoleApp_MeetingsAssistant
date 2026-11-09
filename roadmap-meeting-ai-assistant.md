@@ -2184,6 +2184,21 @@ cada parte la hace otra sesión en su repo, con el prompt de
     pregunta a Docker. **Sin comprobar:** producción (lo despliega el dueño con
     `tools\Deploy-Azure.ps1 -Step Images/Worker` de DevLog, después de 016 y la API).
 
+- **016, API y worker en producción (2026-11-09; lo desplegó el dueño, comprobado desde la PC).**
+  Las siete decisiones de 016 y del worker, **confirmadas por el dueño** (`decision-log.md`).
+  - Base: `Db.ps1 status -Environment Production` → 15 aplicadas, **016 incluida**, 0 pendientes.
+  - API: DevLog PR #13 fusionado (`fa253c9`), `ca-devlog-api` con `devlog-api:fa253c9`, revisión
+    `--0000007`; `Meetings/Select_Prompt_Catalog` sin token responde 401 (antes del despliegue,
+    404 como una ruta inexistente).
+  - Worker: `caj-mtg-worker` con `meeting-assistant-worker:2d16d70` (la rama del PR #4 del
+    worker, **todavía abierto**: falta fusionarlo para que `main` sea lo desplegado).
+  - Catálogo: una corrida del worker lanzada a mano (`az containerapp job start`, 21:38:51 UTC,
+    Succeeded en 27 s) registró **"Prompt catalog published: 3 prompt(s), 3 row(s) changed"** y
+    "0 job run(s)". El error `libgssapi_krb5.so.2` del arranque no es nuevo: sale en 25 corridas
+    desde el 2026-11-03, también en las que procesaron reuniones bien.
+  - **Sin comprobar:** leer el catálogo con un token (lo hará la app en la parte 2) y una
+    re-extracción real.
+
 **Lo que falta del paso D, parte 1 en la app: construida (2026-11-08) y probada en el teléfono (2026-11-08/09).**
 Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5e21c0`, `781edca`, `68108dd`, `c4ee03d`, `58ab58d`.
 - **Notificación de reporte listo:** `MeetingPipeline` avisa una vez, justo después de bajar el
@@ -2232,8 +2247,9 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
   el diálogo a las 11:57:11 con "Allow"; por eso el "Don't allow" lo hizo el dueño a mano.
   **Sin probar:** la notificación con la app cerrada del todo o tras reiniciar el teléfono (el
   aviso sale del mismo `MeetingPipeline` que corre en WorkManager).
-- **Parte 2 (editor de prompts, re-extraer): no empezada.** Necesita 016, la API y el worker nuevos
-  en producción; según este roadmap están construidos en ramas pero sin desplegar.
+- **Parte 2 (editor de prompts, re-extraer): no empezada.** Ya no está bloqueada: 016, la API y
+  el worker nuevos están en producción desde el 2026-11-09 (arriba).
+
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
 lectura, uso), un `VideoPipeline` (enlace con el tamaño declarado → bloques de 8
