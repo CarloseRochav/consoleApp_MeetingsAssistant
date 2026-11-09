@@ -2184,6 +2184,56 @@ cada parte la hace otra sesión en su repo, con el prompt de
     pregunta a Docker. **Sin comprobar:** producción (lo despliega el dueño con
     `tools\Deploy-Azure.ps1 -Step Images/Worker` de DevLog, después de 016 y la API).
 
+**Lo que falta del paso D, parte 1 en la app: construida (2026-11-08) y probada en el teléfono (2026-11-08/09).**
+Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5e21c0`, `781edca`, `68108dd`, `c4ee03d`, `58ab58d`.
+- **Notificación de reporte listo:** `MeetingPipeline` avisa una vez, justo después de bajar el
+  reporte; en Android es una notificación local ("Your meeting's report is ready", la fecha de la
+  reunión, nunca su contenido). Tocarla abre ese reporte (también con la app abierta, o después de
+  iniciar sesión). Abrir el reporte o borrar la reunión la quita. Sin permiso
+  `POST_NOTIFICATIONS`, o con las notificaciones de la app apagadas, no se muestra nada y Reuniones
+  muestra "Notifications are off" con "Turn on" (pide el permiso una vez; después abre los ajustes).
+- **Historial (decisión del dueño 2026-11-08, `decision-log.md`): pantalla aparte**, desde una fila
+  en Reuniones. Pagina `Select_Sessions` (30 por página, más al llegar al final, tirar para
+  refrescar); una sesión muestra sus reportes (el más nuevo primero, un chip por reporte si hay
+  varios) y su transcript (no se pide si la sesión no tiene; 404 = ninguno), y su costo.
+- **Búsqueda:** campo arriba del historial (`Select_Search`), busca al dejar de escribir (350 ms,
+  desde 2 letras); los `[ ]` del servidor se ven resaltados; tocar un resultado abre la sesión. La
+  búsqueda nunca va a un log.
+- **Costos:** botón en la barra del historial; totales (opción 0: transcripción, reportes, tokens)
+  y por mes UTC (opción 1). **NULL nunca se muestra como 0:** "Unknown" si no se conoce ningún
+  precio, "$x + N unknown" si faltan algunos (con la nota de que no están en el total), "None" si no
+  hay nada que costear.
+- **Comprobado:** 47/47 pruebas de `:core` (14 nuevas: historial, sesión, transcript ausente o 404,
+  búsqueda, marcas `[ ]`, costos, NULL ≠ 0, aviso único del reporte), compila sin warnings, previews
+  claro y oscuro de cada pantalla nueva. **En el teléfono (2026-11-08, SM-S931B, revisado por adb y capturas):**
+  historial contra producción: **45 sesiones** (pasó solo de la primera página de 30 al bajar,
+  sin tocar "Load more"); una sesión del escritorio con 2 reportes: cambiar de reporte con los
+  chips, el transcript se lee, costo "$0.00 + 1 unknown" (el $0.00 es un precio guardado como 0, el
+  NULL queda como unknown); búsqueda de "professors": 1 resultado con la palabra resaltada, tocarlo
+  abre la sesión; una palabra inexistente da "Nothing found"; la X vuelve a la lista. Costos: 45
+  reuniones, $1.55 + 20 unknown (los 20 son transcripts de octubre del escritorio, sin precio), por
+  mes 20 + 25 reuniones y $1.49 + $0.0586, que cuadra con el total. Con las notificaciones
+  permitidas, la fila "Notifications are off" no sale. **Hallazgos, arreglados (`58ab58d`, compila,
+  sin instalar todavía):** las sesiones del escritorio traen `source = "window"` y se veían como
+  "Window" (ahora "Desktop"); la tecla de buscar del teclado no hacía nada (ahora lo cierra).
+  **Notificación de reporte listo: comprobada (2026-11-08/09).** Una grabación de 52 s en una sala en
+  silencio falló en el servidor ("no speech was detected", trabajo 24), correctamente sin
+  notificación. Con voz sintetizada desde los parlantes de la PC (con el permiso del dueño): reunión
+  `20261108-222359`, 48 s, lista 22:25, notificación publicada 22:25:51 (63 s después de parar,
+  canal `reports`); el dueño la tocó 22:33. Repetida con la app instalada de nuevo (`58ab58d`):
+  reunión `20261109-122150`, 41 s, parada 12:22:31, lista y notificada ≈12:24 (trabajo 27, sesión
+  47); título "Your meeting's report is ready", texto "Mon 9 Nov, 12:21 · tap to read it" (sin
+  contenido de la reunión); tocarla desde la persiana con la app en segundo plano abrió **el reporte
+  de esa reunión** y la notificación pasó al archivo (quitada). **Permiso denegado: comprobado
+  (2026-11-09).** Con el permiso revocado por adb, Reuniones muestra "Notifications are off"; "Turn
+  on" abre el diálogo del sistema; "Allow" quita la fila; tras "Don't allow" (lo tocó el dueño), el
+  segundo "Turn on" abrió los ajustes de notificaciones de la app (12:15:01) y, permitido ahí, la
+  fila se fue. Hallazgo de la prueba (no de la app): un toque físico, no inyectado por adb, contestó
+  el diálogo a las 11:57:11 con "Allow"; por eso el "Don't allow" lo hizo el dueño a mano.
+  **Sin probar:** la notificación con la app cerrada del todo o tras reiniciar el teléfono (el
+  aviso sale del mismo `MeetingPipeline` que corre en WorkManager).
+- **Parte 2 (editor de prompts, re-extraer): no empezada.** Necesita 016, la API y el worker nuevos
+  en producción; según este roadmap están construidos en ramas pero sin desplegar.
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
 lectura, uso), un `VideoPipeline` (enlace con el tamaño declarado → bloques de 8
