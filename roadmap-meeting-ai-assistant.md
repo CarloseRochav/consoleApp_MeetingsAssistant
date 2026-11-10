@@ -2314,6 +2314,59 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
       basta para dejar una reunión fallida. **Recomendado (otra sesión, repo del worker):** esperar
       entre intentos (p. ej. 15 s y 60 s) o devolver el trabajo a la cola con demora, al menos para
       404/408/429/5xx del LLM. Prompts para las sesiones de DevLog y del worker en `handoff-retry-delay.md` (2026-11-09).
+    - **Demora entre reintentos, lado DevLog: hecho (migración 017, 2026-11-09, PR en DevLog, sin
+      producción).** Confirmado leyendo el código: la opción 2 de `mtg_worker_update_jobs` devolvía el
+      trabajo a `queued` y `mtg_worker_claim_job` lo tomaba en seguida (sólo miraba estado, intentos y
+      atasco). Ahora `mtg_jobs.retry_after` (nullable) y un argumento nuevo, `p_retry_delay_seconds`
+      (último, por defecto NULL = sin demora, tope 3600 s), en la opción 2; el claim salta un trabajo
+      en cola hasta esa hora, y entretanto toma los más nuevos. **La demora la elige el worker, no la
+      base** (`decision-log.md`): sólo él sabe por qué falló y necesita el mismo número para programar
+      su propio despertar. **El worker debe despertarse solo:** el Drain borra los mensajes al empezar y
+      termina cuando no hay nada tomable, así que un trabajo esperando su `retry_after` sólo se toma si
+      llega un mensaje a `mtg-jobs` después de la demora. Revisado y sin cambios: tope diario y límite
+      en curso (un reintento en espera sigue `queued` y cuenta en curso, como debe), limpieza de 013
+      (sólo `awaiting_upload`), regla de atasco (sólo `processing`), y `Select_Jobs` no muestra
+      `retry_after` al teléfono (no hace falta publicar la API). El worker desplegado sigue igual: sus
+      llamadas con nombre (claim de 2/3 argumentos, opción 2 sin demora) se probaron y se comportan
+      como antes. **Probado en local** (27 comprobaciones, en una base desde `schema.sql` y en una base
+      en estado 016 migrada; y `devlog_dev` con dbmate). **No probado:** el worker, producción, Neon.
+      Contrato para la sesión del worker: sección "Retry delay (migration 017)" del `CLAUDE.md` de
+      DevLog. Orden: 017 a producción (cuando el dueño quiera) → worker nuevo; sin release de la API.
+    - **Demora entre reintentos, lado worker: hecho (2026-11-09, rama `job-retry-delay`, PR #5 del
+      worker, sin desplegar).** Tras un fallo reintentable el worker pide a DevLog `retry_after` =
+      ahora + `Worker:RetryDelaySeconds` según el intento (**15 s tras el primero, 60 s tras el
+      segundo**; el último valor sirve para intentos posteriores; 0 = en seguida, como antes; tope
+      3600 s como 017), y en modo Drain encola un despertar que se ve a esa demora **+ 5 s** (margen
+      entre el reloj de la base y el de Storage). El último intento no espera: queda `failed`.
+      **Qué espera (decisión dentro del plan, `decision-log.md`):** todo fallo reintentable, no sólo
+      404/408/429/5xx del LLM: los SDK reportan los errores de formas distintas (Deepgram los envuelve
+      y no trae código), y esperar un minuto antes de un reintento que vuelva a fallar no cuesta nada
+      (el transcript se guarda antes del LLM). **Fallan en seguida, sin demora, como antes:** prompt
+      desconocido o ausente, sesión sin transcript, transcripción vacía, trabajo sin audio.
+      **Hallazgo al diseñarlo:** el Drain borraba la cola con `ClearMessages`, que también borra los
+      mensajes **invisibles** (comprobado en Azurite: con el código viejo la prueba nueva falla). Una
+      corrida que empiece antes de tiempo (el despertar de otra subida, o un escalador KEDA que cuente
+      mensajes invisibles) se llevaba el despertar demorado y el trabajo quedaba esperando a la próxima
+      subida; lo mismo valía para el despertar de "base caída". **Ahora el Drain borra sólo los
+      despertares visibles** (recibe y borra en lotes de 32) y deja los demorados (decisión dentro del
+      plan). **Para revisar en DevLog (no hecho, no es de este repo):** la regla `azure-queue` de
+      `tools\Deploy-Azure.ps1` no fija `queueLengthStrategy`; si el KEDA de Container Apps cuenta los
+      invisibles (el valor por defecto `all` de las versiones recientes), un despertar demorado arranca
+      corridas vacías cada ~30 s hasta que se ve (≤ 3 por un reintento de 60 s; ≈10 por los 5 min de
+      "base caída"): correcto pero despierta Neon de más. `queueLengthStrategy = 'visibleonly'` lo
+      evitaría si Container Apps lo admite (no verificado). **Comprobado desde la PC (2026-11-09, sólo lectura):** la regla `wake` de `caj-mtg-worker` no tiene `queueLengthStrategy` (sondeo cada 30 s, `queueLength` 1), así que usa el valor por defecto. **Decisión del dueño (2026-11-09): desplegar y observar primero**; si tras un reintento real aparecen corridas vacías, agregar `visibleonly` en un cambio aparte. Sin cambios: el catálogo, los trabajos
+      transcribe/reextract en lo demás, el modo Loop (su sondeo encuentra el trabajo cuando vence; no
+      encola despertares). No se usa el `Retry-After` de un 429 (los SDK no lo exponen igual;
+      las demoras son cortas). **Probado en local:** build y `tools/Run-IntegrationTests.ps1` contra
+      una base desde el `schema.sql` de DevLog con 017 y Azurite, **28/28**: demoras 15 s y 60 s
+      guardadas en `retry_after` y sin claim mientras tanto, el tercer intento `failed` sin demora;
+      transcripción vacía y prompt desconocido sin demora; demora 0 = reintento en seguida; un Drain
+      con fallo reintentable deja un despertar invisible y con fallo permanente ninguno; un Drain deja
+      un despertar todavía invisible; y de punta a punta con demoras de 2 y 4 s y un LLM falso que da
+      404 dos veces: cada corrida arranca sólo cuando se ve un despertar, tres intentos separados ≥ 2 s
+      y ≥ 4 s, trabajo `done`, Deepgram pagado una vez, cola vacía. **No probado:** Azure (Container
+      Apps, KEDA, Storage real), Neon, producción. **Despliegue (el dueño):** 017 a producción →
+      `tools\Deploy-Azure.ps1 -Step Images/Worker` de DevLog; luego una reunión desde el teléfono.
     - **Notificación con la app quitada de recientes: no medido.** El reporte llegó (17:09:54, 64 s
       después de parar) antes de que el dueño quitara la app de recientes. (En el intento por adb se
       cerró por error la tarjeta de WhatsApp en vez de la de la app; las capturas con contenido del
