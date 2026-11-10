@@ -2302,6 +2302,18 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
       trabajos fallaron al primer intento; el trabajo 30 salió al segundo y el **32 al tercero de
       tres** (uno más y quedaba fallido). Ninguno en los 14 días anteriores. Afecta también a las
       subidas. Revisar el despliegue en Azure AI Foundry.
+    - **Los 404 de Azure AI Foundry: investigados (2026-11-09, sólo lectura).** Fue una ráfaga de
+      ≈1.5 min (01:03:03-01:04:37 UTC, 17:03-17:04 local), ya pasada: todos los trabajos antes y
+      después salieron bien, incluidas las cuatro reuniones siguientes (trabajos 34, 36, 37, 38).
+      El despliegue `grok-4.6` existe (Succeeded, GlobalStandard, capacidad 50, sin cambios desde
+      2026-10-06); el endpoint y el nombre que usa el worker coinciden; ningún cambio en el recurso
+      en 3 días; las métricas de Azure (`ModelRequests`) muestran exactamente 3 respuestas 404 en esa
+      hora, West US 3, sin spillover, y en la semana sólo 200 (más doce 408 el 2026-11-03). **Nada que
+      cambiar en Azure.** **Debilidad que dejó ver, en el worker:** los reintentos van seguidos, sin
+      espera (el trabajo 32 gastó sus tres intentos en 2 s), así que un corte de Azure de un minuto
+      basta para dejar una reunión fallida. **Recomendado (otra sesión, repo del worker):** esperar
+      entre intentos (p. ej. 15 s y 60 s) o devolver el trabajo a la cola con demora, al menos para
+      404/408/429/5xx del LLM.
     - **Notificación con la app quitada de recientes: no medido.** El reporte llegó (17:09:54, 64 s
       después de parar) antes de que el dueño quitara la app de recientes. (En el intento por adb se
       cerró por error la tarjeta de WhatsApp en vez de la de la app; las capturas con contenido del
