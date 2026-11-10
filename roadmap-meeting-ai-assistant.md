@@ -2444,6 +2444,49 @@ bloqueado.
 en DevLog_Backend y el worker; ver "Avance del paso A" arriba (paso A hecho el
 2026-10-30).
 
+### Paso B — escritorio como cliente (plan del 2026-11-09, sin empezar)
+
+**Objetivo:** el escritorio pasa a ser un cliente delgado de la API de DevLog, como la app Android:
+graba, dispara (hotkey, bandeja, endpoint local), sube y escribe el `.md` en el vault. **Ninguna
+clave de proveedor ni cadena de conexión en la máquina.** Prompts para cada sesión en
+`handoff-step-B.md`.
+
+**Decisiones del dueño (2026-11-09, `decision-log.md`):** un solo corte, sin modo de respaldo; sin
+API el escritorio graba, encola y envía después (como el teléfono); el servidor conserva un archivo
+del audio en la nube por un número de días (hoy lo hace el escritorio con su propio Blob); no se sabe
+si el escritorio corre en otras máquinas.
+
+**Lo que ya existe en la API** (lo usa el teléfono, probado en producción): inicio de sesión por
+dispositivo, trabajos de subida por bloques con tope diario y límite en curso, reportes, sesiones,
+transcript, búsqueda, costos, ajustes y prompts en dos capas, catálogo de prompts y re-extracción.
+
+**Hallazgos al planear (2026-11-09):**
+- **Tamaño del audio:** el escritorio graba 44.1 kHz mono en float de 32 bits (≈10.6 MB/min); el
+  tope de subida de la API es 1 GiB, así que una grabación de más de ~100 min sería rechazada.
+  Convertir a 16 kHz 16 bits antes de subir (como el teléfono) lo lleva a ≈9 h.
+- **Importación final y choque de ids:** la importación (`--migrate-to-devlog`) conserva los ids de
+  origen, y desde la del 2026-10-19 la API creó sesiones (las del teléfono, ids 26 en adelante),
+  reportes, ajustes y versiones de prompt. En esta PC el escritorio grabó por última vez el
+  2026-10-14 (nada después de la importación), pero no se sabe de otras máquinas: el primer paso de
+  la sesión del escritorio es una corrida en seco (sólo conteos) y nunca `--apply` con un choque.
+- **Archivo del audio:** hoy el worker borra el audio al terminar el trabajo (decisión del
+  2026-10-30); con la decisión de conservar un archivo hace falta trabajo en DevLog y en el worker
+  antes del escritorio.
+- `appsettings.json` local de DevLog tiene la cadena de conexión de la cuenta de Storage en claro;
+  **no está en git** (ignorado, ningún commit lo contiene). Salió una vez en la salida de la sesión
+  del 2026-11-09: rotarla queda a criterio del dueño.
+
+**Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
+DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:
+importación final si hace falta, instalar en cada máquina, **rotar las claves de proveedor que
+vivían en los escritorios** y la contraseña de la base vieja, retirar la base vieja).
+
+**Criterio de salida:** una llamada de Teams grabada en el escritorio → `.md` en el vault sin ninguna
+clave de proveedor en la máquina; historial, búsqueda, costos, prompts y re-extracción desde el
+escritorio por la API; grabar sin red y enviar después; un reinicio a mitad de una subida que
+reanuda; una grabación de más de 100 min que entra; un dispositivo revocado vuelve al inicio de
+sesión. Lo que no se pueda medir se reporta como no medido.
+
 ### Consecuencias de Container Apps para el paso A
 
 - **Arranque en frío:** Container Apps puede escalar a cero sin uso, así que la
