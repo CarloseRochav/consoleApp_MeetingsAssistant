@@ -2248,7 +2248,7 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
   **Sin probar:** la notificación con la app cerrada del todo o tras reiniciar el teléfono (el
   aviso sale del mismo `MeetingPipeline` que corre en WorkManager).
 - **Parte 2 (editor de prompts, re-extraer): construida y probada en el teléfono (2026-11-09).**
-  Commits `49cb721`, `c3b656b` y `698f9d7` en `MeetingAssistant_App`. Decisión del dueño (2026-11-09): el
+  Commits `49cb721`, `c3b656b`, `698f9d7` y `fbf6177` en `MeetingAssistant_App`. Decisión del dueño (2026-11-09): el
   editor de prompts es una fila "Prompts" en Reuniones; re-extraer sale de una sesión del historial.
   - **App:** `PromptLibrary` en `:core` (catálogo `Select_Prompt_Catalog` + opción 2 en efecto +
     opción 3 mías; lo más nuevo de la opción 2 por prompt manda, una fila de reversión = el
@@ -2306,12 +2306,19 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
       después de parar) antes de que el dueño quitara la app de recientes. (En el intento por adb se
       cerró por error la tarjeta de WhatsApp en vez de la de la app; las capturas con contenido del
       teléfono se borraron.)
-    - **Notificación tras reiniciar el teléfono: parcial.** Reunión `20261109-172041` (25 s),
-      parada 17:21:06 y `adb reboot` 17:21:11 con la reunión en Waiting (sin subir). Arrancó 17:21:58,
-      desbloqueado 17:22:32; la reunión siguió en Waiting **54 s** hasta que la app se abrió desde el
-      lanzador (17:23:26); entonces subió (trabajo 36, 17:23:28), quedó lista 17:24:29 y la
-      notificación salió con el texto correcto. **Sin medir:** que WorkManager la retome solo, sin
-      abrir la app, después de un reinicio.
+    - **Notificación tras reiniciar el teléfono: encontrado un fallo, arreglado y comprobado.**
+      Dos corridas (`20261109-172041` parada en Waiting; `20261109-172749` cortada a mitad de la
+      subida, trabajo 37): tras desbloquear, la reunión **no avanzó** (54 s y **7 min** con la
+      pantalla de inicio delante y red) hasta que se abrió la app; entonces subió y la notificación
+      salió. Causa: WorkManager deja deshabilitado su propio receptor de arranque
+      (`RescheduleReceiver`, `disabledComponents` en el teléfono) desde Android 6 y sólo vuelve a
+      programar sus trabajos cuando arranca el proceso de la app. **Arreglo (decisión dentro del
+      plan, `decision-log.md`):** `BootReceiver` en `:feature-meetings` (BOOT_COMPLETED, que llega
+      tras el primer desbloqueo) arranca el proceso —WorkManager reprograma— y corre
+      `MeetingUploads.resumeAll`. **Comprobado (17:42-17:45):** reunión `20261109-174237` cortada a
+      mitad de la subida (trabajo 38), reinicio, desbloqueo 17:43:39, la app **no se abrió** (ningún
+      evento de su pantalla), la subida siguió sola 17:43:44 (5 s después) y la notificación salió
+      17:45:02 con el texto correcto.
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
