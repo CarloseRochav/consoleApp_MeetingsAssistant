@@ -2248,7 +2248,7 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
   **Sin probar:** la notificación con la app cerrada del todo o tras reiniciar el teléfono (el
   aviso sale del mismo `MeetingPipeline` que corre en WorkManager).
 - **Parte 2 (editor de prompts, re-extraer): construida y probada en el teléfono (2026-11-09).**
-  Commits `49cb721` y `c3b656b` en `MeetingAssistant_App`. Decisión del dueño (2026-11-09): el
+  Commits `49cb721`, `c3b656b` y `698f9d7` en `MeetingAssistant_App`. Decisión del dueño (2026-11-09): el
   editor de prompts es una fila "Prompts" en Reuniones; re-extraer sale de una sesión del historial.
   - **App:** `PromptLibrary` en `:core` (catálogo `Select_Prompt_Catalog` + opción 2 en efecto +
     opción 3 mías; lo más nuevo de la opción 2 por prompt manda, una fila de reversión = el
@@ -2282,6 +2282,36 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
   - **Hallazgos de la prueba (no de la app):** `uiautomator dump` no devuelve nada mientras hay una
     barra de progreso animada; `adb shell input text` no acepta paréntesis (lo interpreta el shell
     del teléfono); la combinación Ctrl+Fin no movió el cursor al final del campo de texto.
+  - **Pendientes, probados en el teléfono (2026-11-09, tarde):**
+    - **Cartel en vivo y retomar al reabrir: comprobados.** Re-extracción de la sesión 46 con
+      "Asignación de trabajo" pedida 16:53:09; se salió de la sesión y se volvió a entrar 16:53:20:
+      el cartel "queued" reapareció (retomado con `Select_Jobs` opción 0); sin tocar nada pasó solo
+      a "New report … is ready. It is the newest one." y la sesión quedó con 2 reportes, el nuevo
+      primero (costo $0.0088 → $0.0137). **Hallazgo, arreglado (`698f9d7`):** al retomar, el cartel
+      mostraba el id del prompt (`assignment-meeting`); ahora busca su nombre en el catálogo —
+      comprobado al reabrir otra sesión con un trabajo en curso ("Especificación funcional (estados
+      y flujo)").
+    - **429 por trabajos en curso: no medido en el teléfono.** Cuatro re-extracciones seguidas
+      (sesiones 42, 41, 40, 26) tardaron casi 3 min en pedirse por la interfaz y el worker termina
+      cada una en ≈20 s, así que nunca hubo 3 en curso y la cuarta se aceptó (costo extra ≈$0.005).
+      Queda cubierto por las pruebas de `:core`. El 409 (sin transcript) no se puede pedir desde la
+      app: el botón no sale en una sesión sin transcript; el 404 tampoco (sólo se abren sesiones
+      propias).
+    - **Hallazgo en el worker / Azure (no en la app):** desde 2026-11-10 00:54 UTC (16:54 local)
+      Azure AI Foundry responde a veces **`HTTP 404 DeploymentNotFound`** para `grok-4.6`: 3 de 5
+      trabajos fallaron al primer intento; el trabajo 30 salió al segundo y el **32 al tercero de
+      tres** (uno más y quedaba fallido). Ninguno en los 14 días anteriores. Afecta también a las
+      subidas. Revisar el despliegue en Azure AI Foundry.
+    - **Notificación con la app quitada de recientes: no medido.** El reporte llegó (17:09:54, 64 s
+      después de parar) antes de que el dueño quitara la app de recientes. (En el intento por adb se
+      cerró por error la tarjeta de WhatsApp en vez de la de la app; las capturas con contenido del
+      teléfono se borraron.)
+    - **Notificación tras reiniciar el teléfono: parcial.** Reunión `20261109-172041` (25 s),
+      parada 17:21:06 y `adb reboot` 17:21:11 con la reunión en Waiting (sin subir). Arrancó 17:21:58,
+      desbloqueado 17:22:32; la reunión siguió en Waiting **54 s** hasta que la app se abrió desde el
+      lanzador (17:23:26); entonces subió (trabajo 36, 17:23:28), quedó lista 17:24:29 y la
+      notificación salió con el texto correcto. **Sin medir:** que WorkManager la retome solo, sin
+      abrir la app, después de un reinicio.
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
