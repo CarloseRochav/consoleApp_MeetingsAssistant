@@ -2313,7 +2313,7 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
       espera (el trabajo 32 gastó sus tres intentos en 2 s), así que un corte de Azure de un minuto
       basta para dejar una reunión fallida. **Recomendado (otra sesión, repo del worker):** esperar
       entre intentos (p. ej. 15 s y 60 s) o devolver el trabajo a la cola con demora, al menos para
-      404/408/429/5xx del LLM.
+      404/408/429/5xx del LLM. Prompts para las sesiones de DevLog y del worker en `handoff-retry-delay.md` (2026-11-09).
     - **Notificación con la app quitada de recientes: no medido.** El reporte llegó (17:09:54, 64 s
       después de parar) antes de que el dueño quitara la app de recientes. (En el intento por adb se
       cerró por error la tarjeta de WhatsApp en vez de la de la app; las capturas con contenido del
