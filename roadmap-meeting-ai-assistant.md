@@ -2247,8 +2247,41 @@ Cinco commits en `MeetingAssistant_App`, en `main` y pusheados (2026-11-09): `c5
   el diálogo a las 11:57:11 con "Allow"; por eso el "Don't allow" lo hizo el dueño a mano.
   **Sin probar:** la notificación con la app cerrada del todo o tras reiniciar el teléfono (el
   aviso sale del mismo `MeetingPipeline` que corre en WorkManager).
-- **Parte 2 (editor de prompts, re-extraer): no empezada.** Ya no está bloqueada: 016, la API y
-  el worker nuevos están en producción desde el 2026-11-09 (arriba).
+- **Parte 2 (editor de prompts, re-extraer): construida y probada en el teléfono (2026-11-09).**
+  Commits `49cb721` y `c3b656b` en `MeetingAssistant_App`. Decisión del dueño (2026-11-09): el
+  editor de prompts es una fila "Prompts" en Reuniones; re-extraer sale de una sesión del historial.
+  - **App:** `PromptLibrary` en `:core` (catálogo `Select_Prompt_Catalog` + opción 2 en efecto +
+    opción 3 mías; lo más nuevo de la opción 2 por prompt manda, una fila de reversión = el
+    original); el editor guarda en la capa propia (`shared = false`, sobre la versión del catálogo;
+    409 = ese nombre ya existe) o vuelve al original (versión y texto nulos); pide confirmar antes
+    de salir con cambios. `Reextraction` en `:core`: opción 2 de `InsertUpdate_Jobs`, seguimiento
+    cada 5 s hasta 10 min, al terminar recarga la sesión con el reporte nuevo primero; si se sale y
+    se vuelve a la sesión, retoma uno en curso (`Select_Jobs` opción 0). Un 429 trae ahora los
+    números del servidor (`ApiError.CapReached`: gastado de tope, sin precio, en curso, cuándo se
+    reinicia el día); las subidas lo siguen tratando como "reintentar más tarde". 58/58 pruebas de
+    `:core` (11 nuevas), compila sin warnings, previews claro y oscuro.
+  - **En el teléfono (SM-S931B, contra producción):** el catálogo se lee con la clave del
+    teléfono: 3 prompts ("Asignación de trabajo" v1, "Especificación funcional (estados y flujo)"
+    v2, "Handoff de feature (tech lead)" con una **edición compartida v1.2** en efecto, bien
+    distinguida del original). **Re-extracción** de la sesión 47 (reunión de prueba del
+    2026-11-09 12:22) con "Especificación funcional": pedida 15:11:45, trabajo 28 tomado por el
+    worker 15:12:34 ("re-extracting session 47 with prompt functional-spec"), terminado 15:13:00
+    ("prompt functional-spec v2, Azure AI Foundry grok-4.6"), ≈75 s; la sesión quedó con 2 reportes,
+    el nuevo primero ("Newest · functional-spec"), costo de la sesión de $0.0078 a $0.0125.
+    **Editor:** en "Asignación de trabajo" se guardó `v1-test-2026-11-09` (el original más una
+    línea de prueba al final) → "Your edit · v1-test-2026-11-09", y el texto en efecto vuelto a
+    leer del servidor termina con esa línea; guardar otra vez con el mismo nombre dio el 409 en la
+    pantalla ("You already have a version called…") sin guardar nada; "Use the built-in prompt" →
+    "Built-in · v1", "You chose the built-in text", sin la línea de prueba. Quedan en la capa propia
+    del dueño la versión de prueba y la reversión (no hay borrado). Salir con cambios sin guardar
+    pide "Discard your changes?".
+  - **Sin ver en el teléfono:** el cartel de re-extracción pasando en vivo de "queued" a "New
+    report… is ready" (el teléfono se bloqueó durante la espera; se vio el resultado al reabrir la
+    sesión), retomar una re-extracción en curso al reabrir, y los 429/409/404 de re-extraer
+    (cubiertos por las pruebas de `:core`).
+  - **Hallazgos de la prueba (no de la app):** `uiautomator dump` no devuelve nada mientras hay una
+    barra de progreso animada; `adb shell input text` no acepta paréntesis (lo interpreta el shell
+    del teléfono); la combinación Ctrl+Fin no movió el cursor al final del campo de texto.
 
 **Tanda 3, Video, construida (2026-11-04, pedido del dueño):** en `:core` el
 cliente de `Videos/*` (subir, confirmar, borrar, enlace nuevo, listar, enlace de
