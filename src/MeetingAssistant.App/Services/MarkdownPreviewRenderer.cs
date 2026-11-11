@@ -19,13 +19,14 @@ public static class MarkdownPreviewRenderer
             ? "<p class=\"empty\">Todavía no hay un reporte generado.</p>"
             : Markdig.Markdown.ToHtml(StripFrontMatter(markdown), Pipeline);
 
-        string background = darkTheme ? "#1c1c1c" : "#ffffff";
-        string foreground = darkTheme ? "#f3f3f3" : "#1a1a1a";
-        string muted = darkTheme ? "#a0a0a0" : "#5c5c5c";
-        string border = darkTheme ? "#3a3a3a" : "#d0d0d0";
-        string codeBackground = darkTheme ? "#2a2a2a" : "#f4f4f4";
-        string tableHeader = darkTheme ? "#2d2d2d" : "#f0f0f0";
-        string link = darkTheme ? "#79b8ff" : "#0b57d0";
+        // Misma pizarra e índigo que AppTheme.xaml (DevLog), para que el reporte no parezca otra app.
+        string background = darkTheme ? "#0f172a" : "#f8fafc";
+        string foreground = darkTheme ? "#f1f5f9" : "#1e293b";
+        string muted = darkTheme ? "#94a3b8" : "#64748b";
+        string border = darkTheme ? "#334155" : "#e2e8f0";
+        string codeBackground = darkTheme ? "#1e293b" : "#f1f5f9";
+        string tableHeader = darkTheme ? "#1e293b" : "#e2e8f0";
+        string link = darkTheme ? "#a5b4fc" : "#4f46e5";
 
         return $$"""
             <!DOCTYPE html>

@@ -9,20 +9,16 @@
     mc:Ignorable="d">
 
     <!--
-        Página propia y no una sección de Historial: aquélla ya es un
-        maestro-detalle con búsqueda, y un tercer modo la convertiría en otra
-        cosa. Sin gráficos a propósito: con decenas de reuniones, una tabla con
-        totales dice todo lo que hay que decir.
+        Página propia y no una sección de Historial. Sin gráficos a propósito:
+        con decenas de reuniones, el total y la tabla dicen lo que hay que decir.
     -->
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Padding="24" Spacing="16" MaxWidth="900" HorizontalAlignment="Left">
+        <StackPanel Padding="32" Spacing="16" MaxWidth="760" HorizontalAlignment="Center">
 
-            <TextBlock Text="Costos estimados"
-                       Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="Costos" Style="{StaticResource PageTitleStyle}" />
 
-            <TextBlock Text="Son estimaciones: tokens y minutos de audio multiplicados por los precios de tu configuración. No se compararon con ninguna factura de los proveedores."
-                       TextWrapping="Wrap"
-                       Opacity="0.8" />
+            <TextBlock Text="Los calcula el servidor con sus precios (tokens y minutos de audio), para tus reuniones de todos los dispositivos. Son estimaciones: no se compararon con ninguna factura. Un precio desconocido nunca se cuenta como 0."
+                       Style="{StaticResource BodyCopyStyle}" />
 
             <StackPanel Spacing="8">
                 <Button Content="Actualizar"
@@ -30,105 +26,87 @@
                         HorizontalAlignment="Left"
                         MinWidth="140" />
                 <TextBlock Text="{Binding StatusMessage}"
-                           TextWrapping="Wrap"
-                           Opacity="0.8" />
+                           Style="{StaticResource CaptionTextStyle}" />
                 <views:ErrorPanel Details="{Binding ErrorDetails}" />
                 <ProgressBar x:Name="LoadingBar"
                              IsIndeterminate="True"
                              Visibility="Collapsed" />
             </StackPanel>
 
-            <!--
-                El estado vacío es el caso de una instalación nueva. Una tabla en
-                blanco no dice si falta algo o si se perdió.
-            -->
             <StackPanel x:Name="EmptyStatePanel" Spacing="8" Visibility="Collapsed">
                 <TextBlock Text="Todavía no hay nada que sumar"
-                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           Style="{StaticResource SectionTitleStyle}"
                            TextWrapping="Wrap" />
                 <TextBlock Text="Los costos aparecen cuando una reunión llega a tener transcripción o reporte. Graba una desde la pestaña Grabar, con el atajo Ctrl+Alt+F9, o desde la bandeja."
-                           TextWrapping="Wrap"
-                           Opacity="0.8" />
+                           Style="{StaticResource BodyCopyStyle}" />
             </StackPanel>
 
             <StackPanel x:Name="DataPanel" Spacing="16" Visibility="Collapsed">
 
-                <!-- LLM y transcripción separados: el total es la suma de estas dos líneas. -->
-                <Grid ColumnSpacing="24" RowSpacing="6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+                <Border Padding="0" Background="Transparent" BorderThickness="0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding TotalLabel}" Style="{StaticResource CaptionTextStyle}" />
+                        <TextBlock Text="{Binding TotalCostText}" Style="{StaticResource HeroFigureStyle}" />
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="LLM (reportes)" />
-                    <TextBlock Grid.Row="0" Grid.Column="1"
-                               Text="{Binding LlmCostText}"
-                               TextWrapping="Wrap" />
+                        <Grid ColumnSpacing="24" RowSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Transcripción" />
-                    <TextBlock Grid.Row="1" Grid.Column="1"
-                               Text="{Binding TranscriptionCostText}"
-                               TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="LLM (reportes)" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding LlmCostText}" TextWrapping="Wrap" />
 
-                    <TextBlock Grid.Row="2" Grid.Column="0"
-                               Text="{Binding TotalLabel}"
-                               FontWeight="SemiBold" />
-                    <TextBlock Grid.Row="2" Grid.Column="1"
-                               Text="{Binding TotalCostText}"
-                               FontWeight="SemiBold" />
-                </Grid>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Transcripción" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TranscriptionCostText}" TextWrapping="Wrap" />
+                        </Grid>
 
-                <StackPanel Spacing="4">
-                    <TextBlock Text="{Binding AverageText}"
-                               TextWrapping="Wrap"
-                               Opacity="0.8" />
-                    <TextBlock Text="{Binding PeriodText}"
-                               TextWrapping="Wrap"
-                               Opacity="0.8" />
-                </StackPanel>
+                        <TextBlock Text="{Binding AverageText}" Style="{StaticResource CaptionTextStyle}" />
+                        <TextBlock Text="{Binding PeriodText}" Style="{StaticResource CaptionTextStyle}" />
+                    </StackPanel>
+                </Border>
 
-                <!-- Lo que los montos no incluyen. Vacío cuando no falta nada. -->
-                <StackPanel x:Name="CaveatsPanel" Spacing="6" Visibility="Collapsed">
-                    <TextBlock Text="Lo que estos números no incluyen"
-                               Style="{StaticResource SubtitleTextBlockStyle}" />
-                    <ItemsControl ItemsSource="{Binding Caveats}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="x:String">
-                                <TextBlock Text="{x:Bind}"
-                                           TextWrapping="Wrap"
-                                           Margin="0,0,0,6" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+                <Border x:Name="CaveatsPanel" Background="Transparent" BorderThickness="0" Padding="0" Visibility="Collapsed">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Lo que estos números no incluyen"
+                                   Style="{StaticResource SectionTitleStyle}" />
+                        <ItemsControl ItemsSource="{Binding Caveats}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <TextBlock Text="{x:Bind}"
+                                               Style="{StaticResource BodyCopyStyle}"
+                                               Margin="0,0,0,6" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
 
-                <StackPanel Spacing="6">
-                    <TextBlock Text="Por prompt y versión"
-                               Style="{StaticResource SubtitleTextBlockStyle}" />
-                    <TextBlock Text="Sólo la parte de LLM: la suma de estas filas es la línea «LLM (reportes)» de arriba, no el total. La transcripción es de la reunión, no de un prompt. Estos números dicen cuántos reportes hay, cuánto costaron y qué tan largos salen; no dicen cuál es mejor."
-                               TextWrapping="Wrap"
-                               Opacity="0.8" />
-                    <ItemsControl ItemsSource="{Binding PromptRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PromptUsageRow">
-                                <StackPanel Padding="0,6" Spacing="2">
-                                    <TextBlock Text="{x:Bind Title}"
-                                               TextWrapping="Wrap"
-                                               FontWeight="SemiBold" />
-                                    <TextBlock Text="{x:Bind Details}"
-                                               TextWrapping="Wrap"
-                                               Opacity="0.75"
-                                               FontSize="12" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+                <Border Padding="0" Background="Transparent" BorderThickness="0">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Por mes" Style="{StaticResource SectionTitleStyle}" />
+                        <ItemsControl ItemsSource="{Binding MonthRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CostMonthRow">
+                                    <StackPanel Padding="0,10,0,10"
+                                                Spacing="2"
+                                                BorderBrush="{ThemeResource AppCardBorderBrush}"
+                                                BorderThickness="0,0,0,1">
+                                        <TextBlock Text="{x:Bind Title}"
+                                                   TextWrapping="Wrap"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind Details}"
+                                                   Style="{StaticResource CaptionTextStyle}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

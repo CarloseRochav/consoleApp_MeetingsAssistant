@@ -7,154 +7,61 @@
     xmlns:views="using:MeetingAssistant.App.Views"
     mc:Ignorable="d">
     <!--
-        Los ajustes que la app deja editar. Lo usan dos lugares: la página de
-        Configuración y la ventana de primer arranque, que aparece cuando a
-        esta máquina le faltan valores obligatorios (una instalación nueva).
+        Los ajustes de ESTA máquina. Lo usan dos lugares: la página de Configuración y la ventana de
+        primer arranque. Desde el paso B no hay claves de proveedor ni cadenas de conexión: la app
+        habla sólo con la API de DevLog.
     -->
     <StackPanel Spacing="16">
 
         <!-- Vault -->
-        <TextBlock
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Vault de Obsidian" />
+        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Vault de Obsidian" />
         <Grid ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBox
-                x:Name="VaultPathBox"
-                Header="Carpeta del vault"
-                PlaceholderText="C:\ruta\a\tu\vault"
-                TextChanged="VaultPathBox_TextChanged" />
-            <Button
-                Grid.Column="1"
-                VerticalAlignment="Bottom"
-                Click="BrowseVaultButton_Click"
-                Content="Examinar..." />
+            <TextBox x:Name="VaultPathBox"
+                     Header="Carpeta del vault"
+                     PlaceholderText="C:\ruta\a\tu\vault"
+                     TextChanged="VaultPathBox_TextChanged" />
+            <Button Grid.Column="1"
+                    VerticalAlignment="Bottom"
+                    Click="BrowseVaultButton_Click"
+                    Content="Examinar..." />
         </Grid>
-        <TextBlock
-            x:Name="VaultPathStatusText"
-            MaxWidth="600"
-            Opacity="0.75"
-            TextWrapping="Wrap" />
-        <TextBox
-            x:Name="SubFolderBox"
-            Header="Subcarpeta para los reportes"
-            PlaceholderText="MeetingReports" />
-
-        <!-- LLM -->
-        <TextBlock
-            Margin="0,16,0,0"
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Modelo de lenguaje" />
-        <ComboBox
-            x:Name="ProviderCombo"
-            Header="Proveedor"
-            SelectionChanged="ProviderCombo_SelectionChanged">
-            <ComboBoxItem Content="Gemini" Tag="Gemini" />
-            <ComboBoxItem Content="Azure AI Foundry" Tag="AzureFoundry" />
-        </ComboBox>
-
-        <TextBlock
-            MaxWidth="600"
-            Opacity="0.6"
-            TextWrapping="Wrap"
-            Text="Si cambias de modelo y no hay un precio para él en la sección Pricing, el coste de cada reporte se registra como 0,00 en vez de fallar. El reporte sale bien; lo que deja de ser fiable es el coste acumulado." />
-
-        <StackPanel x:Name="GeminiPanel" Spacing="16">
-            <TextBox
-                x:Name="GeminiModelBox"
-                Header="Modelo"
-                PlaceholderText="gemini-3.5-flash-lite (por defecto)" />
-            <PasswordBox x:Name="GeminiKeyBox" Header="API key de Gemini" />
-        </StackPanel>
-
-        <StackPanel x:Name="AzurePanel" Spacing="16">
-            <TextBox
-                x:Name="AzureEndpointBox"
-                Header="Endpoint"
-                PlaceholderText="https://&lt;recurso&gt;.openai.azure.com/openai/v1/" />
-            <TextBox
-                x:Name="AzureDeploymentBox"
-                Header="Deployment (el modelo)"
-                PlaceholderText="nombre-del-deployment" />
-            <PasswordBox
-                x:Name="AzureKeyBox"
-                Header="API key de Azure (opcional)"
-                PlaceholderText="vacío = autenticación con Azure.Identity" />
-        </StackPanel>
-
-        <!-- Transcripción -->
-        <TextBlock
-            Margin="0,16,0,0"
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Transcripción" />
-        <PasswordBox x:Name="DeepgramKeyBox" Header="API key de Deepgram" />
-        <TextBox
-            x:Name="DeepgramKeytermsBox"
-            MinHeight="96"
-            MaxHeight="240"
-            AcceptsReturn="True"
-            Header="Términos clave (uno por línea)"
-            PlaceholderText="stored procedure&#x0a;endpoint&#x0a;Neon"
-            ScrollViewer.VerticalScrollBarVisibility="Auto"
-            TextWrapping="Wrap" />
-        <TextBlock
-            MaxWidth="600"
-            Opacity="0.6"
-            TextWrapping="Wrap"
-            Text="Jerga, productos y nombres que Deepgram tiene que reconocer bien. Hasta 100; rinde más con 20 a 50. Con al menos uno, Deepgram cobra un extra por minuto (Pricing:Deepgram:KeytermPerMinute). Con la nube, la lista es la misma en todas tus máquinas." />
-
-        <!-- Nube -->
-        <TextBlock
-            Margin="0,16,0,0"
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Nube (opcional)" />
-        <TextBlock
-            MaxWidth="600"
-            Opacity="0.6"
-            TextWrapping="Wrap"
-            Text="Con la cadena de Postgres, el historial, los prompts y los ajustes compartidos (proveedor, modelo, precios) vienen de la nube y son los mismos en todas tus máquinas. Sin ella, todo queda en esta máquina. Las dos cadenas se prueban antes de guardarse." />
-        <PasswordBox
-            x:Name="PostgresConnectionBox"
-            Header="Cadena de conexión de Postgres (Neon)"
-            PlaceholderText="Host=...;Database=...;Username=...;Password=..." />
-        <PasswordBox
-            x:Name="StorageConnectionBox"
-            Header="Cadena de conexión de Azure Storage (audio y reportes)"
-            PlaceholderText="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..." />
+        <TextBlock x:Name="VaultPathStatusText" MaxWidth="600" Opacity="0.75" TextWrapping="Wrap" />
+        <TextBox x:Name="SubFolderBox"
+                 Header="Subcarpeta para los reportes"
+                 PlaceholderText="MeetingReports" />
 
         <!-- Endpoint local -->
-        <TextBlock
-            Margin="0,16,0,0"
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Endpoint HTTP local" />
-        <PasswordBox
-            x:Name="ApiTokenBox"
-            Header="Token (cabecera X-Api-Token)"
-            PlaceholderText="vacío = se genera uno nuevo al reiniciar" />
+        <TextBlock Margin="0,16,0,0" Style="{StaticResource SubtitleTextBlockStyle}" Text="Endpoint HTTP local" />
+        <PasswordBox x:Name="ApiTokenBox"
+                     Header="Token (cabecera X-Api-Token)"
+                     PlaceholderText="vacío = se genera uno nuevo al reiniciar" />
 
         <!-- Guardar -->
-        <Button
-            x:Name="SaveButton"
-            Margin="0,16,0,0"
-            Click="SaveButton_Click"
-            Content="Guardar cambios"
-            Style="{StaticResource AccentButtonStyle}" />
-        <TextBlock
-            x:Name="SaveStatusText"
-            MaxWidth="600"
-            Opacity="0.75"
-            TextWrapping="Wrap" />
+        <Button x:Name="SaveButton"
+                Margin="0,16,0,0"
+                Click="SaveButton_Click"
+                Content="Guardar cambios"
+                Style="{StaticResource PrimaryButtonStyle}" />
+        <TextBlock x:Name="SaveStatusText" MaxWidth="600" Opacity="0.75" TextWrapping="Wrap" />
         <views:ErrorPanel x:Name="SaveErrorPanel" />
 
-        <TextBlock
-            x:Name="SettingsFilePathText"
-            MaxWidth="600"
-            FontSize="12"
-            IsTextSelectionEnabled="True"
-            Opacity="0.5"
-            TextWrapping="Wrap" />
+        <!-- Lo que quedó del modo local (antes del paso B) -->
+        <StackPanel x:Name="LeftoverPanel" Spacing="8" Visibility="Collapsed">
+            <TextBlock x:Name="LeftoverText" MaxWidth="600" TextWrapping="Wrap" />
+            <Button x:Name="DeleteLeftoverButton"
+                    Click="DeleteLeftoverButton_Click"
+                    Content="Borrar las claves viejas de esta máquina" />
+        </StackPanel>
+
+        <TextBlock x:Name="SettingsFilePathText"
+                   MaxWidth="600"
+                   FontSize="12"
+                   IsTextSelectionEnabled="True"
+                   Opacity="0.5"
+                   TextWrapping="Wrap" />
     </StackPanel>
 </UserControl>

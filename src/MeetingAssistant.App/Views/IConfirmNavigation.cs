@@ -6,7 +6,7 @@ namespace MeetingAssistant.App.Views;
 ///
 /// Es una pregunta aparte y no <c>Page.OnNavigatingFrom</c>: ese evento exige
 /// decidir la cancelación en el acto, y confirmar con un diálogo es asíncrono.
-/// Además, cuando el Frame se entera, el NavigationView ya marcó el destino.
+/// Además, cuando el Frame se entera, la barra ya marcó el destino.
 /// </summary>
 public interface IConfirmNavigation
 {

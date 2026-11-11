@@ -29,7 +29,7 @@
                   DisplayMemberPath="DisplayName"
                   SelectionChanged="PromptCombo_SelectionChanged"
                   HorizontalAlignment="Stretch" />
-        <TextBlock Text="{Binding SelectedPrompt.Description}"
+        <TextBlock Text="{Binding SelectedPromptDescription}"
                    TextWrapping="Wrap"
                    Opacity="0.8" />
         <TextBlock Text="{Binding ActiveVersionText}"
@@ -55,6 +55,10 @@
                    TextWrapping="Wrap"
                    Opacity="0.75" />
 
+        <TextBox Header="Nombre de la versión"
+                 Text="{Binding VersionName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 PlaceholderText="v1-mine-1" />
+
         <TextBox Header="Qué cambió (opcional)"
                  Text="{Binding Note, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                  PlaceholderText="Por ejemplo: pide los riesgos aparte de las tareas" />
@@ -62,7 +66,7 @@
         <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="Guardar como versión nueva"
                     Command="{Binding SaveCommand}"
-                    Style="{StaticResource AccentButtonStyle}" />
+                    Style="{StaticResource PrimaryButtonStyle}" />
             <Button Content="Descartar cambios"
                     Command="{Binding DiscardCommand}" />
             <Button Content="Volver al original"

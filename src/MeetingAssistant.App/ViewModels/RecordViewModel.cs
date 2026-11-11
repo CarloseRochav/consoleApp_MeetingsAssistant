@@ -1,182 +1,337 @@
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.UI.Dispatching;
 using MeetingAssistant.App.Services;
-using MeetingAssistant.Core.Abstractions;
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Models;
+using MeetingAssistant.Core.Services;
+using Microsoft.UI.Dispatching;
 
 namespace MeetingAssistant.App.ViewModels;
 
+/// <summary>Una reunión de la cola, lista para mostrar: dónde está y qué se puede hacer con ella.</summary>
+public sealed partial class QueueItemViewModel : ObservableObject
+{
+    private static readonly Dictionary<string, string> TriggerLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [SessionSource.Hotkey] = "atajo de teclado",
+        [SessionSource.Tray] = "bandeja",
+        [SessionSource.Http] = "endpoint HTTP",
+        [SessionSource.Window] = "ventana",
+        [SessionSource.Import] = "archivo importado",
+        [SessionSource.Harness] = "harness"
+    };
+
+    public QueueItemViewModel(QueuedMeeting meeting) => Update(meeting);
+
+    public QueuedMeeting Meeting { get; private set; } = null!;
+
+    public string Id => Meeting.Id;
+
+    [ObservableProperty]
+    private string title = string.Empty;
+
+    [ObservableProperty]
+    private string statusText = string.Empty;
+
+    [ObservableProperty]
+    private string? detail;
+
+    [ObservableProperty]
+    private double progress;
+
+    [ObservableProperty]
+    private bool isUploading;
+
+    [ObservableProperty]
+    private bool isFailed;
+
+    /// <summary>waiting, uploading, processing, ready o failed. El color lo resuelve el tema.</summary>
+    [ObservableProperty]
+    private string statusTone = "waiting";
+
+    [ObservableProperty]
+    private bool canRetry;
+
+    [ObservableProperty]
+    private bool canRemove;
+
+    [ObservableProperty]
+    private bool canOpen;
+
+    public void Update(QueuedMeeting meeting)
+    {
+        Meeting = meeting;
+        string when = meeting.CreatedAtUtc.ToLocalTime().ToString("dddd d 'de' MMMM, HH:mm", SessionListItem.DisplayCulture);
+        string what = meeting.Kind == QueuedMeetingKind.Reextract
+            ? $"Re-extracción de la reunión {meeting.IdSession} con {meeting.PromptId}"
+            : $"Grabación ({(TriggerLabels.TryGetValue(meeting.Trigger, out string? label) ? label : meeting.Trigger)}" +
+              (meeting.DurationSeconds is { } seconds ? $", {seconds / 60:F0} min" : string.Empty) + ")";
+        Title = $"{when} · {what}";
+        UpdateProgress(meeting.SentBytes, meeting.TotalBytes);
+        StatusText = meeting.Status switch
+        {
+            QueuedMeetingStatus.Waiting => "Esperando para enviar",
+            QueuedMeetingStatus.Uploading => $"Enviando {Progress:F0}%",
+            QueuedMeetingStatus.Processing => "En el servidor (transcribiendo y escribiendo el reporte)",
+            QueuedMeetingStatus.WritingReport => "Escribiendo el reporte en el vault",
+            QueuedMeetingStatus.Ready => "Listo",
+            QueuedMeetingStatus.Failed => "Falló",
+            _ => meeting.Status.ToString()
+        };
+        Detail = meeting.Status switch
+        {
+            QueuedMeetingStatus.Failed => meeting.Error,
+            QueuedMeetingStatus.Ready => meeting.ReportPath,
+            _ => meeting.Notice
+        };
+        IsUploading = meeting.Status == QueuedMeetingStatus.Uploading;
+        IsFailed = meeting.Status == QueuedMeetingStatus.Failed;
+        StatusTone = meeting.Status switch
+        {
+            QueuedMeetingStatus.Uploading => "uploading",
+            QueuedMeetingStatus.Processing or QueuedMeetingStatus.WritingReport => "processing",
+            QueuedMeetingStatus.Ready => "ready",
+            QueuedMeetingStatus.Failed => "failed",
+            _ => "waiting"
+        };
+        CanRetry = meeting.Status != QueuedMeetingStatus.Ready;
+        CanRemove = meeting.IsFinished;
+        CanOpen = meeting.Status == QueuedMeetingStatus.Ready && meeting.ReportPath is { } path && File.Exists(path);
+    }
+
+    public void UpdateProgress(long sent, long total)
+    {
+        Progress = total <= 0 ? 0 : Math.Min(100, sent * 100.0 / total);
+        if (Meeting.Status == QueuedMeetingStatus.Uploading) StatusText = $"Enviando {Progress:F0}%";
+    }
+
+    public override string ToString() => $"{Title}. {StatusText}. {Detail}";
+}
+
+/// <summary>
+/// Grabar y la cola de subidas (paso B). Grabar siempre funciona, con o sin red o sesión: la
+/// grabación queda en la cola y se envía cuando se puede. Cada fila dice dónde está su reunión.
+/// </summary>
 public partial class RecordViewModel : ObservableObject
 {
-    private readonly RecordingCoordinator _recordingCoordinator;
+    private readonly RecordingCoordinator _coordinator;
+    private readonly MeetingUploadQueue _queue;
+    private readonly DeviceAuthService _auth;
     private readonly DispatcherQueue? _dispatcherQueue;
-
-    /// <summary>
-    /// Mayor que cero mientras esta vista es la que esta ejecutando la
-    /// operacion. Los eventos del coordinador que llegan en ese lapso ya
-    /// estan reflejados por el metodo local, asi que se ignoran para no
-    /// pisar mensajes de estado mas especificos ("Transcribiendo...",
-    /// "Reporte guardado en...").
-    /// </summary>
-    private int _localOperationDepth;
-
-    /// <summary>
-    /// La reunión del historial a la que pertenece <see cref="LastTranscript"/>.
-    /// Se fija cada vez que cambia el transcript que muestra la vista y se pasa
-    /// al generar el reporte: así el reporte cae en esa reunión y no en la que
-    /// el pipeline haya tocado por última vez. Null si no hay fila (historial
-    /// apagado o base caída).
-    /// </summary>
-    private long? _transcriptSessionId;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ButtonText))]
-    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
     [NotifyPropertyChangedFor(nameof(CanLoadExternalSource))]
-    [NotifyCanExecuteChangedFor(nameof(ToggleRecordingCommand))]
-    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
+    [NotifyPropertyChangedFor(nameof(StageTitle))]
+    [NotifyPropertyChangedFor(nameof(StageTone))]
     private bool isRecording;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
     [NotifyPropertyChangedFor(nameof(CanLoadExternalSource))]
+    [NotifyPropertyChangedFor(nameof(StageTitle))]
+    [NotifyPropertyChangedFor(nameof(StageTone))]
     [NotifyCanExecuteChangedFor(nameof(ToggleRecordingCommand))]
-    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
     private bool isProcessing;
 
     [ObservableProperty]
     private string statusMessage = "Listo para grabar.";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSavedReport))]
-    [NotifyCanExecuteChangedFor(nameof(OpenSavedReportCommand))]
-    private string? lastSavedReportPath;
+    private string? errorDetails;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasTranscript))]
-    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
-    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
-    private string? lastTranscript;
+    private string sessionText = string.Empty;
 
+    [ObservableProperty]
+    private QueueItemViewModel? selectedMeeting;
+
+    /// <summary>El Markdown del reporte de la fila elegida (leído del .md del vault), para la vista previa.</summary>
     [ObservableProperty]
     private string? lastGeneratedReport;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SelectedPromptText))]
-    [NotifyPropertyChangedFor(nameof(CanGenerateReport))]
-    [NotifyCanExecuteChangedFor(nameof(GenerateReportCommand))]
-    private PromptDefinition? selectedPrompt;
-
-    [ObservableProperty]
-    private string? errorDetails;
-
-    public IReadOnlyList<PromptDefinition> Prompts { get; }
+    public ObservableCollection<QueueItemViewModel> Meetings { get; } = [];
 
     public string ButtonText => IsRecording ? "Detener grabación" : "Grabar reunión";
 
-    public bool HasTranscript => !string.IsNullOrWhiteSpace(LastTranscript);
+    /// <summary>La palabra grande de la tarjeta de grabación.</summary>
+    public string StageTitle => IsRecording ? "Grabando" : IsProcessing ? "Guardando" : "Listo";
 
-    public bool CanGenerateReport =>
-        HasTranscript && SelectedPrompt is not null && !IsProcessing && !IsRecording;
+    /// <summary>waiting no aplica: uploading mientras graba, processing mientras guarda, ready en reposo.</summary>
+    public string StageTone => IsRecording ? "uploading" : IsProcessing ? "processing" : "ready";
+
+    /// <summary>Tono de cada paso del camino (Grabar, Enviar, Servidor, Reporte). Lo pinta el tema.</summary>
+    [ObservableProperty]
+    private string recordPhaseTone = "uploading";
+
+    [ObservableProperty]
+    private string sendPhaseTone = "waiting";
+
+    [ObservableProperty]
+    private string serverPhaseTone = "waiting";
+
+    [ObservableProperty]
+    private string reportPhaseTone = "waiting";
 
     public bool CanLoadExternalSource => !IsRecording && !IsProcessing;
 
-    public bool HasSavedReport => !string.IsNullOrWhiteSpace(LastSavedReportPath) && File.Exists(LastSavedReportPath);
-
-    public string SelectedPromptText => SelectedPrompt?.SystemPrompt ?? string.Empty;
-
-    public RecordViewModel(RecordingCoordinator recordingCoordinator, IPromptCatalog promptCatalog)
+    public RecordViewModel(RecordingCoordinator coordinator, MeetingUploadQueue queue, DeviceAuthService auth)
     {
-        _recordingCoordinator = recordingCoordinator;
-        Prompts = promptCatalog.GetAll();
-        SelectedPrompt = promptCatalog.Default;
+        _coordinator = coordinator;
+        _queue = queue;
+        _auth = auth;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        IsRecording = _recordingCoordinator.IsRecording;
-        IsProcessing = _recordingCoordinator.IsProcessing;
-        StatusMessage = IsProcessing
-            ? "Procesando..."
-            : IsRecording ? "Grabando..." : "Listo para grabar.";
+        IsRecording = coordinator.IsRecording;
+        IsProcessing = coordinator.IsProcessing;
+        StatusMessage = IsRecording ? "Grabando..." : "Listo para grabar.";
+        UpdateSessionText();
 
-        // MainWindow y RecordPage se construyen una sola vez; la bandeja (y
-        // mas adelante el hotkey) pueden iniciar o detener una grabacion sin
-        // que esta instancia se entere. Sin estas suscripciones la pagina
-        // muestra estado viejo al reabrir la ventana.
-        _recordingCoordinator.StateChanged += OnCoordinatorStateChanged;
-        _recordingCoordinator.RecordingCompleted += OnCoordinatorRecordingCompleted;
-        _recordingCoordinator.RecordingFailed += OnCoordinatorRecordingFailed;
+        foreach (QueuedMeeting meeting in queue.Items) Meetings.Add(new QueueItemViewModel(meeting));
+        SelectedMeeting = Meetings.FirstOrDefault(item => item.CanOpen);
+
+        _coordinator.StateChanged += OnCoordinatorStateChanged;
+        _coordinator.RecordingFailed += OnRecordingFailed;
+        _queue.Changed += OnQueueChanged;
+        _queue.Progress += OnQueueProgress;
+        _auth.SignedIn += OnSessionChanged;
+        _auth.SignedOut += OnSessionChanged;
     }
 
-    private void OnCoordinatorStateChanged(object? sender, EventArgs e)
+    /// <summary>La página se va: deja de escuchar (el Frame la reconstruye en cada navegación).</summary>
+    public void Detach()
     {
-        if (Volatile.Read(ref _localOperationDepth) > 0) return;
-
-        RunOnUiThread(() =>
-        {
-            IsRecording = _recordingCoordinator.IsRecording;
-            IsProcessing = _recordingCoordinator.IsProcessing;
-
-            if (IsRecording)
-            {
-                StatusMessage = "Grabando...";
-            }
-            else if (IsProcessing)
-            {
-                StatusMessage = "Procesando...";
-            }
-            else if (StatusMessage is "Grabando..." or "Procesando...")
-            {
-                // Solo se limpia si el mensaje seguia siendo transitorio: el
-                // evento de fin llega antes que este y ya dejo el resultado.
-                StatusMessage = "Listo para grabar.";
-            }
-        });
+        _coordinator.StateChanged -= OnCoordinatorStateChanged;
+        _coordinator.RecordingFailed -= OnRecordingFailed;
+        _queue.Changed -= OnQueueChanged;
+        _queue.Progress -= OnQueueProgress;
+        _auth.SignedIn -= OnSessionChanged;
+        _auth.SignedOut -= OnSessionChanged;
     }
 
-    private void OnCoordinatorRecordingCompleted(object? sender, RecordingCompletedEventArgs e)
+    private void OnSessionChanged(object? sender, DeviceSession e) => RunOnUiThread(UpdateSessionText);
+
+    private void OnSessionChanged(object? sender, SignedOutReason e) => RunOnUiThread(UpdateSessionText);
+
+    private void UpdateSessionText() =>
+        SessionText = _auth.Current is { } session
+            ? $"Conectado al servidor como {session.Username}, dispositivo «{session.DeviceName}»."
+            : "Sin sesión en el servidor: se puede grabar igual; lo grabado se envía al iniciar sesión.";
+
+    private void OnCoordinatorStateChanged(object? sender, EventArgs e) => RunOnUiThread(() =>
     {
-        if (Volatile.Read(ref _localOperationDepth) > 0) return;
+        IsRecording = _coordinator.IsRecording;
+        IsProcessing = _coordinator.IsProcessing;
+        if (IsRecording) StatusMessage = "Grabando...";
+        else if (IsProcessing) StatusMessage = "Guardando la grabación...";
+        else if (StatusMessage is "Grabando..." or "Guardando la grabación...") StatusMessage = "Listo para grabar.";
+        UpdatePhases();
+    });
 
-        MeetingPipelineResult result = e.Result;
-        RunOnUiThread(() =>
-        {
-            LastTranscript = result.Transcription.Transcript;
-            _transcriptSessionId = result.SessionId;
-            LastGeneratedReport = result.ReportMarkdown;
-            LastSavedReportPath = result.SavedReportPath;
-            SelectedPrompt = Prompts.FirstOrDefault(p => p.Id == result.Prompt.Id) ?? SelectedPrompt;
-            ErrorDetails = null;
-            StatusMessage = $"Reporte guardado en el vault de Obsidian: {result.SavedReportPath}";
-        });
-    }
-
-    private void OnCoordinatorRecordingFailed(object? sender, RecordingFailedEventArgs e)
+    private void OnRecordingFailed(object? sender, RecordingFailedEventArgs e) => RunOnUiThread(() =>
     {
-        if (Volatile.Read(ref _localOperationDepth) > 0) return;
+        StatusMessage = $"{e.Operation}: {e.Exception.Message}";
+        ErrorDetails = e.Exception.ToString();
+    });
 
-        Exception exception = e.Exception;
-        RunOnUiThread(() =>
-        {
-            StatusMessage = $"Error al procesar la reunion: {exception.Message}";
-            ErrorDetails = exception.ToString();
-        });
-    }
-
-    /// <summary>
-    /// El coordinador levanta sus eventos en el hilo que llamo la operacion
-    /// (la bandeja usa el hilo de UI, otros disparadores no tienen por que).
-    /// Mutar propiedades observables fuera del hilo de UI rompe el binding.
-    /// </summary>
-    private void RunOnUiThread(Action action)
+    private void OnQueueChanged(object? sender, QueuedMeeting meeting) => RunOnUiThread(() =>
     {
-        if (_dispatcherQueue is null || _dispatcherQueue.HasThreadAccess)
+        QueueItemViewModel? item = Meetings.FirstOrDefault(row => row.Id == meeting.Id);
+        if (item is null)
         {
-            action();
+            var created = new QueueItemViewModel(meeting);
+            Meetings.Insert(0, created);
+            SelectedMeeting = created;
             return;
         }
 
-        _dispatcherQueue.TryEnqueue(() => action());
+        item.Update(meeting);
+        if (SelectedMeeting == item) UpdatePhases();
+        if (meeting.Status == QueuedMeetingStatus.Ready && (SelectedMeeting is null || SelectedMeeting == item)) ShowReport(item);
+    });
+
+    private void OnQueueProgress(object? sender, QueueProgress progress) => RunOnUiThread(() =>
+        Meetings.FirstOrDefault(row => row.Id == progress.Id)?.UpdateProgress(progress.SentBytes, progress.TotalBytes));
+
+    partial void OnSelectedMeetingChanged(QueueItemViewModel? value)
+    {
+        UpdatePhases();
+        if (value is not null) ShowReport(value);
+    }
+
+    /// <summary>
+    /// Un solo camino, el de la reunión elegida (o el de la grabación en curso):
+    /// Grabar, Enviar, Servidor, Reporte. El paso activo va en índigo, los hechos
+    /// en verde, el que falló en rojo.
+    /// </summary>
+    private void UpdatePhases()
+    {
+        if (IsRecording)
+        {
+            SetPhases("uploading", "waiting", "waiting", "waiting");
+            return;
+        }
+
+        if (IsProcessing)
+        {
+            SetPhases("ready", "uploading", "waiting", "waiting");
+            return;
+        }
+
+        QueuedMeeting? meeting = SelectedMeeting?.Meeting;
+        switch (meeting?.Status)
+        {
+            case QueuedMeetingStatus.Waiting:
+            case QueuedMeetingStatus.Uploading:
+                SetPhases("ready", "uploading", "waiting", "waiting");
+                break;
+            case QueuedMeetingStatus.Processing:
+                SetPhases("ready", "ready", "processing", "waiting");
+                break;
+            case QueuedMeetingStatus.WritingReport:
+                SetPhases("ready", "ready", "ready", "uploading");
+                break;
+            case QueuedMeetingStatus.Ready:
+                SetPhases("ready", "ready", "ready", "ready");
+                break;
+            case QueuedMeetingStatus.Failed when meeting.IdSession is null:
+                SetPhases("ready", "failed", "waiting", "waiting");
+                break;
+            case QueuedMeetingStatus.Failed:
+                SetPhases("ready", "ready", "failed", "waiting");
+                break;
+            default:
+                SetPhases("uploading", "waiting", "waiting", "waiting");
+                break;
+        }
+    }
+
+    private void SetPhases(string record, string send, string server, string report)
+    {
+        RecordPhaseTone = record;
+        SendPhaseTone = send;
+        ServerPhaseTone = server;
+        ReportPhaseTone = report;
+    }
+
+    private void ShowReport(QueueItemViewModel item)
+    {
+        if (SelectedMeeting != item) SelectedMeeting = item;
+        try
+        {
+            LastGeneratedReport = item.CanOpen ? File.ReadAllText(item.Meeting.ReportPath!) : null;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Failure("RecordViewModel.ShowReport", exception);
+            LastGeneratedReport = null;
+        }
+    }
+
+    private void RunOnUiThread(Action action)
+    {
+        if (_dispatcherQueue is null || _dispatcherQueue.HasThreadAccess) action();
+        else _dispatcherQueue.TryEnqueue(() => action());
     }
 
     private bool CanToggleRecording() => !IsProcessing;
@@ -184,191 +339,70 @@ public partial class RecordViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanToggleRecording))]
     private async Task ToggleRecordingAsync()
     {
-        if (_recordingCoordinator.IsRecording)
-        {
-            await StopAsync();
-        }
-        else
-        {
-            await StartAsync();
-        }
-    }
-
-    private async Task StartAsync()
-    {
-        _localOperationDepth++;
+        ErrorDetails = null;
         try
         {
-            await _recordingCoordinator.StartRecordingAsync(SessionSource.Window);
-            IsRecording = _recordingCoordinator.IsRecording;
-            StatusMessage = "Grabando...";
-            LastSavedReportPath = null;
-            LastTranscript = null;
-            _transcriptSessionId = null;
-            LastGeneratedReport = null;
-            ErrorDetails = null;
+            if (_coordinator.IsRecording)
+            {
+                QueuedMeeting queued = await _coordinator.StopRecordingAndQueueAsync();
+                StatusMessage = $"Grabación guardada ({queued.TotalBytes / 1048576.0:F1} MB para enviar). El reporte llega al vault cuando el servidor termine.";
+            }
+            else
+            {
+                await _coordinator.StartRecordingAsync(SessionSource.Window);
+                StatusMessage = "Grabando...";
+            }
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            IsRecording = _recordingCoordinator.IsRecording;
-            StatusMessage = $"Error al iniciar la grabación: {ex.Message}";
-            ErrorDetails = ex.ToString();
-        }
-        finally
-        {
-            _localOperationDepth--;
-        }
-    }
-
-    private async Task StopAsync()
-    {
-        IsProcessing = true;
-        StatusMessage = "Transcribiendo...";
-        _localOperationDepth++;
-        try
-        {
-            TranscriptionSession session = await _recordingCoordinator.StopRecordingAndTranscribeAsync();
-            IsRecording = _recordingCoordinator.IsRecording;
-            LastTranscript = session.Transcription.Transcript;
-            _transcriptSessionId = session.SessionId;
-            LastGeneratedReport = null;
-            LastSavedReportPath = null;
-            ErrorDetails = null;
-            StatusMessage = "Transcripción lista. Elige un prompt y genera el reporte.";
-        }
-        catch (Exception ex)
-        {
-            IsRecording = _recordingCoordinator.IsRecording;
-            StatusMessage = $"Error al transcribir la reunión: {ex.Message}";
-            ErrorDetails = ex.ToString();
-        }
-        finally
-        {
-            _localOperationDepth--;
-            IsProcessing = false;
+            StatusMessage = exception.Message;
+            ErrorDetails = exception.ToString();
         }
     }
 
     public async Task ProcessExistingAudioAsync(string audioPath)
     {
-        IsProcessing = true;
-        StatusMessage = "Transcribiendo archivo existente...";
-        _localOperationDepth++;
-        LastSavedReportPath = null;
-        LastTranscript = null;
-        LastGeneratedReport = null;
         ErrorDetails = null;
+        StatusMessage = "Convirtiendo el archivo...";
         try
         {
-            TranscriptionSession session = await _recordingCoordinator.TranscribeExistingAudioAsync(audioPath);
-            LastTranscript = session.Transcription.Transcript;
-            _transcriptSessionId = session.SessionId;
-            StatusMessage = "Transcripción lista. Elige un prompt y genera el reporte.";
+            QueuedMeeting queued = await _coordinator.QueueExistingAudioAsync(audioPath);
+            StatusMessage = $"{Path.GetFileName(audioPath)} en la cola ({queued.TotalBytes / 1048576.0:F1} MB para enviar).";
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            StatusMessage = $"Error al transcribir el archivo: {ex.Message}";
-            ErrorDetails = ex.ToString();
-        }
-        finally
-        {
-            _localOperationDepth--;
-            IsProcessing = _recordingCoordinator.IsProcessing;
+            StatusMessage = $"No se pudo encolar el archivo: {exception.Message}";
+            ErrorDetails = exception.ToString();
         }
     }
 
-    public async Task LoadTranscriptFileAsync(string transcriptPath)
+    public void Retry(QueueItemViewModel item)
     {
-        if (!CanLoadExternalSource)
-        {
-            StatusMessage = "No se puede adjuntar una transcripción mientras hay una grabación o un proceso en curso.";
-            return;
-        }
+        if (_queue.Retry(item.Id)) StatusMessage = "Se reintenta ahora.";
+    }
 
-        IsProcessing = true;
-        StatusMessage = "Cargando transcripción...";
-        LastSavedReportPath = null;
-        LastTranscript = null;
-        LastGeneratedReport = null;
-        ErrorDetails = null;
-        try
+    public void Remove(QueueItemViewModel item)
+    {
+        if (!_queue.Remove(item.Id)) return;
+        Meetings.Remove(item);
+        if (SelectedMeeting == item)
         {
-            if (!string.Equals(Path.GetExtension(transcriptPath), ".txt", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("Solo se aceptan archivos .txt.");
-            }
-
-            string transcript = await File.ReadAllTextAsync(transcriptPath);
-            if (string.IsNullOrWhiteSpace(transcript))
-            {
-                throw new InvalidOperationException("El archivo de transcripción está vacío.");
-            }
-
-            // La reunión nace al adjuntar, igual que con un audio importado: si
-            // la primera extracción falla, reintentar no abre otra sesión.
-            _transcriptSessionId = await _recordingCoordinator.ImportTranscriptAsync(transcript);
-            LastTranscript = transcript;
-            StatusMessage = $"Transcripción cargada desde {Path.GetFileName(transcriptPath)}. Elige un prompt y genera el reporte.";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Error al cargar la transcripción: {ex.Message}";
-            ErrorDetails = ex.ToString();
-        }
-        finally
-        {
-            IsProcessing = false;
+            SelectedMeeting = null;
+            LastGeneratedReport = null;
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanGenerateReport))]
-    private async Task GenerateReportAsync()
+    public static void ShowInExplorer(QueueItemViewModel item)
     {
-        if (SelectedPrompt is null || string.IsNullOrWhiteSpace(LastTranscript))
-        {
-            return;
-        }
-
-        IsProcessing = true;
-        StatusMessage = $"Extrayendo el reporte con «{SelectedPrompt.DisplayName}»...";
-        ErrorDetails = null;
-        _localOperationDepth++;
-        try
-        {
-            ExtractionSaveResult result = await _recordingCoordinator.ExtractAndSaveAsync(
-                LastTranscript, SelectedPrompt.Id, _transcriptSessionId);
-            // Si no había fila y el pipeline pudo abrir una, los próximos
-            // reportes de este mismo transcript van a ella.
-            _transcriptSessionId ??= result.SessionId;
-            LastGeneratedReport = result.ReportMarkdown;
-            LastSavedReportPath = result.SavedReportPath;
-            StatusMessage = $"Reporte guardado en el vault de Obsidian: {result.SavedReportPath}";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Error al generar el reporte: {ex.Message}";
-            ErrorDetails = ex.ToString();
-        }
-        finally
-        {
-            _localOperationDepth--;
-            IsProcessing = _recordingCoordinator.IsProcessing;
-        }
+        if (item.Meeting.ReportPath is not { } path || !File.Exists(path)) return;
+        Process.Start(new ProcessStartInfo { FileName = "explorer.exe", Arguments = $"/select,\"{path}\"", UseShellExecute = true });
     }
 
-    [RelayCommand(CanExecute = nameof(HasSavedReport))]
-    private void OpenSavedReport()
+    /// <summary>"Enviar ahora": lo que espera su turno espaciado se intenta ya.</summary>
+    [RelayCommand]
+    private void SendNow()
     {
-        if (string.IsNullOrWhiteSpace(LastSavedReportPath) || !File.Exists(LastSavedReportPath))
-        {
-            return;
-        }
-
-        Process.Start(new ProcessStartInfo
-        {
-            FileName = "explorer.exe",
-            Arguments = $"/select,\"{LastSavedReportPath}\"",
-            UseShellExecute = true
-        });
+        _queue.Kick(resetBackoff: true);
+        StatusMessage = _auth.IsSignedIn ? "Enviando lo pendiente..." : "Primero hay que iniciar sesión (Configuración).";
     }
 }

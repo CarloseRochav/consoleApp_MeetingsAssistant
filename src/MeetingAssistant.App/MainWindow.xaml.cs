@@ -18,6 +18,9 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon("Assets/AppIcon.ico");
         AppWindow.Closing += AppWindow_Closing;
         ContentFrame.Navigate(typeof(RecordPage));
+        _restoringSelection = true;
+        RecordNav.IsChecked = true;
+        _restoringSelection = false;
     }
 
     public void ShowFromTray()
@@ -54,10 +57,10 @@ public sealed partial class MainWindow : Window
         return await page.ConfirmLeaveAsync();
     }
 
-    private async void NavigationView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private async void Nav_Checked(object sender, RoutedEventArgs e)
     {
         if (_restoringSelection) return;
-        if (args.SelectedItem is not NavigationViewItem item || item.Tag is not string tag) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
 
         Type page = tag switch
         {
@@ -68,18 +71,27 @@ public sealed partial class MainWindow : Window
             _ => typeof(RecordPage)
         };
 
-        if (ContentFrame.CurrentSourcePageType == page) return;
+        if (ContentFrame.CurrentSourcePageType == page)
+        {
+            _currentTag = tag;
+            return;
+        }
 
         if (!await ConfirmLeaveCurrentPageAsync())
         {
-            // El NavigationView ya marcó el destino; se lo devuelve a la página
-            // en la que el usuario se quedó.
+            // El radio ya quedó en el destino; se devuelve a la página en la que
+            // el usuario se quedó. El evento de ese cambio no navega otra vez.
             _restoringSelection = true;
             try
             {
-                sender.SelectedItem = sender.MenuItems
-                    .OfType<NavigationViewItem>()
-                    .FirstOrDefault(menuItem => menuItem.Tag is string itemTag && itemTag == _currentTag);
+                RadioButton current = _currentTag switch
+                {
+                    "history" => HistoryNav,
+                    "costs" => CostsNav,
+                    "settings" => SettingsNav,
+                    _ => RecordNav
+                };
+                current.IsChecked = true;
             }
             finally
             {

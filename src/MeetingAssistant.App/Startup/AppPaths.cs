@@ -1,26 +1,24 @@
 namespace MeetingAssistant.App.Startup;
 
-/// <summary>Dónde escribe la app lo suyo. Todo fuera del paquete, que es de sólo lectura.</summary>
+/// <summary>Las carpetas y archivos de esta máquina. Todo bajo %LOCALAPPDATA%\MeetingAssistant.</summary>
 internal static class AppPaths
 {
-    public static string MeetingOutputDirectory { get; } = Path.Combine(
+    private static readonly string Root = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MeetingAssistant",
-        "meeting-output");
+        "MeetingAssistant");
 
-    /// <summary>
-    /// Base local de reuniones (Fase 5). Mismo destino y mismo criterio que el
-    /// log, el audio y la configuración de usuario: lo que la app necesita
-    /// escribir no puede vivir dentro del paquete instalado, que es de sólo
-    /// lectura.
-    ///
-    /// Ojo: <b>sobrevive a la desinstalación</b>, igual que el resto de la
-    /// carpeta. Esa decisión se tomó cuando ahí sólo había un log y unos .wav;
-    /// con la base pasa a haber además todos los transcripts.
-    /// </summary>
-    public static string DatabasePath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MeetingAssistant",
-        "meetings.db");
+    /// <summary>Donde la captura deja cada WAV original (44,1 kHz). Se conserva, como antes del paso B.</summary>
+    public static string MeetingOutputDirectory { get; } = Path.Combine(Root, "meeting-output");
 
+    /// <summary>La base local: desde el paso B sólo guarda los ajustes de esta máquina (vault, hotkey, token del endpoint).</summary>
+    public static string DatabasePath { get; } = Path.Combine(Root, "meetings.db");
+
+    /// <summary>La cola de subidas: un JSON por reunión (paso B).</summary>
+    public static string QueueDirectory { get; } = Path.Combine(Root, "upload-queue");
+
+    /// <summary>Las copias convertidas a 16 kHz que se suben; cada una se borra cuando su reporte llega al vault.</summary>
+    public static string UploadDirectory { get; } = Path.Combine(Root, "upload-queue", "audio");
+
+    /// <summary>El dispositivo de esta máquina en la API, con el token cifrado (DPAPI).</summary>
+    public static string DeviceFile { get; } = Path.Combine(Root, "device.json");
 }

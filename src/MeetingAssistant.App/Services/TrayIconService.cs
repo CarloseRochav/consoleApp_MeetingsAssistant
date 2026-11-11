@@ -114,7 +114,7 @@ public sealed class TrayIconService : IDisposable
         try
         {
             if (_coordinator.IsRecording)
-                await _coordinator.StopRecordingAndProcessAsync();
+                await _coordinator.StopRecordingAndQueueAsync();
             else
                 await _coordinator.StartRecordingAsync(SessionSource.Tray);
         }

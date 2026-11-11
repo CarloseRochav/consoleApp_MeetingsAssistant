@@ -2497,7 +2497,7 @@ bloqueado.
 en DevLog_Backend y el worker; ver "Avance del paso A" arriba (paso A hecho el
 2026-10-30).
 
-### Paso B — escritorio como cliente (plan del 2026-11-09, sin empezar)
+### Paso B — escritorio como cliente (plan del 2026-11-09; escritorio hecho en la rama `step-b-desktop-client` el 2026-11-10/11, falta el corte)
 
 **Objetivo:** el escritorio pasa a ser un cliente delgado de la API de DevLog, como la app Android:
 graba, dispara (hotkey, bandeja, endpoint local), sube y escribe el `.md` en el vault. **Ninguna
@@ -2590,6 +2590,123 @@ tres decisiones del 2026-11-10 en `decision-log.md` (confirmadas por el dueño e
   40 (worker anterior) ya no están. Revisado sólo nombre, tamaño y fecha. **No medido:** el
   `audio_expires_at` de la fila (pide la base o el token del teléfono), el link de escucha y una
   limpieza real (nada vence antes de 30 días).
+
+**Escritorio, paso 0 — corrida en seco de la importación final (2026-11-10, sólo lectura).**
+Requisito cumplido: 018, la API (`c2217e0`) y el worker (`f596b1a`) están en producción.
+`--migrate-to-devlog 1` (sin `--apply`) contra la base vieja y `devLog-production`. El comando
+ahora **compara fila por fila** (md5 de las columnas que escribe la importación, en UTC en las dos
+bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila de DevLog se pisaría**.
+- Origen: 24 sesiones, 20 transcripts, 13 reportes, 3 versiones de prompt, 5 ajustes, 34 subidas.
+  **Ninguna fila nueva desde la importación del 2026-10-19:** la última reunión de la base vieja es
+  del 2026-10-14 21:47Z. Sesiones, transcripts, reportes, versiones de prompt y subidas: todas
+  iguales a las de DevLog.
+- DevLog tiene además lo que creó la API: sesiones/transcripts 25–54, reportes 14–48, versiones de
+  prompt 4 y 6 (la prueba del 2026-11-09) y dos precios de `grok-4.6` (2026-10-28). **Ningún id
+  choca:** la base vieja no tiene esos ids.
+- **Hallazgo:** la importación es un upsert de TODAS las filas, no sólo de las nuevas. Tres ajustes
+  base (`Llm:Provider`, `AzureFoundry:Endpoint`, `AzureFoundry:Deployment`) figuran como distintos:
+  el escritorio los volvió a guardar el 2026-10-19 19:03Z, después de la importación, **con los
+  mismos valores** (comprobado: `AzureFoundry`, `grok-4.6`, mismo hash del endpoint); sólo cambia
+  `updated_at`. El worker lee esos ajustes de `mtg_settings`, así que importar no cambiaría nada.
+- **Otras máquinas:** en la base vieja sólo subió `CHARLIE` (esta PC). La máquina donde se instaló la
+  1.0.3.0 el 2026-10-15 no dejó sesiones en la base compartida; lo que haya grabado en un SQLite
+  propio no se ve desde aquí (**no comprobado**).
+- **Propuesta: no hace falta importación final.** Antes del corte, volver a correr la simulación:
+  si sigue sin filas nuevas, el paso 1 del corte no se hace.
+
+**Escritorio, pasos 1-6 — cliente de la API (rama `step-b-desktop-client`, 2026-11-10/11).**
+- **Core** (sin paquetes): modelos de la API, `IDevLogApi`, `DeviceAuthService` (login una vez →
+  token de dispositivo con el nombre de la máquina, DPAPI, contraseña en un `char[]` que se borra;
+  `Select_Me` al arrancar; un 401 = revocado → vuelta al inicio de sesión), `MeetingUploadQueue`
+  (el `MeetingPipeline` del teléfono: trabajo, bloques de 4 MiB con reanudación, confirmar, seguir,
+  el reporte más nuevo → `.md` con `MarkdownReportStorage`; origen `desktop`), `MeetingRecorder`
+  (captura → 16 kHz 16 bits mono → cola) y los servicios de historial, costos, prompts y ajustes.
+- **Infrastructure:** cliente `HttpClient` (sólo HTTPS), subidor por bloques sin SDK de Azure,
+  conversor NAudio, cola en JSON (enlace SAS cifrado con DPAPI), dispositivo en `device.json` (token
+  DPAPI). **Fuera:** clientes de Deepgram/Gemini/Foundry, `ProviderClientFactory`, estimador de
+  costos, Postgres directo, archivo en Blob, stores de historial/prompts/subidas de SQLite y sus
+  paquetes. Npgsql y Blobs quedan sólo en el harness (importación final, publicar el instalador).
+- **App:** ventana de inicio de sesión; Configuración muestra el dispositivo, cierra sesión,
+  edita mis ajustes del servidor (nunca un secreto ni Pricing) y los prompts (catálogo + mis
+  ediciones + volver al original); Grabar muestra la cola (esperando, enviando x%, en el servidor,
+  escribiendo el reporte, listo, falló con el motivo del servidor, el 429 con sus números);
+  Historial, búsqueda, costos (nulo nunca es 0) y re-extracción (Jobs opción 2) por la API;
+  escuchar el audio archivado en un reproductor de la app (el enlace no pasa por el navegador);
+  guardar en el vault un reporte del historial (p. ej. del teléfono). La base local guarda sólo
+  vault, subcarpeta y token del endpoint; un botón borra las claves viejas de esta máquina.
+  **Apariencia (2026-11-11):** paleta de DevLog. La barra izquierda es la de DevLog (pizarra oscura,
+  página actual en índigo), no el panel de Windows. Grabar muestra el camino Grabar → Enviar →
+  Servidor → Reporte. Marca del micrófono en lugar del glifo de la plantilla. Total de costos en
+  tipo grande y sin gráfica. La ventana de error de arranque sigue sin estilo, a propósito.
+- **Harness/CI:** offline (CI) `--verify-api-client` (29), `--verify-block-upload` (12),
+  `--verify-wav-convert` (6), `--verify-device-auth` (18), `--verify-upload-queue` (39),
+  `--verify-api-services` (18), más `--verify-settings-config` y `--verify-release`. Contra la API:
+  `--verify-api` (sólo lectura), `--api-process-file`, `--api-resume`, `--api-reextract`,
+  `--verify-capture`, `--verify-long-audio`. Prueba de mutación: con el origen cambiado o sin la
+  reanudación, `--verify-upload-queue` falla.
+- `Build-Release.ps1` además se niega a publicar un paquete con DLLs de proveedor o claves en los
+  valores de fábrica. **No corrido** (no se armó un Release en esta sesión).
+
+**Hallazgos (2026-11-10/11):**
+- **La captura graba 44,1 kHz 16 bits mono (≈5,3 MB/min), no float de 32 bits:** medido en los WAV
+  de esta PC. Sin convertir, el límite de 1 GiB llegaba a ≈3,4 h (no ≈100 min); a 16 kHz, ≈9,3 h.
+  Una grabación de "más de 100 min" no prueba que la conversión haga falta; prueba que entra.
+- **La fecha de una reunión enviada tarde es la del envío:** la API fija `ended_at` = cuando se
+  pidió el enlace y `started_at` = eso menos la duración. Una grabación sin red enviada horas después
+  queda con la hora del envío. Arreglarlo pide un cambio en DevLog (p. ej. `recorded_at` en la
+  opción 0). **No hecho.**
+- **Sin API para un transcript suelto:** "Adjuntar transcripción (.txt)" y el flujo de dos pasos
+  (transcribir y después elegir el prompt) se quitaron; un trabajo usa el prompt por defecto y se
+  re-extrae después. `/recording/stop` del endpoint local ahora contesta en seguida con
+  `{ status: "queued", meetingId }`, no con el reporte.
+- **Cada inicio de sesión crea un dispositivo nuevo** y cerrar sesión no lo revoca (un dispositivo
+  no puede revocar; sólo el login del usuario): los viejos se acumulan en DevLog hasta revocarlos.
+- **Costos por prompt:** la API no los da; la página de costos muestra totales y meses.
+- **Bug encontrado en la prueba real y arreglado:** el bucle de la cola perdía el aviso de una
+  reunión nueva después de una espera por tiempo (la cola vacía no volvía a despertar). Los
+  autotests llamaban `AdvanceAsync` directo; ahora uno corre el bucle real y falla con el código viejo.
+
+**Escritorio, paso 7 — pruebas en esta PC contra producción (2026-11-11, dispositivo «CHARLIE»):**
+- Inicio de sesión del dueño en la app: `device.json` creado (token cifrado), `Select_Me` Valid.
+- `--verify-api` con ese dispositivo, 16/16: 54 sesiones de todos los orígenes, transcript,
+  reportes, búsqueda sin acento y con operadores, costos (los meses suman los totales; transcripción
+  «US$1,38 + 20 sin precio»), catálogo (3 prompts), ajustes, token inventado → 401, sin token → 401.
+  **Enlace de escucha medido por primera vez:** sesión 54 → 200 y 2.435.244 bytes, lo que subió el
+  teléfono; una sesión sin archivo → 404.
+- Reunión de prueba (voz de texto a voz de la PC, Sabina es-MX) por el camino real: 3,3 MB →
+  1,2 MB a 16 kHz, subida en ≈2 s, reporte en 135 s (trabajo 42, sesión 55).
+- **App de verdad, hotkey Ctrl+Alt+F9, audio por los altavoces (loopback):** 40 s de voz →
+  `.md` en el vault configurado (trabajo 45, sesión 56). No fue una llamada de Teams.
+- **Reinicio a mitad de una subida:** en la app (proceso matado con el trabajo 43 en Uploading, 0 de
+  1 bloques) siguió con el mismo trabajo al volver a abrir; con el harness (mismo código de cola),
+  9 min de voz = 5 bloques, matado con 2 en Storage → `--api-resume` empezó en 46 %, mandó sólo 3,
+  mismo trabajo 46, reporte en 99 s (sesión 57).
+- **Sin red, grabar y enviar después:** la API inalcanzable para la app (`DevLog__BaseUrl` de usuario
+  a un puerto cerrado): grabó, la reunión esperó con «No se pudo llegar al servidor... Próximo
+  intento»; quitada la variable y reiniciada la app, se envió (trabajo 48, sesión 58). **No medido:**
+  la red que vuelve con la app abierta (cubierto sólo offline y por `NetworkAvailabilityChanged`).
+- **Re-extracción:** sesión 56 con `functional-spec` → trabajo 47, reporte 52, `.md` en 110 s.
+- **Fallo del servidor con su motivo:** dos grabaciones sin voz → «The transcription came back
+  empty: no speech was detected in the audio» en la fila (trabajos 43 y 44).
+- **Grabación larga:** sintética, 110 min a 44,1 kHz (555 MB) → 201 MB a 16 kHz en 13 s, 51 bloques.
+  **No medido:** una captura real de más de 100 min.
+- **Dispositivo revocado (2026-11-11, el dueño):** revocó «CHARLIE» (idDevice 6) con su login
+  (`Devices/InsertUpdate_Devices` opción 1; DevLog no tiene pantalla para esto). En la app, Historial
+  → Actualizar: 401 → aviso «Sesión cerrada por el servidor» → sesión cerrada (Revoked) → ventana de
+  inicio de sesión (12:39:52); volvió a entrar a las 12:40:13 → dispositivo nuevo, idDevice 7.
+- **Llamada real (el dueño, 2026-11-11 12:53):** una llamada de WhatsApp grabada desde la ventana,
+  36 s → 1,0 MB a 16 kHz → trabajo 49, sesión 59, reporte 54, `.md` en el vault ≈90 s después de
+  parar. Dueño: "works". Fue WhatsApp, no Teams (mismo camino: loopback + micrófono).
+- **Captura real de más de 100 min: no se hace, por decisión del dueño (2026-11-11).** Queda la
+  prueba sintética (110 min → 201 MB) y la cuenta del límite (≈9,3 h a 16 kHz).
+- **No medido:** las páginas a mano (Historial, Costos, Configuración): sus servicios se probaron
+  contra producción con `--verify-api`, sin un reporte del dueño de cada pantalla.
+- **Dispositivos viejos:** `tools\Revoke-OldDevices.ps1` (lo corre el dueño, con su login) revoca
+  los dispositivos activos de esta máquina (`CHARLIE`, `harness-CHARLIE`) salvo el que usa la app;
+  sin `-Apply` sólo lista. El 6 ya está revocado; la app usa el 7.
+- **Visto una vez, sin explicar:** la primera grabación con el hotkey mientras sonaba un WAV de 47 MB
+  (`SoundPlayer`) salió vacía (sólo cabecera) y la reproducción se cortó a los 13 s. No se repitió
+  (10 s sin audio: 829 KB; 40 s con audio: 3,8 MB). La captura no cambió en este paso.
 
 **Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
 DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:

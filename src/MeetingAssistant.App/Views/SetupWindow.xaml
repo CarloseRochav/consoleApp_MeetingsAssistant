@@ -12,33 +12,27 @@
     </Window.SystemBackdrop>
 
     <ScrollViewer>
-        <StackPanel
+        <Border
             MaxWidth="640"
             Margin="32"
-            HorizontalAlignment="Left"
+            HorizontalAlignment="Center"
             VerticalAlignment="Top"
-            Spacing="16">
+            Style="{StaticResource CardBorderStyle}">
+            <StackPanel Spacing="16">
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Configuración inicial" />
+                <TextBlock
+                    Style="{StaticResource BodyCopyStyle}"
+                    Text="A esta instalación le faltan valores de esta máquina (dónde escribir los reportes). No hay claves de proveedor que escribir: la app habla con el servidor de DevLog, y después se inicia sesión con tu usuario." />
 
-            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Configuración inicial" />
-            <TextBlock
-                MaxWidth="600"
-                TextWrapping="Wrap"
-                Text="A esta instalación le faltan valores para poder grabar. Las claves no viajan dentro del instalador: se escriben acá una vez por máquina y se guardan cifradas para tu usuario de Windows." />
+                <InfoBar
+                    x:Name="MissingInfo"
+                    Title="Falta"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Warning" />
 
-            <InfoBar
-                x:Name="MissingInfo"
-                Title="Falta"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Warning" />
-
-            <TextBlock
-                MaxWidth="600"
-                Opacity="0.75"
-                TextWrapping="Wrap"
-                Text="Si usas la nube, pega primero la cadena de Postgres: el proveedor, el modelo y los precios llegan de ahí al reiniciar, y esta ventana vuelve a aparecer sólo si todavía falta algo." />
-
-            <views:SettingsForm x:Name="Form" />
-        </StackPanel>
+                <views:SettingsForm x:Name="Form" />
+            </StackPanel>
+        </Border>
     </ScrollViewer>
 </Window>

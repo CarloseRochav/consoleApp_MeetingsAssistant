@@ -50,6 +50,8 @@ public sealed partial class HistoryPage : Page
 
     private void HistoryPage_Unloaded(object sender, RoutedEventArgs e)
     {
+        AudioPlayer.MediaPlayer?.Pause();
+        AudioPlayer.Source = null;
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
     }
 
@@ -61,6 +63,10 @@ public sealed partial class HistoryPage : Page
             case null:
                 UpdatePreview();
                 ApplyVisibility();
+                break;
+
+            case nameof(HistoryViewModel.AudioSource):
+                UpdateAudio();
                 break;
 
             case nameof(HistoryViewModel.IsLoading):
@@ -85,6 +91,25 @@ public sealed partial class HistoryPage : Page
         EmptyStatePanel.Visibility = ViewModel.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         DetailPanel.Visibility = ViewModel.HasSelection ? Visibility.Visible : Visibility.Collapsed;
         BusyBar.Visibility = ViewModel.IsBusy ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// El enlace de escucha va directo al reproductor: no pasa por el navegador (ni queda en su
+    /// historial) ni por el log. Sin enlace, el reproductor se esconde.
+    /// </summary>
+    private void UpdateAudio()
+    {
+        if (ViewModel.AudioSource is { } uri)
+        {
+            AudioPlayer.Source = Windows.Media.Core.MediaSource.CreateFromUri(uri);
+            AudioPlayer.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            AudioPlayer.MediaPlayer?.Pause();
+            AudioPlayer.Source = null;
+            AudioPlayer.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void ReportViewer_SelectionChanged(object sender, SelectionChangedEventArgs args)

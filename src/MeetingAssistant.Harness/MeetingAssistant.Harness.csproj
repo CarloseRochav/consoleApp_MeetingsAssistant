@@ -5,6 +5,16 @@
     <ProjectReference Include="..\MeetingAssistant.Infrastructure\MeetingAssistant.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!--
+    Paso B (2026-11-10): la app ya no habla con la base vieja ni con Azure Blob. Sólo el harness los
+    usa, para dos herramientas del dueño: la importación final a DevLog (Npgsql, - -migrate-to-devlog)
+    y publicar el instalador (Blobs, - -publish-release). Infrastructure no los referencia.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.30.1" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
@@ -18,7 +28,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('appsettings.json')" />
+    <!-- Una sola fuente para la dirección de la API: los valores de fábrica de la app. -->
+    <None Include="..\MeetingAssistant.App\appsettings.defaults.json" Link="appsettings.defaults.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

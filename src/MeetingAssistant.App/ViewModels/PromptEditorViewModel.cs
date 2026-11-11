@@ -1,56 +1,45 @@
-using MeetingAssistant.App.Startup;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Models;
 using MeetingAssistant.Core.Services;
 
 namespace MeetingAssistant.App.ViewModels;
 
-/// <summary>Una fila del historial de versiones de un prompt.</summary>
+/// <summary>Una fila de la lista de versiones: el original del catálogo o una edición.</summary>
 public sealed class PromptVersionItem
 {
-    public PromptVersionItem(PromptVersionEntry entry)
+    public PromptVersionItem(string title, string subtitle, string? text)
     {
-        Entry = entry;
-
-        var parts = new List<string>();
-        if (entry.IsActive) parts.Add("activa");
-        parts.Add(entry.IsOriginal
-            ? "original, definida en el código"
-            : entry.CreatedAtUtc!.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture));
-        if (!string.IsNullOrWhiteSpace(entry.Note)) parts.Add(entry.Note);
-
-        Title = entry.Version;
-        Subtitle = string.Join(" · ", parts);
+        Title = title;
+        Subtitle = subtitle;
+        Text = text;
     }
-
-    public PromptVersionEntry Entry { get; }
 
     public string Title { get; }
 
     public string Subtitle { get; }
 
-    /// <summary>Mismo motivo que en <see cref="SessionListItem.ToString"/>.</summary>
+    /// <summary>El texto de esa versión; null en una vuelta al original (no hay texto que cargar).</summary>
+    public string? Text { get; }
+
     public override string ToString() => $"{Title}. {Subtitle}";
 }
 
 /// <summary>
-/// Editar el texto de los prompts del catálogo desde Configuración.
-///
-/// Guardar <b>no pisa</b>: crea la versión siguiente (<c>v1.1</c>, <c>v1.2</c>...)
-/// y la deja activa. Los reportes ya generados siguen diciendo con qué versión
-/// salieron, y Costos puede comparar versiones. Elegir una versión del
-/// historial sólo la carga en el editor; para volver a usarla hay que guardarla.
+/// El editor de prompts por la API (paso B): el catálogo que publica el worker y MIS ediciones (la
+/// capa propia, nunca la compartida, como el teléfono). Guardar crea una versión nueva que vale
+/// para los reportes nuevos de todos mis dispositivos; "volver al original" escribe una vuelta al
+/// texto del catálogo.
 /// </summary>
-public partial class PromptEditorViewModel : ObservableObject
+public partial class PromptEditorViewModel(PromptLibraryService library) : ObservableObject
 {
-    private readonly EditablePromptCatalog _catalog;
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StructuredOutputWarning))]
     [NotifyPropertyChangedFor(nameof(HasStructuredOutputWarning))]
-    private PromptDefinition? selectedPrompt;
+    [NotifyPropertyChangedFor(nameof(SelectedPromptDescription))]
+    private PromptEntry? selectedPrompt;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsDirty))]
@@ -63,23 +52,11 @@ public partial class PromptEditorViewModel : ObservableObject
     private string? note;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDirty))]
-    [NotifyPropertyChangedFor(nameof(DirtyHint))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    [NotifyCanExecuteChangedFor(nameof(DiscardCommand))]
-    [NotifyCanExecuteChangedFor(nameof(RestoreOriginalCommand))]
-    private PromptDefinition? activePrompt;
+    private string versionName = string.Empty;
 
     [ObservableProperty]
     private string? activeVersionText;
-
-    /// <summary>
-    /// El texto que el editor tenía al cargarse (la versión activa o una del
-    /// historial). Lo que el usuario escribió de verdad es la diferencia contra
-    /// esto, no contra la activa: cargar una versión vieja no es un cambio que
-    /// haya que proteger.
-    /// </summary>
-    private string? _loadedText;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
@@ -92,91 +69,92 @@ public partial class PromptEditorViewModel : ObservableObject
     [ObservableProperty]
     private string? errorDetails;
 
-    public PromptEditorViewModel(EditablePromptCatalog catalog)
-    {
-        _catalog = catalog;
-        Prompts = catalog.GetAll();
-        StorageHint = !catalog.CanEdit
-            ? "No hay base de datos donde guardar ediciones: los prompts se pueden leer pero no cambiar."
-            : catalog.LoadedFromStore
-                ? "Las ediciones se guardan en la base del historial. Con Postgres, las ven todas tus máquinas al reiniciar la app."
-                : "No se pudieron leer las ediciones guardadas: se están usando los textos originales. Guardar vuelve a intentarlo.";
-        SelectedPrompt = catalog.Default;
-    }
+    [ObservableProperty]
+    private string storageHint = "Cargando los prompts del servidor...";
 
-    public IReadOnlyList<PromptDefinition> Prompts { get; }
+    private string? _loadedText;
+
+    public ObservableCollection<PromptEntry> Prompts { get; } = [];
 
     public ObservableCollection<PromptVersionItem> Versions { get; } = [];
 
-    public string StorageHint { get; }
+    public string SelectedPromptDescription => SelectedPrompt?.Catalog.Description ?? string.Empty;
 
-    public bool IsDirty =>
-        ActivePrompt is not null && Normalize(EditorText) != Normalize(ActivePrompt.SystemPrompt);
+    public bool IsDirty => SelectedPrompt is not null && Normalize(EditorText) != Normalize(SelectedPrompt.Text);
 
-    /// <summary>Hay texto escrito a mano que se perdería al cargar otra cosa en el editor.</summary>
     public bool HasUnsavedEdits => _loadedText is not null && Normalize(EditorText) != Normalize(_loadedText);
 
-    /// <summary>
-    /// Pregunta si se pueden descartar los cambios; recibe el nombre del prompt.
-    /// La pone la vista, que es la que sabe mostrar un diálogo. Sin vista no hay
-    /// a quién preguntar y se descarta.
-    /// </summary>
     public Func<string, Task<bool>>? ConfirmDiscard { get; set; }
 
-    /// <summary>
-    /// true si no hay nada que perder o el usuario aceptó perderlo. Lo usan los
-    /// cuatro caminos que reemplazan el texto del editor y la vista al salir de
-    /// Configuración.
-    /// </summary>
+    public string DirtyHint => IsDirty
+        ? "Hay cambios sin guardar. Guardar crea una versión nueva en tu capa y vale para los reportes nuevos (también los del teléfono)."
+        : "Sin cambios: el editor muestra la versión que vale para ti.";
+
+    public bool HasStructuredOutputWarning =>
+        string.Equals(SelectedPrompt?.Catalog.OutputKind, "StructuredMeetingReport", StringComparison.OrdinalIgnoreCase);
+
+    public string? StructuredOutputWarning => HasStructuredOutputWarning
+        ? "Este prompt tiene que devolver JSON con el esquema que espera el servidor: summary, insights, " +
+          "taskList (task, priority alta/media/baja, context), requirements, indications y openQuestions. " +
+          "Puedes cambiar las instrucciones, pero si cambias el formato de salida, el próximo reporte va a fallar al interpretarse."
+        : null;
+
+    /// <summary>Carga el catálogo y mis ediciones. Lo llama el panel al abrirse.</summary>
+    public async Task LoadAsync(string? keepPromptId = null)
+    {
+        IsBusy = true;
+        ErrorDetails = null;
+        try
+        {
+            IReadOnlyList<PromptEntry> entries = await library.LoadAsync();
+            Prompts.Clear();
+            foreach (PromptEntry entry in entries) Prompts.Add(entry);
+            StorageHint = "Los prompts vienen del servidor. Tus ediciones se guardan en tu capa y valen para tus reportes nuevos de todos los dispositivos.";
+            SelectedPrompt = Prompts.FirstOrDefault(prompt => string.Equals(prompt.PromptId, keepPromptId ?? SelectedPrompt?.PromptId, StringComparison.OrdinalIgnoreCase))
+                ?? Prompts.FirstOrDefault();
+            LoadActive();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Failure("PromptEditor.Load", exception);
+            StorageHint = "No se pudieron leer los prompts del servidor: " + (exception is ApiException api ? api.Error.Describe() : exception.Message);
+            ErrorDetails = exception.ToString();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     public async Task<bool> ConfirmLeaveAsync()
     {
         if (!HasUnsavedEdits || ConfirmDiscard is null) return true;
         return await ConfirmDiscard(SelectedPrompt?.DisplayName ?? "el prompt");
     }
 
-    /// <summary>Cambiar de prompt, preguntando antes si hay cambios sin guardar.</summary>
-    public async Task<bool> TrySelectPromptAsync(PromptDefinition prompt)
+    public async Task<bool> TrySelectPromptAsync(PromptEntry prompt)
     {
-        if (string.Equals(prompt.Id, SelectedPrompt?.Id, StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(prompt.PromptId, SelectedPrompt?.PromptId, StringComparison.OrdinalIgnoreCase)) return true;
         if (!await ConfirmLeaveAsync()) return false;
-
         SelectedPrompt = prompt;
         return true;
     }
 
-    /// <summary>
-    /// Elegir una versión del historial la carga en el editor, sin activarla.
-    /// Pregunta antes si hay cambios sin guardar.
-    /// </summary>
     public async Task LoadVersionAsync(PromptVersionItem item)
     {
-        if (!await ConfirmLeaveAsync()) return;
+        if (item.Text is null)
+        {
+            StatusMessage = "Esa fila es una vuelta al original: no tiene texto propio.";
+            return;
+        }
 
-        EditorText = item.Entry.SystemPrompt;
-        _loadedText = item.Entry.SystemPrompt;
-        StatusMessage = item.Entry.IsActive
-            ? null
-            : $"Cargada {item.Entry.Version} en el editor. No está activa: para usarla, guárdala.";
+        if (!await ConfirmLeaveAsync()) return;
+        EditorText = item.Text;
+        _loadedText = item.Text;
+        StatusMessage = $"Cargada {item.Title} en el editor. Para que valga, guárdala como versión nueva.";
     }
 
-    public string DirtyHint => IsDirty
-        ? "Hay cambios sin guardar. Guardar crea una versión nueva y la deja activa para los reportes que se generen desde ahora."
-        : "Sin cambios: el editor muestra la versión activa.";
-
-    public bool HasStructuredOutputWarning => SelectedPrompt?.OutputKind == PromptOutputKind.StructuredMeetingReport;
-
-    /// <summary>
-    /// Este prompt es el único cuya respuesta la app interpreta como JSON. Un
-    /// cambio en el formato de salida no falla al guardar sino al generar el
-    /// próximo reporte, que es peor; por eso se avisa antes.
-    /// </summary>
-    public string? StructuredOutputWarning => HasStructuredOutputWarning
-        ? "Este prompt tiene que devolver JSON con el esquema que espera la app: summary, insights, " +
-          "taskList (task, priority alta/media/baja, context), requirements, indications y openQuestions. " +
-          "Puedes cambiar las instrucciones, pero si cambias el formato de salida, el próximo reporte va a fallar al interpretarse."
-        : null;
-
-    partial void OnSelectedPromptChanged(PromptDefinition? value)
+    partial void OnSelectedPromptChanged(PromptEntry? value)
     {
         Note = null;
         StatusMessage = null;
@@ -184,26 +162,29 @@ public partial class PromptEditorViewModel : ObservableObject
         LoadActive();
     }
 
-    private bool CanSave() => IsDirty && !IsBusy && _catalog.CanEdit && !string.IsNullOrWhiteSpace(EditorText);
+    private bool CanSave() => IsDirty && !IsBusy && !string.IsNullOrWhiteSpace(EditorText) && !string.IsNullOrWhiteSpace(VersionName);
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
     {
         if (SelectedPrompt is not { } prompt) return;
-
         IsBusy = true;
         ErrorDetails = null;
         try
         {
-            PromptDefinition saved = await _catalog.SaveEditAsync(prompt.Id, EditorText, Note);
-            Note = null;
-            LoadActive();
-            StatusMessage = $"Guardada como {saved.Version}. Los reportes que se generen desde ahora la usan.";
+            PromptSaveResult result = await library.SaveAsync(prompt, VersionName, EditorText, Note);
+            StatusMessage = result.Message;
+            if (result.Saved)
+            {
+                Note = null;
+                await LoadAsync(prompt.PromptId);
+                StatusMessage = result.Message;
+            }
         }
         catch (Exception exception)
         {
             AppLog.Failure("PromptEditor.Save", exception);
-            StatusMessage = "No se pudo guardar. El prompt activo no cambió.";
+            StatusMessage = "No se pudo guardar. El prompt que vale no cambió.";
             ErrorDetails = exception.ToString();
         }
         finally
@@ -221,9 +202,7 @@ public partial class PromptEditorViewModel : ObservableObject
         StatusMessage = "Cambios descartados.";
     }
 
-    private bool CanRestoreOriginal() =>
-        !IsBusy && _catalog.CanEdit && ActivePrompt is not null && SelectedPrompt is not null &&
-        ActivePrompt.Version != _catalog.GetOriginal(SelectedPrompt.Id).Version;
+    private bool CanRestoreOriginal() => !IsBusy && SelectedPrompt?.CanUseBuiltIn == true;
 
     [RelayCommand(CanExecute = nameof(CanRestoreOriginal))]
     private async Task RestoreOriginalAsync()
@@ -235,14 +214,14 @@ public partial class PromptEditorViewModel : ObservableObject
         ErrorDetails = null;
         try
         {
-            PromptDefinition restored = await _catalog.RestoreOriginalAsync(prompt.Id);
-            LoadActive();
-            StatusMessage = $"Vuelve a estar activa la versión original ({restored.Version}). Las ediciones siguen en el historial.";
+            PromptSaveResult result = await library.UseBuiltInAsync(prompt);
+            if (result.Saved) await LoadAsync(prompt.PromptId);
+            StatusMessage = result.Message;
         }
         catch (Exception exception)
         {
             AppLog.Failure("PromptEditor.RestoreOriginal", exception);
-            StatusMessage = "No se pudo volver al original. El prompt activo no cambió.";
+            StatusMessage = "No se pudo volver al original. El prompt que vale no cambió.";
             ErrorDetails = exception.ToString();
         }
         finally
@@ -253,22 +232,43 @@ public partial class PromptEditorViewModel : ObservableObject
 
     private void LoadActive()
     {
-        if (SelectedPrompt is null) return;
-
-        ActivePrompt = _catalog.GetById(SelectedPrompt.Id);
-        EditorText = ActivePrompt.SystemPrompt;
-        _loadedText = ActivePrompt.SystemPrompt;
-
-        IReadOnlyList<PromptVersionEntry> history = _catalog.GetHistory(SelectedPrompt.Id);
         Versions.Clear();
-        foreach (PromptVersionEntry entry in history) Versions.Add(new PromptVersionItem(entry));
+        if (SelectedPrompt is not { } prompt)
+        {
+            EditorText = string.Empty;
+            _loadedText = null;
+            ActiveVersionText = null;
+            return;
+        }
 
-        PromptVersionEntry active = history.First(entry => entry.IsActive);
-        ActiveVersionText = active.IsOriginal
-            ? $"Versión activa: {active.Version} (original, definida en el código)."
-            : $"Versión activa: {active.Version}, editada el " +
-              $"{active.CreatedAtUtc!.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture)}.";
+        EditorText = prompt.Text;
+        _loadedText = prompt.Text;
+        VersionName = prompt.SuggestedVersion();
+
+        ActiveVersionText = prompt.InEffect switch
+        {
+            null when prompt.BuiltInChosen => $"Vale el original ({prompt.Catalog.Version}): volviste a él.",
+            null => $"Vale el original ({prompt.Catalog.Version}), definido en el worker.",
+            { IsMine: true } row => $"Vale tu versión {row.Version}, del {Local(row.CreatedAt)}.",
+            { } row => $"Vale la versión compartida {row.Version}, del {Local(row.CreatedAt)} (no tienes una propia)."
+        };
+
+        Versions.Add(new PromptVersionItem(prompt.Catalog.Version, prompt.InEffect is null ? "original, definido en el worker · vale" : "original, definido en el worker", prompt.Catalog.SystemPrompt));
+        if (prompt.InEffect is { IsMine: false } shared)
+        {
+            Versions.Add(new PromptVersionItem(shared.Version ?? "(compartida)", $"compartida · {Local(shared.CreatedAt)} · vale", shared.SystemPrompt));
+        }
+
+        foreach (PromptVersionRow row in prompt.Own)
+        {
+            bool active = prompt.InEffect?.IdPromptVersion == row.IdPromptVersion;
+            string subtitle = string.Join(" · ", new[] { row.IsRevert ? "vuelta al original" : "tuya", Local(row.CreatedAt), active ? "vale" : null, row.Note }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
+            Versions.Add(new PromptVersionItem(row.Version ?? "(original)", subtitle, row.SystemPrompt));
+        }
     }
+
+    private static string Local(DateTimeOffset value) => value.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture);
 
     private static string Normalize(string? text) => (text ?? string.Empty).Replace("\r\n", "\n").Trim();
 }

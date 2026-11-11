@@ -1,6 +1,7 @@
 using MeetingAssistant.App.Services;
 using MeetingAssistant.App.Startup;
 using MeetingAssistant.App.Views;
+using MeetingAssistant.Core.Services;
 using MeetingAssistant.Infrastructure.Api;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
@@ -39,6 +40,10 @@ public partial class App : Application
     private IReadOnlyList<string> _missingSettings = [];
 
     private SetupWindow? _setupWindow;
+
+    private SignInWindow? _signInWindow;
+    private bool _coreLaunched;
+    private string? _lastUsername;
 
     public App()
     {
@@ -90,6 +95,15 @@ public partial class App : Application
                 return;
             }
 
+            // Paso B: sin un dispositivo guardado, primero el inicio de sesión. Con uno guardado se
+            // abre directo, aunque no haya red (la comprobación con la API va en segundo plano).
+            if (Services.GetRequiredService<DeviceAuthService>().Restore() is null)
+            {
+                foreach (string diagnostic in _startupDiagnostics) AppLog.Diagnostic(diagnostic);
+                ShowSignIn(reason: null, exitIfClosedFirst: true);
+                return;
+            }
+
             LaunchCore();
         }
         catch (Exception exception)
@@ -121,6 +135,9 @@ public partial class App : Application
 
     private void LaunchCore()
     {
+        if (_coreLaunched) return;
+        _coreLaunched = true;
+
         _apiServer = Services.GetRequiredService<LocalRecordingApiServer>();
 
         try
@@ -172,6 +189,10 @@ public partial class App : Application
         MainWindow = _window;
         _window.Activate();
 
+        DeviceAuthService deviceAuth = Services.GetRequiredService<DeviceAuthService>();
+        _lastUsername = deviceAuth.Current?.Username;
+        deviceAuth.SignedOut += OnSignedOut;
+
         // Program.cs redirige a esta instancia cualquier lanzamiento posterior
         // (incluida la activacion por COM al hacer clic en un toast). Como
         // cerrar la ventana solo la oculta, lo util al recibir la redireccion
@@ -199,6 +220,45 @@ public partial class App : Application
 
         _globalHotkeyService = Services.GetRequiredService<GlobalHotkeyService>();
         _globalHotkeyService.Register(_window);
+    }
+
+    /// <summary>
+    /// El inicio de sesión. La primera vez (sin dispositivo) cerrarlo sin entrar cierra la app. Con la
+    /// app ya andando (un revocado o un "cerrar sesión") la app sigue en la bandeja: se puede grabar y
+    /// lo grabado espera en la cola hasta que se vuelva a entrar.
+    /// </summary>
+    private void ShowSignIn(string? reason, bool exitIfClosedFirst)
+    {
+        if (_signInWindow is not null)
+        {
+            _signInWindow.Activate();
+            return;
+        }
+
+        _signInWindow = new SignInWindow(Services.GetRequiredService<DeviceAuthService>(), reason, _lastUsername);
+        bool signedIn = false;
+        _signInWindow.SignedIn += (_, _) =>
+        {
+            signedIn = true;
+            LaunchCore();
+            _window?.ShowFromTray();
+        };
+        _signInWindow.Closed += (_, _) =>
+        {
+            _signInWindow = null;
+            if (!signedIn && exitIfClosedFirst && !_coreLaunched) Exit();
+        };
+        _signInWindow.Activate();
+    }
+
+    /// <summary>Un 401 con el token del dispositivo (revocado) o "cerrar sesión" en Configuración. Llega en cualquier hilo.</summary>
+    private void OnSignedOut(object? sender, SignedOutReason reason)
+    {
+        AppLog.Diagnostic($"Sesión cerrada: {reason}.");
+        string message = reason == SignedOutReason.Revoked
+            ? "El servidor ya no acepta este dispositivo (fue revocado, o el usuario desactivado). Vuelve a iniciar sesión. Lo grabado espera en la cola y se envía después."
+            : "Cerraste la sesión en esta máquina. Lo grabado espera en la cola hasta que vuelvas a entrar.";
+        _window?.DispatcherQueue.TryEnqueue(() => ShowSignIn(message, exitIfClosedFirst: false));
     }
 
     private void RegisterGlobalExceptionHandlers()

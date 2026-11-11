@@ -8,46 +8,61 @@
     mc:Ignorable="d">
     <ScrollViewer>
         <StackPanel
-            MaxWidth="640"
+            MaxWidth="720"
             Margin="32"
-            HorizontalAlignment="Left"
+            HorizontalAlignment="Center"
             VerticalAlignment="Top"
-            Spacing="16">
+            Spacing="28">
 
-            <TextBlock Text="Configuración" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="Configuración" Style="{StaticResource PageTitleStyle}" />
 
-            <!-- Inicio automático (T5) -->
-            <ToggleSwitch
-                x:Name="StartupToggle"
-                Header="Iniciar con Windows"
-                Toggled="StartupToggle_Toggled" />
-            <TextBlock
-                x:Name="StartupStatusText"
-                MaxWidth="600"
-                Opacity="0.75"
-                Text="Consultando el estado configurado en Windows..."
-                TextWrapping="Wrap" />
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
+                <StackPanel Spacing="12">
+                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Cuenta y dispositivo" />
+                    <TextBlock x:Name="DeviceText" Style="{StaticResource BodyCopyStyle}" />
+                    <Button x:Name="SignOutButton" Content="Cerrar sesión en esta máquina" Click="SignOutButton_Click" />
+                    <TextBlock Style="{StaticResource CaptionTextStyle}"
+                               Text="Cerrar sesión borra el token de esta máquina; en el servidor sigue valiendo hasta revocarlo en DevLog (Devices). Lo grabado y pendiente queda en la cola y se envía al volver a iniciar sesión." />
+                </StackPanel>
+            </Border>
 
-            <!-- Los ajustes, compartidos con la ventana de primer arranque. -->
-            <views:SettingsForm x:Name="Form" Margin="0,16,0,0" />
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
+                <StackPanel Spacing="8">
+                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Inicio" />
+                    <ToggleSwitch
+                        x:Name="StartupToggle"
+                        Header="Iniciar con Windows"
+                        Toggled="StartupToggle_Toggled" />
+                    <TextBlock
+                        x:Name="StartupStatusText"
+                        Style="{StaticResource CaptionTextStyle}"
+                        Text="Consultando el estado configurado en Windows..." />
+                </StackPanel>
+            </Border>
 
-            <TextBlock
-                MaxWidth="600"
-                Margin="0,8,0,0"
-                Opacity="0.6"
-                TextWrapping="Wrap"
-                Text="Los cambios se aplican al reiniciar la app: los clientes de audio, transcripción y LLM se construyen una sola vez al arrancar. El inicio automático es la excepción y se aplica al instante." />
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
+                <StackPanel Spacing="12">
+                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Esta máquina" />
+                    <views:SettingsForm x:Name="Form" />
+                    <TextBlock
+                        Style="{StaticResource CaptionTextStyle}"
+                        Text="Los ajustes de esta máquina se aplican al reiniciar la app. El inicio automático y los ajustes del servidor se aplican al instante." />
+                </StackPanel>
+            </Border>
 
-            <!--
-                Prompts. Van al final y con sus propios botones: no los guarda el
-                "Guardar cambios" de arriba, y a diferencia del resto de esta
-                página se aplican al instante, sin reiniciar.
-            -->
-            <TextBlock
-                Margin="0,24,0,0"
-                Style="{StaticResource SubtitleTextBlockStyle}"
-                Text="Prompts" />
-            <views:PromptEditorPanel x:Name="PromptEditor" />
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
+                <StackPanel Spacing="12">
+                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="En el servidor" />
+                    <views:ServerSettingsPanel x:Name="ServerSettings" />
+                </StackPanel>
+            </Border>
+
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
+                <StackPanel Spacing="12">
+                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Prompts" />
+                    <views:PromptEditorPanel x:Name="PromptEditor" />
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -1,13 +1,9 @@
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Models;
 using MeetingAssistant.Core.Services;
-using MeetingAssistant.Infrastructure;
 using MeetingAssistant.Infrastructure.Audio;
-using MeetingAssistant.Infrastructure.Cost;
-using MeetingAssistant.Infrastructure.Llm;
 using MeetingAssistant.Infrastructure.Storage;
 using MeetingAssistant.Infrastructure.Storage.Sqlite;
-using MeetingAssistant.Infrastructure.Transcription;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 

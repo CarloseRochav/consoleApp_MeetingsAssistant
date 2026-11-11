@@ -2,41 +2,29 @@ using MeetingAssistant.App.Services;
 using MeetingAssistant.App.ViewModels;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Services;
-using MeetingAssistant.Infrastructure;
 using MeetingAssistant.Infrastructure.Api;
 using MeetingAssistant.Infrastructure.Audio;
-using MeetingAssistant.Infrastructure.Cost;
 using MeetingAssistant.Infrastructure.Storage;
-using MeetingAssistant.Infrastructure.Storage.Postgres;
-using MeetingAssistant.Infrastructure.Storage.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace MeetingAssistant.App.Startup;
 
 /// <summary>
-/// La raíz de composición de la app: qué implementación concreta va detrás de
-/// cada abstracción. Un método por área, para que cambiar, por ejemplo, dónde
-/// vive el historial no obligue a leer cómo se arma la ventana.
+/// La raíz de composición de la app: qué implementación concreta va detrás de cada abstracción. Un
+/// método por área. Desde el paso B de la Fase 8 (2026-11-10) no hay proveedores ni bases remotas en
+/// esta máquina: todo pasa por la API de DevLog con el token de este dispositivo.
 /// </summary>
 internal static class ServiceRegistration
 {
     public static IServiceCollection AddMeetingAssistant(this IServiceCollection services, BootstrapResult bootstrap) =>
         services
             .AddBootstrapInstances(bootstrap)
-            .AddProviders(bootstrap.Configuration)
-            .AddPrompts(bootstrap.PromptCatalog)
-            .AddHistory(bootstrap)
-            .AddCloudArchive()
+            .AddDevLogApi(bootstrap.Configuration)
             .AddRecording()
             .AddShell();
 
-    /// <summary>
-    /// Las mismas instancias que ya se usaron para migrar el esquema y para
-    /// alimentar la configuración. Registrarlas, en vez de dejar que el
-    /// contenedor construya unas segundas, garantiza que la configuración y la
-    /// UI hablen con la misma base.
-    /// </summary>
+    /// <summary>Las mismas instancias que ya se usaron para migrar el esquema y para alimentar la configuración.</summary>
     private static IServiceCollection AddBootstrapInstances(this IServiceCollection services, BootstrapResult bootstrap)
     {
         services.AddSingleton(bootstrap.Configuration);
@@ -44,93 +32,63 @@ internal static class ServiceRegistration
         services.AddSingleton(bootstrap.SchemaMigrator);
         services.AddSingleton(bootstrap.SecretProtector);
         services.AddSingleton(bootstrap.SettingsStore);
-        // La base de Postgres puede existir por el historial o por los ajustes:
-        // cada uno tiene su conmutador.
-        if (bootstrap.Postgres is not null) services.AddSingleton(bootstrap.Postgres);
-        if (bootstrap.CloudSettings is not null) services.AddSingleton(bootstrap.CloudSettings);
-        return services;
-    }
-
-    /// <summary>Audio, transcripción, LLM y precios: los proveedores externos.</summary>
-    private static IServiceCollection AddProviders(this IServiceCollection services, IConfiguration configuration)
-    {
-        services.AddSingleton<IAudioCaptureService, AudioCaptureService>();
-        services.AddSingleton(_ => ProviderClientFactory.CreateTranscriptionClient(configuration));
-        services.AddSingleton(_ => ProviderClientFactory.CreateLlmClient(configuration));
-        services.AddSingleton<ICostEstimator, ConfigPricingCostEstimator>();
-        services.AddSingleton<ITranscriptionCostEstimator, ConfigPricingCostEstimator>();
-        return services;
-    }
-
-    private static IServiceCollection AddPrompts(this IServiceCollection services, EditablePromptCatalog promptCatalog)
-    {
-        services.AddSingleton(promptCatalog);
-        services.AddSingleton<IPromptCatalog>(promptCatalog);
-        services.AddSingleton<ILlmReportExtractor, LlmReportExtractor>();
-        return services;
-    }
-
-    /// <summary>Dónde vive el historial (Fase 6, paso 2): Database:Provider elige entre SQLite y Postgres.</summary>
-    private static IServiceCollection AddHistory(this IServiceCollection services, BootstrapResult bootstrap)
-    {
-        if (bootstrap.HistoryInPostgres && bootstrap.Postgres is not null)
-        {
-            services.AddSingleton<IMeetingHistoryStore, PostgresMeetingHistoryStore>();
-            services.AddSingleton<IArchiveUploadStore, PostgresArchiveUploadStore>();
-        }
-        else
-        {
-            services.AddSingleton<IMeetingHistoryStore, SqliteMeetingHistoryStore>();
-            services.AddSingleton<IArchiveUploadStore, SqliteArchiveUploadStore>();
-        }
-
-        services.AddSingleton<IReportStorage, MarkdownReportStorage>();
         return services;
     }
 
     /// <summary>
-    /// Subida en segundo plano del audio y los reportes (Fase 6, paso 1) y la
-    /// retención del audio local (paso 5). Sin AzureStorage:ConnectionString
-    /// quedan apagadas.
+    /// El cliente de la API, la sesión del dispositivo y lo que la UI lee por ella. La dirección sale
+    /// de <c>DevLog:BaseUrl</c>; se construye al pedirla, así que una instalación sin ella abre la
+    /// ventana de primer arranque en vez de fallar aquí.
     /// </summary>
-    private static IServiceCollection AddCloudArchive(this IServiceCollection services)
+    private static IServiceCollection AddDevLogApi(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSingleton<ICloudArchive, AzureBlobCloudArchive>();
-        services.AddSingleton(provider => new ArchiveUploadService(
-            provider.GetRequiredService<ICloudArchive>(),
-            provider.GetRequiredService<IArchiveUploadStore>(),
-            AppLog.Failure));
-        // Sólo mira MeetingOutputDirectory: un audio importado desde otra
-        // carpeta del usuario no se borra nunca.
-        services.AddSingleton(provider => new LocalAudioRetentionService(
-            provider.GetRequiredService<ICloudArchive>(),
-            provider.GetRequiredService<IArchiveUploadStore>(),
-            AppPaths.MeetingOutputDirectory,
-            AppLog.Failure));
-        services.AddSingleton<BackgroundMaintenance>();
+        services.AddSingleton<IDevLogApi>(_ => new DevLogApiClient(
+            new HttpClient { Timeout = TimeSpan.FromSeconds(60) },
+            configuration["DevLog:BaseUrl"] ?? string.Empty));
+        services.AddSingleton<IDeviceSessionStore>(provider =>
+            new DpapiDeviceSessionStore(AppPaths.DeviceFile, provider.GetRequiredService<MeetingAssistant.Core.Abstractions.ISecretProtector>()));
+        // El dispositivo se llama como la máquina (handoff del paso B), así se reconoce al revocarlo.
+        services.AddSingleton(provider => new DeviceAuthService(
+            provider.GetRequiredService<IDevLogApi>(),
+            provider.GetRequiredService<IDeviceSessionStore>(),
+            Environment.MachineName));
+        services.AddSingleton<MeetingHistoryService>();
+        services.AddSingleton<MeetingCostsService>();
+        services.AddSingleton<PromptLibraryService>();
+        services.AddSingleton<ServerSettingsService>();
         return services;
     }
 
-    /// <summary>El pipeline y los cuatro disparadores: ventana, bandeja, hotkey y HTTP.</summary>
+    /// <summary>La captura, la cola de subidas y los cuatro disparadores: ventana, bandeja, hotkey y HTTP.</summary>
     private static IServiceCollection AddRecording(this IServiceCollection services)
     {
-        services.AddSingleton<IMeetingPipeline>(provider => new MeetingPipeline(
-            provider.GetRequiredService<IAudioCaptureService>(),
-            provider.GetRequiredService<ITranscriptionClient>(),
-            provider.GetRequiredService<ILlmReportExtractor>(),
+        services.AddSingleton<IAudioCaptureService, AudioCaptureService>();
+        services.AddSingleton<IAudioConverter, UploadAudioConverter>();
+        services.AddSingleton<IAudioUploader>(_ => new AzureBlockUploader(new HttpClient { Timeout = TimeSpan.FromMinutes(5) }));
+        services.AddSingleton<IQueuedMeetingStore>(provider => new JsonQueuedMeetingStore(
+            AppPaths.QueueDirectory,
+            provider.GetRequiredService<MeetingAssistant.Core.Abstractions.ISecretProtector>(),
+            AppLog.Failure));
+        services.AddSingleton<IReportStorage, MarkdownReportStorage>();
+        services.AddSingleton(provider => new MeetingUploadQueue(
+            provider.GetRequiredService<IDevLogApi>(),
+            provider.GetRequiredService<DeviceAuthService>(),
+            provider.GetRequiredService<IAudioUploader>(),
+            provider.GetRequiredService<IQueuedMeetingStore>(),
             provider.GetRequiredService<IReportStorage>(),
+            diagnostic: AppLog.Diagnostic,
+            failure: AppLog.Failure));
+        services.AddSingleton(provider => new MeetingRecorder(
+            provider.GetRequiredService<IAudioCaptureService>(),
+            provider.GetRequiredService<IAudioConverter>(),
+            provider.GetRequiredService<MeetingUploadQueue>(),
             AppPaths.MeetingOutputDirectory,
-            // El historial se engancha en el pipeline y no en RecordingCoordinator
-            // porque el pipeline es el único punto por el que pasan **todos** los
-            // caminos, incluido el harness. Un solo punto, sin filas duplicadas.
-            provider.GetRequiredService<IMeetingHistoryStore>(),
-            AppLog.Failure,
-            provider.GetRequiredService<ITranscriptionCostEstimator>(),
-            provider.GetRequiredService<ArchiveUploadService>()));
+            AppPaths.UploadDirectory,
+            AppLog.Diagnostic,
+            AppLog.Failure));
         services.AddSingleton<RecordingCoordinator>();
-        // El endpoint HTTP vive en Infrastructure y no puede ver App: entra por
-        // esta interfaz de Core, que es el mismo coordinador. Así comparte el
-        // candado y los avisos con la ventana, la bandeja y el hotkey.
+        // El endpoint HTTP vive en Infrastructure y no puede ver App: entra por esta interfaz de
+        // Core, que es el mismo coordinador (mismo candado y mismos avisos).
         services.AddSingleton<IRecordingTrigger>(provider => provider.GetRequiredService<RecordingCoordinator>());
         services.AddSingleton(provider => new LocalRecordingApiServer(
             provider.GetRequiredService<IRecordingTrigger>(),
@@ -139,13 +97,13 @@ internal static class ServiceRegistration
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
         services.AddSingleton<GlobalHotkeyService>();
+        services.AddSingleton<BackgroundMaintenance>();
         return services;
     }
 
     /// <summary>
-    /// La ventana y sus páginas. Los ViewModels de página son transient: el
-    /// Frame reconstruye la página en cada navegación, y un singleton sólo
-    /// conservaría estado que la página ya no puede mostrar.
+    /// La ventana y sus páginas. Los ViewModels de página son transient: el Frame reconstruye la
+    /// página en cada navegación.
     /// </summary>
     private static IServiceCollection AddShell(this IServiceCollection services)
     {
@@ -155,6 +113,7 @@ internal static class ServiceRegistration
         services.AddTransient<HistoryViewModel>();
         services.AddTransient<CostViewModel>();
         services.AddTransient<PromptEditorViewModel>();
+        services.AddTransient<ServerSettingsViewModel>();
         services.AddSingleton<MainWindow>();
         return services;
     }

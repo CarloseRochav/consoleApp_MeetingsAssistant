@@ -1,108 +1,61 @@
-using MeetingAssistant.App.Startup;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using MeetingAssistant.App.Services;
+using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Models;
+using MeetingAssistant.Core.Services;
 
 namespace MeetingAssistant.App.ViewModels;
 
 /// <summary>
-/// Una fila del listado. Es una proyección de presentación sobre
-/// <see cref="SessionSummary"/> y existe por una razón concreta: <b>las fechas
-/// se guardan en UTC y sólo se convierten al mostrar</b>. Si el XAML hiciera el
-/// binding directo contra el record de Core, la lista mostraría UTC y volvería a
-/// aparecer el desfase ya conocido — el <c>.wav</c> se nombra en hora local y el
-/// reporte en UTC, así que una reunión de la noche parece del día siguiente.
+/// Una fila del listado, sobre una sesión de la API (de cualquier dispositivo). Las fechas vienen en
+/// UTC y sólo se convierten al mostrar.
 /// </summary>
 public sealed partial class SessionListItem : ObservableObject
 {
-    /// <summary>
-    /// Cultura con la que se formatean las fechas que se muestran.
-    ///
-    /// Fijada a propósito, y no heredada del sistema. Toda la UI de esta app está
-    /// escrita en español y no hay localización: con la cultura del sistema
-    /// (en-US en esta máquina) el título salía <c>"Thursday 27 de August"</c> —
-    /// los nombres de día y mes en inglés alrededor de un "de" español. Visto en
-    /// pantalla, no deducido.
-    /// </summary>
+    /// <summary>Fijada a es-ES: toda la UI está en español (con la del sistema salía "Thursday 27 de August").</summary>
     internal static readonly CultureInfo DisplayCulture = CultureInfo.GetCultureInfo("es-ES");
 
     private static readonly Dictionary<string, string> SourceLabels = new(StringComparer.OrdinalIgnoreCase)
     {
-        [SessionSource.Hotkey] = "Atajo de teclado",
-        [SessionSource.Tray] = "Bandeja",
-        [SessionSource.Http] = "Endpoint HTTP",
-        [SessionSource.Window] = "Ventana",
-        [SessionSource.Import] = "Importado",
+        ["desktop"] = "Escritorio",
+        ["android"] = "Teléfono",
+        [SessionSource.Hotkey] = "Escritorio (atajo de teclado)",
+        [SessionSource.Tray] = "Escritorio (bandeja)",
+        [SessionSource.Http] = "Escritorio (endpoint HTTP)",
+        [SessionSource.Window] = "Escritorio (ventana)",
+        [SessionSource.Import] = "Escritorio (importado)",
         [SessionSource.Harness] = "Harness"
     };
 
-    public SessionListItem(SessionSummary summary)
+    public SessionListItem(ApiSession session)
     {
-        SessionId = summary.SessionId;
-        StartedAtLocal = summary.StartedAtUtc.ToLocalTime();
-        Duration = summary.Duration;
-        ReportCount = summary.ReportCount;
-        TotalCostUsd = summary.TotalCostUsd;
-        HasTranscript = !string.IsNullOrWhiteSpace(summary.TranscriptPreview);
-        TranscriptPreview = summary.TranscriptPreview;
-        AudioArchiveLabel = summary.AudioArchiveState switch
-        {
-            "uploaded" => "audio en la nube",
-            "failed" => "subida del audio fallida",
-            "pending" => "audio pendiente de subir",
-            _ => null
-        };
-
-        // El origen se traduce, pero el valor crudo se conserva: es lo primero
-        // que uno quiere saber al mirar el historial, y un valor nuevo que
-        // alguien agregue mañana tiene que verse igual en vez de desaparecer
-        // detrás de un "Desconocido".
-        SourceLabel = SourceLabels.TryGetValue(summary.Source, out string? label) ? label : summary.Source;
+        Session = session;
+        StartedAtLocal = session.StartedAt.ToLocalTime();
+        Cost = new CostAmount(session.TranscriptCostMicroUsd, session.HasTranscript && session.TranscriptCostMicroUsd is null ? 1 : 0)
+            + new CostAmount(session.ReportsCostMicroUsd, session.ReportsCostUnknown);
+        SourceLabel = SourceLabels.TryGetValue(session.Source, out string? label) ? label : session.Source;
     }
 
-    public long SessionId { get; }
+    public ApiSession Session { get; }
+
+    public long SessionId => Session.IdSession;
 
     public DateTimeOffset StartedAtLocal { get; }
 
-    public TimeSpan? Duration { get; }
+    public CostAmount Cost { get; }
 
-    public int ReportCount { get; }
-
-    public decimal TotalCostUsd { get; }
-
-    public bool HasTranscript { get; }
-
-    public string? TranscriptPreview { get; }
+    public bool HasTranscript => Session.HasTranscript;
 
     public string SourceLabel { get; }
 
-    /// <summary>
-    /// Null cuando la subida nunca se pidió: archivar apagado, o una reunión
-    /// anterior a que existiera. No se muestra nada en ese caso, en vez de un
-    /// "sin respaldo" que sonaría a fallo.
-    /// </summary>
-    public string? AudioArchiveLabel { get; }
+    /// <summary>Hay audio archivado en el servidor para escuchar (DevLog 018).</summary>
+    public bool HasArchivedAudio => Session.AudioExpiresAt is { } expires && expires > DateTimeOffset.UtcNow;
 
-    /// <summary>
-    /// El fragmento del transcript donde apareció lo buscado. Sólo tiene valor
-    /// mientras hay una búsqueda activa.
-    ///
-    /// Es una <b>anotación sobre la misma fila</b>, y no un tipo de fila aparte,
-    /// a propósito: <c>TranscriptSearchHit</c> no trae origen, duración ni
-    /// reportes, y todo el detalle —y la re-extracción— cuelga de que
-    /// <c>SelectedSession</c> sea uno de estos. Reemplazar la lista por
-    /// resultados habría roto esa cadena en silencio.
-    ///
-    /// Se muestra tal cual lo devuelve <c>snippet()</c>: el término entre
-    /// corchetes y «…» donde se recortó. Resaltar de verdad obligaría a
-    /// interpretar los corchetes, y un transcript que traiga uno propio se
-    /// pintaría mal; así no hay nada que interpretar.
-    /// </summary>
+    /// <summary>El fragmento donde apareció lo buscado; sólo con una búsqueda activa.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSnippet))]
     private string? snippet;
@@ -111,128 +64,67 @@ public sealed partial class SessionListItem : ObservableObject
 
     public string Title => StartedAtLocal.ToString("dddd d 'de' MMMM, HH:mm", DisplayCulture);
 
-    /// <summary>
-    /// Segunda línea de la fila. Una sesión <b>sin transcript se dice</b>, no se
-    /// disfraza: son grabaciones que fallaron a mitad, y la fila existe justo
-    /// para que quede constancia de que la reunión pasó.
-    /// </summary>
+    /// <summary>Una sesión sin transcript se dice, no se disfraza. Un costo desconocido nunca se muestra como 0.</summary>
     public string Subtitle
     {
         get
         {
             var parts = new List<string> { SourceLabel };
-
-            if (Duration is { } duration) parts.Add($"{duration.TotalMinutes:F0} min");
-
+            if (Session.DurationSeconds is { } seconds) parts.Add($"{seconds / 60:F0} min");
             parts.Add(!HasTranscript
                 ? "sin transcripción"
-                : ReportCount switch
-                {
-                    0 => "sin reportes",
-                    1 => "1 reporte",
-                    _ => $"{ReportCount} reportes"
-                });
-
-            if (TotalCostUsd > 0) parts.Add($"US${TotalCostUsd:F4}");
-            if (AudioArchiveLabel is not null) parts.Add(AudioArchiveLabel);
-
+                : Session.ReportCount switch { 0 => "sin reportes", 1 => "1 reporte", _ => $"{Session.ReportCount} reportes" });
+            if (!Cost.IsNothing) parts.Add(Cost.Text());
+            if (HasArchivedAudio) parts.Add($"audio hasta el {Session.AudioExpiresAt!.Value.ToLocalTime().ToString("dd/MM", DisplayCulture)}");
             return string.Join(" · ", parts);
         }
     }
 
-    /// <summary>
-    /// Es lo que lee un lector de pantalla. Sin esto, la automatización de
-    /// interfaz reportaba cada fila como
-    /// <c>"MeetingAssistant.App.ViewModels.SessionListItem"</c> — el
-    /// <c>ToString()</c> por defecto, que es lo que WinUI usa como nombre del
-    /// <c>ListViewItem</c> cuando la plantilla no expone uno. Encontrado
-    /// inspeccionando el árbol de accesibilidad de la app corriendo, no leyendo
-    /// el código.
-    /// </summary>
+    /// <summary>Lo que lee un lector de pantalla (sin esto, el nombre del tipo).</summary>
     public override string ToString() => HasSnippet ? $"{Title}. {Subtitle}. {Snippet}" : $"{Title}. {Subtitle}";
 }
 
 /// <summary>Un reporte de la sesión abierta, listo para mostrar.</summary>
-public sealed class ReportListItem
+public sealed class ReportListItem(ApiReport report)
 {
-    public ReportListItem(ReportRecord record)
-    {
-        Record = record;
-        CreatedAtLocal = record.CreatedAtUtc.ToLocalTime();
-    }
+    public ApiReport Report { get; } = report;
 
-    public ReportRecord Record { get; }
-
-    public DateTimeOffset CreatedAtLocal { get; }
-
-    /// <summary>
-    /// El prompt y su versión al frente: es lo que convierte "comparar calidad
-    /// entre versiones de prompt" (Fase 4) en algo que se mira en vez de
-    /// recordarse.
-    /// </summary>
-    public string Title => Record.PromptVersion is null
-        ? Record.PromptId
-        : $"{Record.PromptId} @{Record.PromptVersion}";
+    public string Title => Report.PromptVersion is null ? Report.PromptId : $"{Report.PromptId} @{Report.PromptVersion}";
 
     public string Subtitle
     {
         get
         {
-            var parts = new List<string> { CreatedAtLocal.ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture) };
-
-            if (Record.LlmModel is not null) parts.Add(Record.LlmModel);
-            if (Record.CostUsd is { } cost) parts.Add($"US${cost:F6}");
-            if (Record.OutputTokens is { } tokens) parts.Add($"{tokens:N0} tokens");
-
+            var parts = new List<string> { Report.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture) };
+            if (Report.LlmModel is not null) parts.Add(Report.LlmModel);
+            parts.Add(Report.CostMicroUsd is { } cost ? CostAmount.Usd(cost) : "costo desconocido");
+            if (Report.TokensOutput is { } tokens) parts.Add($"{tokens:N0} tokens");
             return string.Join(" · ", parts);
         }
     }
 
-    /// <summary>Mismo motivo que en <see cref="SessionListItem.ToString"/>.</summary>
     public override string ToString() => $"{Title}. {Subtitle}";
 }
 
 /// <summary>
-/// El historial: lista de reuniones, detalle de una, y re-generación de un
-/// reporte desde un transcript viejo con otro prompt — lo último era imposible
-/// hasta que el paso 4 empezó a guardar los transcripts.
+/// El historial por la API (paso B): las reuniones de todos mis dispositivos, su transcript y sus
+/// reportes, búsqueda, escuchar el audio archivado, y re-extraer con otro prompt como un trabajo
+/// del servidor (Jobs opción 2) que llega al vault por la cola.
 /// </summary>
 public partial class HistoryViewModel : ObservableObject
 {
-    /// <summary>
-    /// Cuántas sesiones se traen de una vez. <c>ListSessionsAsync</c> acepta
-    /// <c>offset</c>, así que paginar es posible; se carga una página amplia
-    /// porque el corpus real es de decenas de reuniones, no de miles, y una
-    /// página que se completa sola al hacer scroll es complejidad que hoy no
-    /// paga. Queda dicho para que sea una decisión y no un olvido.
-    /// </summary>
+    /// <summary>Una página amplia: el corpus es de decenas de reuniones. La API acepta hasta 200.</summary>
     private const int PageSize = 200;
 
-    /// <summary>Tope de resultados de una búsqueda. Si se alcanza, se dice.</summary>
     private const int SearchLimit = 50;
 
-    /// <summary>
-    /// Espera tras la última tecla antes de consultar. La base es local y
-    /// responde al instante, así que esto no es por rendimiento: es para que la
-    /// lista no parpadee con el resultado de cada prefijo intermedio.
-    /// </summary>
-    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(350);
 
-    private readonly IMeetingHistoryStore _historyStore;
-    private readonly RecordingCoordinator _recordingCoordinator;
-
-    /// <summary>
-    /// Todas las reuniones cargadas, en orden de fecha. <see cref="Sessions"/> es
-    /// lo que se ve: esta misma lista, o el subconjunto que devuelve la búsqueda.
-    /// </summary>
+    private readonly MeetingHistoryService _history;
+    private readonly PromptLibraryService _prompts;
+    private readonly MeetingUploadQueue _queue;
+    private readonly IReportStorage _reportStorage;
     private readonly List<SessionListItem> _allSessions = [];
-
-    /// <summary>
-    /// Sube con cada cambio de la caja y con cada recarga. Una consulta que
-    /// vuelve con un número viejo se descarta: escribiendo rápido, una búsqueda
-    /// anterior puede terminar después de una posterior y pisar lo que está en
-    /// pantalla. Mismo motivo que el guard de <see cref="LoadSessionDetailAsync"/>.
-    /// </summary>
     private int _searchVersion;
 
     [ObservableProperty]
@@ -242,6 +134,7 @@ public partial class HistoryViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRegenerate))]
     [NotifyCanExecuteChangedFor(nameof(RegenerateReportCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ListenCommand))]
     private bool isBusy;
 
     [ObservableProperty]
@@ -253,13 +146,6 @@ public partial class HistoryViewModel : ObservableObject
     [ObservableProperty]
     private string searchText = string.Empty;
 
-    /// <summary>
-    /// Qué se está viendo mientras hay una búsqueda: cuántas reuniones salieron,
-    /// que el orden pasó a ser por relevancia, y —lo que más confunde si se
-    /// calla— cuántas reuniones <b>no tienen transcripción</b> y por eso no
-    /// pueden aparecer. Sin eso, una búsqueda que esconde reuniones se ve igual
-    /// que una búsqueda rota.
-    /// </summary>
     [ObservableProperty]
     private string? searchSummary;
 
@@ -267,7 +153,9 @@ public partial class HistoryViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasSelection))]
     [NotifyPropertyChangedFor(nameof(CanRegenerate))]
     [NotifyPropertyChangedFor(nameof(RegenerateHint))]
+    [NotifyPropertyChangedFor(nameof(AudioHint))]
     [NotifyCanExecuteChangedFor(nameof(RegenerateReportCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ListenCommand))]
     private SessionListItem? selectedSession;
 
     [ObservableProperty]
@@ -282,57 +170,40 @@ public partial class HistoryViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedReportMarkdown))]
-    [NotifyPropertyChangedFor(nameof(HasVaultFile))]
-    [NotifyCanExecuteChangedFor(nameof(OpenInVaultCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveToVaultCommand))]
     private ReportListItem? selectedReport;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedPromptText))]
+    [NotifyPropertyChangedFor(nameof(SelectedPromptDescription))]
     [NotifyPropertyChangedFor(nameof(CanRegenerate))]
     [NotifyCanExecuteChangedFor(nameof(RegenerateReportCommand))]
-    private PromptDefinition? selectedPrompt;
+    private PromptEntry? selectedPrompt;
+
+    /// <summary>El enlace de escucha de 15 minutos (una credencial: sólo va al reproductor, nunca al log).</summary>
+    [ObservableProperty]
+    private Uri? audioSource;
 
     public ObservableCollection<SessionListItem> Sessions { get; } = [];
 
     public ObservableCollection<ReportListItem> Reports { get; } = [];
 
-    public IReadOnlyList<PromptDefinition> Prompts { get; }
+    public ObservableCollection<PromptEntry> Prompts { get; } = [];
 
-    /// <summary>
-    /// "No hay historial todavía". Mira la lista completa y no la visible: una
-    /// búsqueda sin resultados sobre un historial lleno es otra cosa, y la
-    /// explica <see cref="SearchSummary"/>.
-    /// </summary>
     public bool IsEmpty => !IsLoading && _allSessions.Count == 0;
 
     public bool HasSelection => SelectedSession is not null;
 
     public bool HasTranscript => !string.IsNullOrWhiteSpace(Transcript);
 
-    /// <summary>
-    /// El Markdown que se muestra sale de la <b>base</b>, no del archivo del
-    /// vault. La base es el registro; el <c>.md</c> es una exportación que el
-    /// usuario puede mover, renombrar o borrar — es su vault. Leer del archivo
-    /// haría que el detalle desapareciera por una limpieza de carpetas.
-    /// </summary>
-    public string? SelectedReportMarkdown => SelectedReport?.Record.Markdown;
+    public string? SelectedReportMarkdown => SelectedReport?.Report.Markdown;
 
-    /// <summary>
-    /// <c>vault_path</c> puede apuntar a algo que ya no existe, así que se
-    /// comprueba en disco. Mismo criterio que <c>RecordViewModel.HasSavedReport</c>.
-    /// </summary>
-    public bool HasVaultFile =>
-        SelectedReport?.Record.VaultPath is { } path &&
-        !string.IsNullOrWhiteSpace(path) &&
-        File.Exists(path);
+    public bool CanRegenerate => SelectedSession is not null && HasTranscript && SelectedPrompt is not null && !IsBusy;
 
-    public bool CanRegenerate =>
-        SelectedSession is not null && HasTranscript && SelectedPrompt is not null && !IsBusy;
+    public string SelectedPromptText => SelectedPrompt?.Text ?? string.Empty;
 
-    /// <summary>
-    /// Por qué el botón está apagado, dicho antes de pulsarlo. Un botón inerte
-    /// sin explicación es la versión moderna de "Próximamente".
-    /// </summary>
+    public string SelectedPromptDescription => SelectedPrompt?.Catalog.Description ?? string.Empty;
+
     public string RegenerateHint
     {
         get
@@ -340,73 +211,65 @@ public partial class HistoryViewModel : ObservableObject
             if (SelectedSession is null) return "Elige una reunión de la lista.";
             if (!HasTranscript)
             {
-                return "Esta reunión no tiene transcripción guardada, así que no se puede volver a extraer. " +
+                return "Esta reunión no tiene transcripción en el servidor, así que no se puede volver a extraer. " +
                     "Suele significar que la grabación falló antes de transcribir.";
             }
 
-            return "Cuesta una llamada real al LLM: se cobra igual que un reporte nuevo. " +
-                "Se guarda como un reporte más de esta reunión, y el .md nuevo llega al vault sin pisar el anterior.";
+            return "Lo hace el servidor y cuesta una llamada al LLM (cuenta en el tope diario). Queda como un reporte más de " +
+                "esta reunión, y el .md nuevo llega al vault por la cola de Grabar, sin pisar el anterior.";
         }
     }
 
-    public string SelectedPromptText => SelectedPrompt?.SystemPrompt ?? string.Empty;
-
-    public HistoryViewModel(
-        IMeetingHistoryStore historyStore,
-        RecordingCoordinator recordingCoordinator,
-        IPromptCatalog promptCatalog)
+    public string AudioHint => SelectedSession switch
     {
-        _historyStore = historyStore;
-        _recordingCoordinator = recordingCoordinator;
-        Prompts = promptCatalog.GetAll();
-        SelectedPrompt = promptCatalog.Default;
+        null => string.Empty,
+        { HasArchivedAudio: true } session =>
+            $"El audio está archivado en el servidor hasta el {session.Session.AudioExpiresAt!.Value.ToLocalTime().ToString("dd/MM/yyyy", SessionListItem.DisplayCulture)}.",
+        _ => "No hay audio para escuchar en el servidor (reuniones anteriores al archivo, importadas del escritorio viejo, o vencidas)."
+    };
+
+    public HistoryViewModel(MeetingHistoryService history, PromptLibraryService prompts, MeetingUploadQueue queue, IReportStorage reportStorage)
+    {
+        _history = history;
+        _prompts = prompts;
+        _queue = queue;
+        _reportStorage = reportStorage;
     }
 
-    /// <summary>
-    /// Carga la lista. Se llama desde <c>Loaded</c> y no del constructor porque
-    /// el <c>Frame</c> reconstruye la página en cada navegación: nada de lo que
-    /// haya acá sobrevive a salir y volver a entrar.
-    /// </summary>
     [RelayCommand]
     private async Task RefreshAsync()
     {
         IsLoading = true;
         ErrorDetails = null;
         StatusMessage = "Cargando el historial...";
-
         long? previouslySelected = SelectedSession?.SessionId;
 
         try
         {
-            IReadOnlyList<SessionSummary> summaries = await _historyStore.ListSessionsAsync(PageSize);
-
+            IReadOnlyList<ApiSession> sessions = await _history.ListSessionsAsync(PageSize);
             _allSessions.Clear();
-            foreach (SessionSummary summary in summaries) _allSessions.Add(new SessionListItem(summary));
+            foreach (ApiSession session in sessions) _allSessions.Add(new SessionListItem(session));
 
-            StatusMessage = summaries.Count switch
+            StatusMessage = sessions.Count switch
             {
                 0 => null,
                 1 => "1 reunión registrada.",
-                _ => $"{summaries.Count} reuniones registradas."
+                PageSize => $"Las {PageSize} reuniones más recientes.",
+                _ => $"{sessions.Count} reuniones registradas."
             };
 
-            // Refrescar después de re-generar no debe perder de vista la reunión
-            // que se estaba mirando, ni la búsqueda que estaba escrita: se vuelve
-            // a aplicar sobre la lista recién cargada. El número de versión nuevo
-            // descarta además cualquier búsqueda en camino contra la lista vieja.
             await ApplySearchAsync(++_searchVersion, previouslySelected);
+            await LoadPromptsAsync();
         }
         catch (Exception exception)
         {
-            // Regla de la fase: un fallo de la base no puede tumbar nada. Grabar,
-            // transcribir y guardar en el vault no dependen del historial, así
-            // que esta página avisa y el resto de la app sigue.
+            // Sin la API no hay historial; grabar sigue funcionando (la cola espera).
             AppLog.Failure("HistoryViewModel.Refresh", exception);
             _allSessions.Clear();
             Sessions.Clear();
             SearchSummary = null;
-            StatusMessage = "No se pudo leer el historial. El resto de la app sigue funcionando: " +
-                "grabar, transcribir y guardar en el vault no dependen de la base.";
+            StatusMessage = "No se pudo leer el historial del servidor. Grabar sigue funcionando: lo grabado espera en la cola. " +
+                (exception is ApiException api ? api.Error.Describe() : exception.Message);
             ErrorDetails = exception.ToString();
         }
         finally
@@ -416,34 +279,28 @@ public partial class HistoryViewModel : ObservableObject
         }
     }
 
+    private async Task LoadPromptsAsync()
+    {
+        if (Prompts.Count > 0) return;
+        IReadOnlyList<PromptEntry> entries = await _prompts.LoadAsync();
+        foreach (PromptEntry entry in entries) Prompts.Add(entry);
+        SelectedPrompt = Prompts.FirstOrDefault();
+    }
+
     partial void OnSearchTextChanged(string value) => _ = SearchAfterPauseAsync();
 
     private async Task SearchAfterPauseAsync()
     {
         int version = ++_searchVersion;
-
         await Task.Delay(SearchDebounce);
         if (version != _searchVersion) return;
-
         await ApplySearchAsync(version, SelectedSession?.SessionId);
     }
 
-    /// <summary>
-    /// Deja en <see cref="Sessions"/> lo que corresponde a lo que está escrito
-    /// <b>ahora</b>: la lista completa por fecha, o las reuniones que mencionan
-    /// la búsqueda, por relevancia y con su fragmento.
-    ///
-    /// La búsqueda <b>filtra y anota</b> las mismas filas en vez de reemplazarlas
-    /// por otro tipo — ver <see cref="SessionListItem.Snippet"/>.
-    ///
-    /// No lanza. Es la ruta que el usuario dispara más veces en esta página, y
-    /// un fallo de la base acá tiene que quedar en un aviso, igual que en
-    /// <see cref="RefreshAsync"/>.
-    /// </summary>
+    /// <summary>La búsqueda filtra y anota las mismas filas (por relevancia), en vez de reemplazarlas. No lanza.</summary>
     private async Task ApplySearchAsync(int version, long? sessionToKeepSelected)
     {
         string query = SearchText.Trim();
-
         if (query.Length == 0)
         {
             ShowSessions(_allSessions, snippets: null, sessionToKeepSelected);
@@ -451,18 +308,14 @@ public partial class HistoryViewModel : ObservableObject
             return;
         }
 
-        IReadOnlyList<TranscriptSearchHit> hits;
+        IReadOnlyList<ApiSearchHit> hits;
         try
         {
-            // Uno de más, para poder decir que hay más en vez de recortar callado.
-            // La consulta va cruda: sanearla es trabajo del store (ToFts5Query),
-            // y armarla acá "para agregarle algo" es como se pierde esa garantía.
-            hits = await _historyStore.SearchTranscriptsAsync(query, SearchLimit + 1);
+            hits = await _history.SearchAsync(query, SearchLimit + 1);
         }
         catch (Exception exception)
         {
             if (version != _searchVersion) return;
-
             AppLog.Failure("HistoryViewModel.Search", exception);
             ShowSessions(_allSessions, snippets: null, sessionToKeepSelected);
             SearchSummary = "No se pudo buscar en las transcripciones. Se muestra la lista completa, sin filtrar.";
@@ -470,112 +323,67 @@ public partial class HistoryViewModel : ObservableObject
             return;
         }
 
-        // Mientras se consultaba, el usuario pudo seguir escribiendo.
         if (version != _searchVersion) return;
 
         bool truncated = hits.Count > SearchLimit;
         int outsideLoadedPage = 0;
         var snippets = new Dictionary<long, string>();
         var matches = new List<SessionListItem>();
-        foreach (TranscriptSearchHit hit in hits.Take(SearchLimit))
+        foreach (ApiSearchHit hit in hits.Take(SearchLimit))
         {
-            // Una reunión fuera de la página cargada (PageSize) no tiene fila que
-            // anotar. Con el corpus de hoy no ocurre; si ocurre, se dice.
-            SessionListItem? session = _allSessions.FirstOrDefault(item => item.SessionId == hit.SessionId);
+            SessionListItem? session = _allSessions.FirstOrDefault(item => item.SessionId == hit.IdSession);
             if (session is null)
             {
                 outsideLoadedPage++;
                 continue;
             }
 
-            snippets[hit.SessionId] = hit.Snippet;
+            snippets[hit.IdSession] = hit.Snippet;
             matches.Add(session);
         }
 
         ShowSessions(matches, snippets, sessionToKeepSelected);
-        SearchSummary = DescribeSearch(query, matches.Count, truncated, outsideLoadedPage);
+        var parts = new List<string>
+        {
+            matches.Count switch
+            {
+                0 => $"Ninguna transcripción menciona «{query}».",
+                1 => $"1 reunión menciona «{query}».",
+                _ => $"{matches.Count} reuniones mencionan «{query}», ordenadas por relevancia y no por fecha."
+            }
+        };
+        if (truncated) parts.Add($"Hay más: se muestran las primeras {SearchLimit}.");
+        if (outsideLoadedPage > 0) parts.Add($"{outsideLoadedPage} coincidencia(s) más son de reuniones anteriores a las {PageSize} cargadas.");
+        int withoutTranscript = _allSessions.Count(session => !session.HasTranscript);
+        if (withoutTranscript > 0) parts.Add($"{withoutTranscript} de tus {_allSessions.Count} reuniones no tienen transcripción y no se pueden buscar.");
+        SearchSummary = string.Join(" ", parts);
     }
 
-    private void ShowSessions(
-        IReadOnlyList<SessionListItem> visible,
-        IReadOnlyDictionary<long, string>? snippets,
-        long? sessionToKeepSelected)
+    private void ShowSessions(IReadOnlyList<SessionListItem> visible, IReadOnlyDictionary<long, string>? snippets, long? sessionToKeepSelected)
     {
         foreach (SessionListItem session in _allSessions)
         {
-            session.Snippet = snippets is not null && snippets.TryGetValue(session.SessionId, out string? snippet)
-                ? snippet
-                : null;
+            session.Snippet = snippets is not null && snippets.TryGetValue(session.SessionId, out string? snippet) ? snippet : null;
         }
 
-        // Si la lista visible no cambia, no se toca: vaciar la colección le
-        // suelta la selección al ListView, y eso recarga el detalle y parpadea.
         if (!Sessions.SequenceEqual(visible))
         {
             Sessions.Clear();
             foreach (SessionListItem session in visible) Sessions.Add(session);
         }
 
-        // La reunión abierta se conserva si sigue a la vista. Si la búsqueda la
-        // dejó fuera, el detalle se cierra: dejarlo abierto mostraría una
-        // reunión que no está en la lista de al lado.
-        SelectedSession = sessionToKeepSelected is null
-            ? null
-            : Sessions.FirstOrDefault(session => session.SessionId == sessionToKeepSelected);
-
+        SelectedSession = sessionToKeepSelected is null ? null : Sessions.FirstOrDefault(session => session.SessionId == sessionToKeepSelected);
         OnPropertyChanged(nameof(IsEmpty));
     }
 
-    /// <summary>
-    /// La búsqueda es por comienzo de palabra, sin distinguir acentos, y varias
-    /// palabras tienen que aparecer todas. Es lo que hace <c>ToFts5Query</c> para
-    /// que la caja nunca lance; los textos de acá no prometen otra cosa.
-    /// </summary>
-    private string DescribeSearch(string query, int shown, bool truncated, int outsideLoadedPage)
-    {
-        var parts = new List<string>
-        {
-            shown switch
-            {
-                0 => $"Ninguna transcripción menciona «{query}».",
-                1 => $"1 reunión menciona «{query}».",
-                _ => $"{shown} reuniones mencionan «{query}», ordenadas por relevancia y no por fecha."
-            }
-        };
-
-        if (truncated) parts.Add($"Hay más: se muestran las primeras {SearchLimit}.");
-
-        if (outsideLoadedPage > 0)
-        {
-            parts.Add($"{outsideLoadedPage} coincidencia(s) más son de reuniones anteriores a las {PageSize} cargadas.");
-        }
-
-        int withoutTranscript = _allSessions.Count(session => !session.HasTranscript);
-        if (withoutTranscript > 0)
-        {
-            parts.Add(withoutTranscript == 1
-                ? $"1 de tus {_allSessions.Count} reuniones no tiene transcripción y no se puede buscar."
-                : $"{withoutTranscript} de tus {_allSessions.Count} reuniones no tienen transcripción y no se pueden buscar.");
-        }
-
-        return string.Join(" ", parts);
-    }
-
-    /// <summary>
-    /// Al cambiar de reunión se cargan su transcript y sus reportes. Una sesión
-    /// admite <b>varios</b> reportes: es el sentido del esquema, y el catálogo ya
-    /// permitía re-correr el mismo transcript con otro prompt aunque hasta ahora
-    /// esa comparación se perdiera.
-    /// </summary>
     partial void OnSelectedSessionChanged(SessionListItem? value)
     {
         Reports.Clear();
         SelectedReport = null;
         Transcript = null;
         TranscriptDetails = null;
-
+        AudioSource = null;
         if (value is null) return;
-
         _ = LoadSessionDetailAsync(value.SessionId);
     }
 
@@ -583,25 +391,19 @@ public partial class HistoryViewModel : ObservableObject
     {
         try
         {
-            TranscriptRecord? storedTranscript = await _historyStore.GetTranscriptAsync(sessionId);
-            IReadOnlyList<ReportRecord> reports = await _historyStore.GetReportsAsync(sessionId);
-
-            // Mientras se leía, el usuario pudo haber cambiado de fila. Sin este
-            // guard el detalle de una reunión aparecería bajo otra.
+            ApiTranscript? storedTranscript = await _history.GetTranscriptAsync(sessionId);
+            IReadOnlyList<ApiReport> reports = await _history.GetReportsAsync(sessionId);
             if (SelectedSession?.SessionId != sessionId) return;
 
             Transcript = storedTranscript?.Text;
             TranscriptDetails = storedTranscript is null
-                ? "Sin transcripción guardada."
+                ? "Sin transcripción en el servidor."
                 : $"{storedTranscript.Text.Length:N0} caracteres · {storedTranscript.Provider ?? "proveedor desconocido"} · " +
-                  $"{storedTranscript.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture)}";
+                  (storedTranscript.CostMicroUsd is { } cost ? CostAmount.Usd(cost) : "costo desconocido") + " · " +
+                  storedTranscript.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture);
 
-            // Se vacía acá y no sólo al cambiar de selección: re-generar llama a
-            // esta carga dos veces seguidas para la misma reunión (una por la
-            // selección que restaura el refresco, otra explícita), y sin esto
-            // cada reporte saldría duplicado en la lista.
             Reports.Clear();
-            foreach (ReportRecord report in reports) Reports.Add(new ReportListItem(report));
+            foreach (ApiReport report in reports.OrderByDescending(report => report.CreatedAt)) Reports.Add(new ReportListItem(report));
             SelectedReport = Reports.FirstOrDefault();
         }
         catch (Exception exception)
@@ -612,40 +414,42 @@ public partial class HistoryViewModel : ObservableObject
         }
     }
 
+    /// <summary>Re-extraer: un trabajo del servidor (Jobs opción 2) que la cola sigue y lleva al vault.</summary>
     [RelayCommand(CanExecute = nameof(CanRegenerate))]
-    private async Task RegenerateReportAsync()
+    private void RegenerateReport()
     {
-        if (SelectedSession is not { } session ||
-            SelectedPrompt is not { } prompt ||
-            string.IsNullOrWhiteSpace(Transcript))
-        {
-            return;
-        }
+        if (SelectedSession is not { } session || SelectedPrompt is not { } prompt) return;
 
+        QueuedMeeting queued = _queue.EnqueueReextract(session.SessionId, prompt.PromptId, SessionSource.Window);
+        StatusMessage = $"Re-extracción de la reunión del {session.StartedAtLocal.ToString("dd/MM", SessionListItem.DisplayCulture)} con " +
+            $"«{prompt.DisplayName}» en la cola ({queued.Id}). Su estado se ve en Grabar; el .md llega al vault cuando el servidor termine.";
+    }
+
+    private bool CanListen() => SelectedSession?.HasArchivedAudio == true && !IsBusy;
+
+    /// <summary>Pide el enlace de escucha (15 min) y lo pasa al reproductor de la página. No se guarda en ningún lado.</summary>
+    [RelayCommand(CanExecute = nameof(CanListen))]
+    private async Task ListenAsync()
+    {
+        if (SelectedSession is not { } session) return;
         IsBusy = true;
-        ErrorDetails = null;
-        StatusMessage = $"Re-extrayendo la reunión del {session.StartedAtLocal.ToString("dd/MM", SessionListItem.DisplayCulture)} con «{prompt.DisplayName}»...";
-
         try
         {
-            // El sessionId va explícito. Es la corrección del defecto que este
-            // paso encontró: ExtractAndSaveAsync deduce la sesión del estado de
-            // la última grabación, así que por acá habría colgado el reporte de
-            // la reunión equivocada — o creado una sesión fantasma.
-            ExtractionSaveResult result = await _recordingCoordinator.ExtractForSessionAsync(
-                session.SessionId, Transcript, prompt.Id);
+            AudioLink? link = await _history.GetAudioLinkAsync(session.SessionId);
+            if (SelectedSession?.SessionId != session.SessionId) return;
+            if (link is null)
+            {
+                StatusMessage = "El servidor ya no tiene el audio de esta reunión (vencido o borrado).";
+                return;
+            }
 
-            StatusMessage = $"Reporte nuevo guardado en el vault: {result.SavedReportPath} " +
-                (result.Metadata.EstimatedCostUsd is { } cost ? $"(US${cost:F6})." : "(costo desconocido: el modelo no tiene precio).");
-
-            await RefreshAsync();
-            await LoadSessionDetailAsync(session.SessionId);
-            SelectedReport = Reports.FirstOrDefault(report => report.Record.VaultPath == result.SavedReportPath)
-                ?? Reports.FirstOrDefault();
+            AudioSource = new Uri(link.Url);
+            StatusMessage = $"Audio listo para escuchar (el enlace vale hasta las {link.ExpiresAt.ToLocalTime():HH:mm}).";
         }
         catch (Exception exception)
         {
-            StatusMessage = $"No se pudo re-generar el reporte: {exception.Message}";
+            AppLog.Failure("HistoryViewModel.Listen", exception);
+            StatusMessage = $"No se pudo pedir el audio: {(exception is ApiException api ? api.Error.Describe() : exception.Message)}";
             ErrorDetails = exception.ToString();
         }
         finally
@@ -654,16 +458,24 @@ public partial class HistoryViewModel : ObservableObject
         }
     }
 
-    [RelayCommand(CanExecute = nameof(HasVaultFile))]
-    private void OpenInVault()
-    {
-        if (SelectedReport?.Record.VaultPath is not { } path || !File.Exists(path)) return;
+    private bool CanSaveToVault() => SelectedReport is not null;
 
-        Process.Start(new ProcessStartInfo
+    /// <summary>Escribe en el vault el .md de un reporte del historial (p. ej. uno hecho en el teléfono).</summary>
+    [RelayCommand(CanExecute = nameof(CanSaveToVault))]
+    private async Task SaveToVaultAsync()
+    {
+        if (SelectedReport?.Report is not { } report) return;
+        try
         {
-            FileName = "explorer.exe",
-            Arguments = $"/select,\"{path}\"",
-            UseShellExecute = true
-        });
+            string path = await _reportStorage.SaveMarkdownAsync(report.Markdown, ReportFileMetadata.From(report));
+            StatusMessage = $"Guardado en el vault: {path}";
+            Process.Start(new ProcessStartInfo { FileName = "explorer.exe", Arguments = $"/select,\"{path}\"", UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            AppLog.Failure("HistoryViewModel.SaveToVault", exception);
+            StatusMessage = $"No se pudo escribir en el vault: {exception.Message}";
+            ErrorDetails = exception.ToString();
+        }
     }
 }

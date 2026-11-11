@@ -1,7 +1,7 @@
 using MeetingAssistant.App.Startup;
 using System.ComponentModel;
 using MeetingAssistant.App.ViewModels;
-using MeetingAssistant.Core.Models;
+using MeetingAssistant.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -22,8 +22,13 @@ public sealed partial class PromptEditorPanel : UserControl
         _revertingSelection = true;
         PromptCombo.ItemsSource = ViewModel.Prompts;
         _revertingSelection = false;
-        SelectPromptInCombo();
         ApplyVisibility();
+        Loaded += async (_, _) =>
+        {
+            // Los prompts vienen del servidor: se cargan al abrir el panel, no en el constructor.
+            await ViewModel.LoadAsync();
+            SelectPromptInCombo();
+        };
     }
 
     private PromptEditorViewModel ViewModel => (PromptEditorViewModel)DataContext;
@@ -43,7 +48,7 @@ public sealed partial class PromptEditorPanel : UserControl
 
     private async void PromptCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_revertingSelection || PromptCombo.SelectedItem is not PromptDefinition next) return;
+        if (_revertingSelection || PromptCombo.SelectedItem is not PromptEntry next) return;
 
         if (!await ViewModel.TrySelectPromptAsync(next))
         {
@@ -66,7 +71,7 @@ public sealed partial class PromptEditorPanel : UserControl
         try
         {
             PromptCombo.SelectedItem = ViewModel.Prompts.FirstOrDefault(prompt =>
-                string.Equals(prompt.Id, ViewModel.SelectedPrompt?.Id, StringComparison.OrdinalIgnoreCase));
+                string.Equals(prompt.PromptId, ViewModel.SelectedPrompt?.PromptId, StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
