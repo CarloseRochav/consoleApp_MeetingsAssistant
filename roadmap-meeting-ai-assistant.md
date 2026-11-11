@@ -2529,6 +2529,56 @@ transcript, búsqueda, costos, ajustes y prompts en dos capas, catálogo de prom
   **no está en git** (ignorado, ningún commit lo contiene). Salió una vez en la salida de la sesión
   del 2026-11-09: rotarla queda a criterio del dueño.
 
+**DevLog, archivo del audio (migración 018, 2026-11-10, PR #15 mergeado a `master` el 2026-11-10 (`c2217e0`); **018 aplicada en producción el 2026-11-10** (la corrió el dueño con `tools\Db.ps1 up -Environment Production -Apply`; `status`: 17 aplicadas, 0 pendientes); API y worker sin desplegar):**
+diseño en `decision-log.md` (seis entradas del 2026-11-10, confirmadas por el dueño el 2026-11-10) y
+contrato en el `CLAUDE.md` de DevLog ("Audio archive").
+- El audio se queda en el blob de `uploads`; la fila del trabajo guarda `audio_expires_at` y
+  `audio_deleted_at`. Retención: `Audio:RetentionDays` (0-365) en la capa del usuario sobre la base;
+  sin valor, 30 días. Se fija al terminar el trabajo.
+- La base archiva al marcar `done` (opción 1 de `mtg_worker_update_jobs`, misma firma): **el worker
+  sólo deja de borrar el blob**. Al empezar cada corrida borra lo vencido (`mtg_select_audio`
+  opción 1 → borrar blob → `mtg_worker_update_audio` opción 0). Un trabajo fallido conserva su
+  audio sin vencimiento, como hoy.
+- Clientes: `Meetings/Select_Audio_Link { idSession }` → link de sólo lectura de 15 min (404 si no
+  hay audio); `Select_Sessions` trae `audio_expires_at`. Las sesiones importadas del escritorio no
+  tienen link (su audio está en el Blob propio del escritorio).
+- El worker desplegado sigue funcionando (borra el blob: el link responde 404 y la limpieza lo
+  registra al vencer).
+- **Probado en local:** 37 comprobaciones SQL (base desde `schema.sql` y base en estado 017
+  actualizada por la migración, cada una corrida dos veces) y 46 contra la API con Azurite. **No
+  probado:** el worker real, el 503, producción.
+- **Hallazgo:** en esta PC `devlog-pg` publica el puerto 5433 (5432 es de otro proyecto), pero
+  `docker-compose.yml` y los `appsettings` locales de DevLog dicen 5432; anotado en su `CLAUDE.md`.
+- Despliegue (dueño): 018 a producción → API → worker que deja de borrar y limpia lo vencido.
+- **Comprobado tras aplicar 018 (2026-11-10), con la API y el worker anteriores** (`devlog-api:fa253c9`):
+  reunión desde el teléfono con voz de texto a voz de la PC (`tools\Test-MeetingReport.ps1` en
+  `MeetingAssistant_App`, 8 frases en español e inglés, 60 s): 71 s de audio, 2.28 MB subidos,
+  reporte en el teléfono 102 s después de parar (trabajo 39, sesión 52), 3/3. El archivo del audio
+  todavía no se puede comprobar: el worker desplegado sigue borrándolo.
+- **API publicada (2026-11-10, la corrió el dueño):** `tools\Release-Api.ps1 -Pr 15 -Apply` →
+  `devlog-api:c2217e0` (antes `fa253c9`), revisión `ca-devlog-api--0000008` lista, anónimo → 401,
+  sana. La imagen del worker `meeting-assistant-worker:27397f8` se subió al registro, pero el job
+  `caj-mtg-worker` **no se actualizó** (falta `-Step Worker`, después del PR del worker).
+
+**Worker, archivo del audio (2026-11-10, rama `audio-archive`, PR #6 del worker, sin mergear ni desplegar):**
+tres decisiones del 2026-11-10 en `decision-log.md` (pendientes de confirmar por el dueño).
+- Al marcar `done` ya no borra el WAV (la base lo archiva en ese paso). Un trabajo fallido conserva
+  su audio sin vencimiento; la re-extracción no cambia.
+- `ExpiredAudioCleanup`: al empezar cada corrida, después del catálogo y antes de tomar trabajos
+  (en `Loop`, una vez al arrancar): `mtg_select_audio` opción 1 → borrar el blob si existe →
+  `mtg_worker_update_audio` opción 0. Lotes de 100, máximo 10 por corrida; se detiene tras 3
+  borrados fallidos seguidos; nunca frena los trabajos. En el log, sólo ids de trabajo y conteos.
+- **Necesita 018** (sin modo de respaldo): desplegado antes, el audio de los trabajos terminados
+  quedaría sin vencimiento.
+- **Probado en local:** `tools/Run-IntegrationTests.ps1`, 32/32, con una base desde el
+  `schema.sql` de DevLog (con 018) y Azurite, proveedores falsos: archivo con retención propia,
+  base y por defecto; limpieza sólo de lo vencido (también un blob que ya no estaba); fallidos,
+  en cola y vigentes se conservan; un blob con lease queda para la corrida siguiente; Storage
+  caído corta la limpieza; el drain limpia antes de tomar trabajos y una limpieza fallida no los
+  frena; base caída. **No probado:** producción, Neon, la cuenta real de Storage.
+- **Hallazgo:** un borrado contra Storage inalcanzable gasta los reintentos del SDK (varios
+  segundos cada uno): de ahí el corte tras 3 fallos seguidos.
+
 **Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
 DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:
 importación final si hace falta, instalar en cada máquina, **rotar las claves de proveedor que
