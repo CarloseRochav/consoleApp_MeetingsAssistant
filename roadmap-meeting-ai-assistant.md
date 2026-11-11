@@ -2686,6 +2686,14 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
   empty: no speech was detected in the audio» en la fila (trabajos 43 y 44).
 - **Grabación larga:** sintética, 110 min a 44,1 kHz (555 MB) → 201 MB a 16 kHz en 13 s, 51 bloques.
   **No medido:** una captura real de más de 100 min.
+- **Dispositivo revocado (2026-11-11, el dueño):** revocó «CHARLIE» (idDevice 6) con su login
+  (`Devices/InsertUpdate_Devices` opción 1; DevLog no tiene pantalla para esto). En la app, Historial
+  → Actualizar: 401 → aviso «Sesión cerrada por el servidor» → sesión cerrada (Revoked) → ventana de
+  inicio de sesión (12:39:52); volvió a entrar a las 12:40:13 → dispositivo nuevo, idDevice 7.
+- **No medido:** una llamada de Teams (lo grabado fue voz de texto a voz por los altavoces), una
+  captura real de más de 100 min, y las páginas a mano (Historial, Costos, Configuración: sus
+  servicios se probaron contra producción con `--verify-api`, pero la pantalla no la vio nadie más
+  que el dueño, sin reporte de lo que vio). El dispositivo 6 queda revocado en DevLog.
 - **Visto una vez, sin explicar:** la primera grabación con el hotkey mientras sonaba un WAV de 47 MB
   (`SoundPlayer`) salió vacía (sólo cabecera) y la reproducción se cortó a los 13 s. No se repitió
   (10 s sin audio: 829 KB; 40 s con audio: 3,8 MB). La captura no cambió en este paso.
