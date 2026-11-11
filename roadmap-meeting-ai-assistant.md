@@ -2591,6 +2591,29 @@ tres decisiones del 2026-11-10 en `decision-log.md` (confirmadas por el dueño e
   `audio_expires_at` de la fila (pide la base o el token del teléfono), el link de escucha y una
   limpieza real (nada vence antes de 30 días).
 
+**Escritorio, paso 0 — corrida en seco de la importación final (2026-11-10, sólo lectura).**
+Requisito cumplido: 018, la API (`c2217e0`) y el worker (`f596b1a`) están en producción.
+`--migrate-to-devlog 1` (sin `--apply`) contra la base vieja y `devLog-production`. El comando
+ahora **compara fila por fila** (md5 de las columnas que escribe la importación, en UTC en las dos
+bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila de DevLog se pisaría**.
+- Origen: 24 sesiones, 20 transcripts, 13 reportes, 3 versiones de prompt, 5 ajustes, 34 subidas.
+  **Ninguna fila nueva desde la importación del 2026-10-19:** la última reunión de la base vieja es
+  del 2026-10-14 21:47Z. Sesiones, transcripts, reportes, versiones de prompt y subidas: todas
+  iguales a las de DevLog.
+- DevLog tiene además lo que creó la API: sesiones/transcripts 25–54, reportes 14–48, versiones de
+  prompt 4 y 6 (la prueba del 2026-11-09) y dos precios de `grok-4.6` (2026-10-28). **Ningún id
+  choca:** la base vieja no tiene esos ids.
+- **Hallazgo:** la importación es un upsert de TODAS las filas, no sólo de las nuevas. Tres ajustes
+  base (`Llm:Provider`, `AzureFoundry:Endpoint`, `AzureFoundry:Deployment`) figuran como distintos:
+  el escritorio los volvió a guardar el 2026-10-19 19:03Z, después de la importación, **con los
+  mismos valores** (comprobado: `AzureFoundry`, `grok-4.6`, mismo hash del endpoint); sólo cambia
+  `updated_at`. El worker lee esos ajustes de `mtg_settings`, así que importar no cambiaría nada.
+- **Otras máquinas:** en la base vieja sólo subió `CHARLIE` (esta PC). La máquina donde se instaló la
+  1.0.3.0 el 2026-10-15 no dejó sesiones en la base compartida; lo que haya grabado en un SQLite
+  propio no se ve desde aquí (**no comprobado**).
+- **Propuesta: no hace falta importación final.** Antes del corte, volver a correr la simulación:
+  si sigue sin filas nuevas, el paso 1 del corte no se hace.
+
 **Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
 DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:
 importación final si hace falta, instalar en cada máquina, **rotar las claves de proveedor que

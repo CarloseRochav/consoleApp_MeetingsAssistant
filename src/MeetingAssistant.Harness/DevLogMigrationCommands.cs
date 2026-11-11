@@ -90,11 +90,23 @@ internal static class DevLogMigrationCommands
             Console.WriteLine($"  {table,-15} {count,6} filas en el origen");
         }
 
+        int overwrites = await CompareAsync(sourceConnection, targetConnection, idUser);
+
         if (!apply)
         {
             Console.WriteLine();
             Console.WriteLine("Simulacion: no se escribio nada. Agrega --apply para copiar.");
             return 0;
+        }
+
+        if (overwrites > 0)
+        {
+            // Paso B (2026-11-10): la importación es un upsert por id de TODAS las filas. Desde que
+            // la API crea filas propias, una fila distinta con el mismo id es una fila de la API que
+            // se pisaría. Nunca se aplica así: primero un plan para esas filas.
+            Console.Error.WriteLine();
+            Console.Error.WriteLine($"No se aplica: {overwrites} filas de DevLog se pisarian (ver arriba). Hace falta un plan para esas filas.");
+            return 1;
         }
 
         await using NpgsqlTransaction transaction = await targetConnection.BeginTransactionAsync();
@@ -123,6 +135,98 @@ internal static class DevLogMigrationCommands
         Console.WriteLine();
         Console.WriteLine("Copiado. Volver a correrlo actualiza lo que haya cambiado; no borra nada en DevLog.");
         return 0;
+    }
+
+    /// <summary>Fecha de la importación real (roadmap, Fase 8, tanda 2). Lo creado después en el origen es nuevo.</summary>
+    private static readonly DateTimeOffset ImportDate = new(2026, 10, 19, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// Paso B (2026-11-10): compara origen y destino fila por fila antes de importar. Por tabla, el
+    /// origen y el destino devuelven las mismas columnas con los mismos nombres (las que escribe la
+    /// importación); se compara el md5 de cada fila como JSON, en UTC en las dos bases. Sólo ids,
+    /// fechas y conteos salen a la consola: nunca el contenido. Devuelve cuántas filas de DevLog
+    /// se pisarían (mismo id, contenido distinto).
+    /// </summary>
+    private static async Task<int> CompareAsync(NpgsqlConnection source, NpgsqlConnection target, int idUser)
+    {
+        await ExecuteAsync(source, "set time zone 'UTC'");
+        await ExecuteAsync(target, "set time zone 'UTC'");
+
+        // Cada tabla: (select del origen, select del destino) con las mismas columnas, la clave
+        // "k" y la fecha "d" aparte. El hash cubre sólo las columnas que la importación escribe.
+        (string Table, string Columns, string Key, string Date, string From)[] sourceSide =
+        [
+            ("session", $"id, started_at_utc, ended_at_utc, audio_path, duration_seconds, source, {idUser} as id_user", "id::text", "started_at_utc", "public.session"),
+            ("transcript", "session_id, text, provider, model, cost_micro_usd, created_at_utc", "session_id::text", "created_at_utc", "public.transcript"),
+            ("report", "id, session_id, prompt_id, prompt_version, markdown, structured_json, llm_provider, llm_model, tokens_input, tokens_output, cost_micro_usd, vault_path, created_at_utc", "id::text", "created_at_utc", "public.report"),
+            ("prompt_version", "id, prompt_id, base_version, version, system_prompt, note, created_at_utc, null::int as id_user", "id::text", "created_at_utc", "public.prompt_version"),
+            ("setting", "key, value, updated_at_utc", "key", "updated_at_utc", "public.setting"),
+            ("cloud_upload", "id, session_id, machine_name, kind, local_path, remote_name, state, attempts, remote_url, last_error, created_at_utc, updated_at_utc", "id::text", "created_at_utc", "public.cloud_upload"),
+        ];
+        (string Columns, string Key, string Date, string From)[] targetSide =
+        [
+            ("\"idSession\" as id, started_at as started_at_utc, ended_at as ended_at_utc, audio_path, duration_seconds, source, \"idUser\" as id_user", "\"idSession\"::text", "started_at", "mtg.mtg_sessions"),
+            ("\"idSession\" as session_id, text, provider, model, cost_micro_usd, created_at as created_at_utc", "\"idSession\"::text", "created_at", "mtg.mtg_transcripts"),
+            ("\"idReport\" as id, \"idSession\" as session_id, prompt_id, prompt_version, markdown, structured_json, llm_provider, llm_model, tokens_input, tokens_output, cost_micro_usd, vault_path, created_at as created_at_utc", "\"idReport\"::text", "created_at", "mtg.mtg_reports"),
+            ("\"idPromptVersion\" as id, prompt_id, base_version, version, system_prompt, note, created_at as created_at_utc, \"idUser\" as id_user", "\"idPromptVersion\"::text", "created_at", "mtg.mtg_prompt_versions"),
+            ("key, value, updated_at as updated_at_utc", "key", "updated_at", "mtg.mtg_settings where \"idUser\" is null"),
+            ("\"idCloudUpload\" as id, \"idSession\" as session_id, machine_name, kind, local_path, remote_name, state, attempts, remote_url, last_error, created_at as created_at_utc, updated_at as updated_at_utc", "\"idCloudUpload\"::text", "created_at", "mtg.mtg_cloud_uploads"),
+        ];
+
+        Console.WriteLine();
+        Console.WriteLine($"Comparacion fila por fila (md5 de las columnas que escribe la importacion; 'nuevo' = fecha >= {ImportDate:yyyy-MM-dd}):");
+        int overwrites = 0;
+        for (int i = 0; i < sourceSide.Length; i++)
+        {
+            var s = sourceSide[i];
+            var t = targetSide[i];
+            Dictionary<string, (DateTimeOffset Date, string Hash)> sourceRows = await RowsAsync(source, s.Columns, s.Key, s.Date, s.From);
+            Dictionary<string, (DateTimeOffset Date, string Hash)> targetRows = await RowsAsync(target, t.Columns, t.Key, t.Date, t.From);
+
+            var onlySource = sourceRows.Keys.Except(targetRows.Keys).OrderBy(SortKey).ToList();
+            var onlyTarget = targetRows.Keys.Except(sourceRows.Keys).OrderBy(SortKey).ToList();
+            var differ = sourceRows.Keys.Intersect(targetRows.Keys).Where(k => sourceRows[k].Hash != targetRows[k].Hash).OrderBy(SortKey).ToList();
+            int same = sourceRows.Count - onlySource.Count - differ.Count;
+            int newInSource = sourceRows.Values.Count(r => r.Date >= ImportDate);
+            DateTimeOffset? newestSource = sourceRows.Count == 0 ? null : sourceRows.Values.Max(r => r.Date);
+
+            Console.WriteLine($"  {s.Table,-15} origen {sourceRows.Count,4} | destino {targetRows.Count,4} | iguales {same,4} | sólo en origen {onlySource.Count,3} | sólo en DevLog {onlyTarget.Count,3} | distintas {differ.Count,3} | origen nuevo {newInSource,3} | más reciente del origen {newestSource:yyyy-MM-dd HH:mm}Z");
+            if (onlySource.Count > 0) Console.WriteLine($"      se insertarian: {Describe(onlySource, sourceRows)}");
+            if (onlyTarget.Count > 0) Console.WriteLine($"      creadas en DevLog (la importacion no las toca): {Describe(onlyTarget, targetRows)}");
+            if (differ.Count > 0)
+            {
+                Console.WriteLine($"      SE PISARIAN (mismo id, contenido distinto; fecha origen -> DevLog): {string.Join(", ", differ.Select(k => $"{k} ({sourceRows[k].Date:yyyy-MM-dd} -> {targetRows[k].Date:yyyy-MM-dd})"))}");
+                overwrites += differ.Count;
+            }
+        }
+
+        return overwrites;
+    }
+
+    private static string SortKey(string key) => long.TryParse(key, out long n) ? n.ToString("D20") : key;
+
+    private static string Describe(List<string> keys, Dictionary<string, (DateTimeOffset Date, string Hash)> rows) =>
+        string.Join(", ", keys.Select(k => $"{k} ({rows[k].Date:yyyy-MM-dd})"));
+
+    private static async Task<Dictionary<string, (DateTimeOffset Date, string Hash)>> RowsAsync(
+        NpgsqlConnection connection, string columns, string key, string date, string from)
+    {
+        var rows = new Dictionary<string, (DateTimeOffset, string)>();
+        string sql = $"select k_, d_, md5((to_jsonb(t0) - 'k_' - 'd_')::text) from (select {key} as k_, {date} as d_, {columns} from {from}) t0";
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows[reader.GetString(0)] = (reader.GetFieldValue<DateTimeOffset>(1), reader.GetString(2));
+        }
+
+        return rows;
+    }
+
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task<T> ScalarAsync<T>(NpgsqlConnection connection, string sql)
