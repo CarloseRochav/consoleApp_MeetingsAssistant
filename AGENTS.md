@@ -87,7 +87,7 @@ never merge it or keep building it.
   machine. `--verify-api` is read-only. `--api-process-file <wav>`,
   `--api-resume` and `--api-reextract <idSession> <promptId>` run real jobs
   (they charge) and write to `local-vault/` unless `--vault` is given.
-- `toolsRevoke-OldDevices.ps1 [-Apply]` (the owner, with his DevLog login) revokes
+- `tools\Revoke-OldDevices.ps1 [-Apply]` (the owner, with his DevLog login) revokes
   this machine's old devices, keeping the one the app uses; lists only without
   `-Apply`.
 - `--migrate-to-devlog <idUser> [--apply]` is the owner's final import (old
