@@ -12,11 +12,11 @@
             Margin="32"
             HorizontalAlignment="Center"
             VerticalAlignment="Top"
-            Spacing="16">
+            Spacing="28">
 
             <TextBlock Text="Configuración" Style="{StaticResource PageTitleStyle}" />
 
-            <Border Style="{StaticResource CardBorderStyle}">
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
                 <StackPanel Spacing="12">
                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Cuenta y dispositivo" />
                     <TextBlock x:Name="DeviceText" Style="{StaticResource BodyCopyStyle}" />
@@ -26,7 +26,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource CardBorderStyle}">
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
                 <StackPanel Spacing="8">
                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Inicio" />
                     <ToggleSwitch
@@ -40,7 +40,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource CardBorderStyle}">
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
                 <StackPanel Spacing="12">
                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Esta máquina" />
                     <views:SettingsForm x:Name="Form" />
@@ -50,14 +50,14 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource CardBorderStyle}">
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
                 <StackPanel Spacing="12">
                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="En el servidor" />
                     <views:ServerSettingsPanel x:Name="ServerSettings" />
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource CardBorderStyle}">
+            <Border Padding="0" Background="Transparent" BorderThickness="0">
                 <StackPanel Spacing="12">
                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Prompts" />
                     <views:PromptEditorPanel x:Name="PromptEditor" />

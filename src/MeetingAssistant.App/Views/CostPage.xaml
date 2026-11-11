@@ -43,7 +43,7 @@
 
             <StackPanel x:Name="DataPanel" Spacing="16" Visibility="Collapsed">
 
-                <Border Style="{StaticResource CardBorderStyle}">
+                <Border Padding="0" Background="Transparent" BorderThickness="0">
                     <StackPanel Spacing="12">
                         <TextBlock Text="{Binding TotalLabel}" Style="{StaticResource CaptionTextStyle}" />
                         <TextBlock Text="{Binding TotalCostText}" Style="{StaticResource HeroFigureStyle}" />
@@ -70,7 +70,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="CaveatsPanel" Style="{StaticResource CardBorderStyle}" Visibility="Collapsed">
+                <Border x:Name="CaveatsPanel" Background="Transparent" BorderThickness="0" Padding="0" Visibility="Collapsed">
                     <StackPanel Spacing="6">
                         <TextBlock Text="Lo que estos números no incluyen"
                                    Style="{StaticResource SectionTitleStyle}" />
@@ -86,7 +86,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource CardBorderStyle}">
+                <Border Padding="0" Background="Transparent" BorderThickness="0">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Por mes" Style="{StaticResource SectionTitleStyle}" />
                         <ItemsControl ItemsSource="{Binding MonthRows}">

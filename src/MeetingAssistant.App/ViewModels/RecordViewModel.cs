@@ -161,6 +161,19 @@ public partial class RecordViewModel : ObservableObject
     /// <summary>waiting no aplica: uploading mientras graba, processing mientras guarda, ready en reposo.</summary>
     public string StageTone => IsRecording ? "uploading" : IsProcessing ? "processing" : "ready";
 
+    /// <summary>Tono de cada paso del camino (Grabar, Enviar, Servidor, Reporte). Lo pinta el tema.</summary>
+    [ObservableProperty]
+    private string recordPhaseTone = "uploading";
+
+    [ObservableProperty]
+    private string sendPhaseTone = "waiting";
+
+    [ObservableProperty]
+    private string serverPhaseTone = "waiting";
+
+    [ObservableProperty]
+    private string reportPhaseTone = "waiting";
+
     public bool CanLoadExternalSource => !IsRecording && !IsProcessing;
 
     public RecordViewModel(RecordingCoordinator coordinator, MeetingUploadQueue queue, DeviceAuthService auth)
@@ -212,6 +225,7 @@ public partial class RecordViewModel : ObservableObject
         if (IsRecording) StatusMessage = "Grabando...";
         else if (IsProcessing) StatusMessage = "Guardando la grabación...";
         else if (StatusMessage is "Grabando..." or "Guardando la grabación...") StatusMessage = "Listo para grabar.";
+        UpdatePhases();
     });
 
     private void OnRecordingFailed(object? sender, RecordingFailedEventArgs e) => RunOnUiThread(() =>
@@ -225,11 +239,14 @@ public partial class RecordViewModel : ObservableObject
         QueueItemViewModel? item = Meetings.FirstOrDefault(row => row.Id == meeting.Id);
         if (item is null)
         {
-            Meetings.Insert(0, new QueueItemViewModel(meeting));
+            var created = new QueueItemViewModel(meeting);
+            Meetings.Insert(0, created);
+            SelectedMeeting = created;
             return;
         }
 
         item.Update(meeting);
+        if (SelectedMeeting == item) UpdatePhases();
         if (meeting.Status == QueuedMeetingStatus.Ready && (SelectedMeeting is null || SelectedMeeting == item)) ShowReport(item);
     });
 
@@ -238,7 +255,63 @@ public partial class RecordViewModel : ObservableObject
 
     partial void OnSelectedMeetingChanged(QueueItemViewModel? value)
     {
+        UpdatePhases();
         if (value is not null) ShowReport(value);
+    }
+
+    /// <summary>
+    /// Un solo camino, el de la reunión elegida (o el de la grabación en curso):
+    /// Grabar, Enviar, Servidor, Reporte. El paso activo va en índigo, los hechos
+    /// en verde, el que falló en rojo.
+    /// </summary>
+    private void UpdatePhases()
+    {
+        if (IsRecording)
+        {
+            SetPhases("uploading", "waiting", "waiting", "waiting");
+            return;
+        }
+
+        if (IsProcessing)
+        {
+            SetPhases("ready", "uploading", "waiting", "waiting");
+            return;
+        }
+
+        QueuedMeeting? meeting = SelectedMeeting?.Meeting;
+        switch (meeting?.Status)
+        {
+            case QueuedMeetingStatus.Waiting:
+            case QueuedMeetingStatus.Uploading:
+                SetPhases("ready", "uploading", "waiting", "waiting");
+                break;
+            case QueuedMeetingStatus.Processing:
+                SetPhases("ready", "ready", "processing", "waiting");
+                break;
+            case QueuedMeetingStatus.WritingReport:
+                SetPhases("ready", "ready", "ready", "uploading");
+                break;
+            case QueuedMeetingStatus.Ready:
+                SetPhases("ready", "ready", "ready", "ready");
+                break;
+            case QueuedMeetingStatus.Failed when meeting.IdSession is null:
+                SetPhases("ready", "failed", "waiting", "waiting");
+                break;
+            case QueuedMeetingStatus.Failed:
+                SetPhases("ready", "ready", "failed", "waiting");
+                break;
+            default:
+                SetPhases("uploading", "waiting", "waiting", "waiting");
+                break;
+        }
+    }
+
+    private void SetPhases(string record, string send, string server, string report)
+    {
+        RecordPhaseTone = record;
+        SendPhaseTone = send;
+        ServerPhaseTone = server;
+        ReportPhaseTone = report;
     }
 
     private void ShowReport(QueueItemViewModel item)

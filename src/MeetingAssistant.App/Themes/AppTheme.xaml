@@ -38,6 +38,7 @@
             <SolidColorBrush x:Key="AccentButtonBorderBrushPressed" Color="#FF4338CA" />
             <SolidColorBrush x:Key="AccentButtonBorderBrushDisabled" Color="#FFE2E8F0" />
 
+            <SolidColorBrush x:Key="AppPageBrush" Color="#FFF8FAFC" />
             <SolidColorBrush x:Key="AppHeadingBrush" Color="#FF1E293B" />
             <SolidColorBrush x:Key="AppMutedBrush" Color="#FF64748B" />
             <SolidColorBrush x:Key="AppCardBrush" Color="#F7FFFFFF" />
@@ -83,6 +84,7 @@
             <SolidColorBrush x:Key="AccentButtonBorderBrushPressed" Color="#FF4338CA" />
             <SolidColorBrush x:Key="AccentButtonBorderBrushDisabled" Color="#FF334155" />
 
+            <SolidColorBrush x:Key="AppPageBrush" Color="#FF020617" />
             <SolidColorBrush x:Key="AppHeadingBrush" Color="#FFF1F5F9" />
             <SolidColorBrush x:Key="AppMutedBrush" Color="#FF94A3B8" />
             <SolidColorBrush x:Key="AppCardBrush" Color="#EB0F172A" />

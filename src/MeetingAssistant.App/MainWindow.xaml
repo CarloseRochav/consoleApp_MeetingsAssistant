@@ -11,45 +11,145 @@
     </Window.SystemBackdrop>
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+        <Grid.Resources>
+            <!--
+                Ítem de la barra, como el NavLink de DevLog: sin el círculo del
+                RadioButton y sin el chrome de un botón de Windows. El estado
+                marcado es índigo; el resto es pizarra clara sobre el panel oscuro.
+            -->
+            <Style x:Key="NavItemStyle" TargetType="RadioButton">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="Margin" Value="0,2" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RadioButton">
+                            <Grid x:Name="Root"
+                                  Background="Transparent"
+                                  CornerRadius="8"
+                                  Padding="12,10">
+                                <ContentPresenter x:Name="Content"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center"
+                                                  Foreground="#FFCBD5E1" />
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Background" Value="#FF1E293B" />
+                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Background" Value="#FF334155" />
+                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Unchecked" />
+                                        <VisualState x:Name="UncheckedPointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Background" Value="#FF1E293B" />
+                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="UncheckedPressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Background" Value="#FF334155" />
+                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Checked">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Background" Value="#FF4F46E5" />
+                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="CheckedPointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Background" Value="#FF4338CA" />
+                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="CheckedPressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Background" Value="#FF3730A3" />
+                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Content.Foreground" Value="#FF64748B" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Grid.Resources>
 
-        <TitleBar x:Name="AppTitleBar" Title="Meeting Assistant">
-            <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/AppIcon.ico" />
-            </TitleBar.IconSource>
-        </TitleBar>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="232" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <NavigationView x:Name="RootNavigation"
-                        Grid.Row="1"
-                        IsBackButtonVisible="Collapsed"
-                        PaneDisplayMode="Left"
-                        SelectionChanged="NavigationView_SelectionChanged">
-            <NavigationView.MenuItems>
-                <NavigationViewItem Content="Grabar" Tag="record" IsSelected="True">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Microphone" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Historial" Tag="history">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Clock" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Costos" Tag="costs">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Calculator" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Configuración" Tag="settings">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Setting" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-            </NavigationView.MenuItems>
-            <Frame x:Name="ContentFrame" />
-        </NavigationView>
+        <Border Grid.Column="0" Background="#FF0F172A" Padding="12,0,12,16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="48" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <Border Width="28" Height="28" CornerRadius="8" Background="#FF4F46E5">
+                        <SymbolIcon Symbol="Microphone" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="Meetings"
+                               Foreground="White"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Grid.Row="1" Spacing="2" Margin="0,12,0,0">
+                    <RadioButton x:Name="RecordNav" Tag="record" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <SymbolIcon Symbol="Microphone" />
+                            <TextBlock Text="Grabar" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="HistoryNav" Tag="history" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <SymbolIcon Symbol="Clock" />
+                            <TextBlock Text="Historial" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="CostsNav" Tag="costs" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <SymbolIcon Symbol="Calculator" />
+                            <TextBlock Text="Costos" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="SettingsNav" Tag="settings" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <SymbolIcon Symbol="Setting" />
+                            <TextBlock Text="Configuración" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Column="1" Background="{ThemeResource AppPageBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="48" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TitleBar x:Name="AppTitleBar" />
+            <Frame x:Name="ContentFrame" Grid.Row="1" />
+        </Grid>
     </Grid>
 </Window>
