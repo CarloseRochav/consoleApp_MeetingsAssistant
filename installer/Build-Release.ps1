@@ -90,12 +90,26 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::OpenRead($msix.FullName)
 try {
     $entries = @($zip.Entries | ForEach-Object FullName)
+    $defaultsEntry = $zip.Entries | Where-Object FullName -eq 'appsettings.defaults.json' | Select-Object -First 1
+    $defaults = if ($defaultsEntry) {
+        $reader = New-Object IO.StreamReader($defaultsEntry.Open())
+        try { $reader.ReadToEnd() } finally { $reader.Dispose() }
+    }
 }
 finally {
     $zip.Dispose()
 }
 if ($entries -contains 'appsettings.json') { throw 'El paquete lleva appsettings.json, con claves. No se publica.' }
 if ($entries -notcontains 'appsettings.defaults.json') { throw 'El paquete no lleva appsettings.defaults.json: la app no arrancaria.' }
+
+# Paso B de la Fase 8 (2026-11-10): la app es cliente de la API de DevLog. Ni clientes de proveedor
+# ni acceso directo a una base o a Blob viajan en el paquete, y los valores de fabrica no nombran
+# ninguna clave: si algo de esto aparece, volvio el modo local.
+$providerAssemblies = 'Deepgram.dll', 'Google.GenAI.dll', 'OpenAI.dll', 'Npgsql.dll', 'Azure.Storage.Blobs.dll', 'Azure.Identity.dll'
+$found = @($entries | Where-Object { $providerAssemblies -contains (Split-Path $_ -Leaf) })
+if ($found) { throw "El paquete lleva clientes del modo local: $($found -join ', '). No se publica." }
+if ($defaults -match '(?i)"(ApiKey|ConnectionString|Password|Secret)"') { throw 'appsettings.defaults.json nombra una clave secreta. No se publica.' }
+if ($defaults -notmatch '"BaseUrl"') { throw 'appsettings.defaults.json no tiene DevLog:BaseUrl: la app no sabria a que servidor hablar.' }
 
 $signature = Get-AuthenticodeSignature $msix.FullName
 if ($signature.Status -ne 'Valid') { throw "La firma del paquete no es valida: $($signature.Status) $($signature.StatusMessage)" }

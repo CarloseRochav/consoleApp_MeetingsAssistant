@@ -229,6 +229,51 @@ internal static class DevLogMigrationCommands
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// Las dos formas que da Neon: URL <c>postgresql://</c> o clave=valor. Era
+    /// <c>PostgresDatabase.ToBuilder</c> en Infrastructure; desde el paso B (sin Postgres directo en la
+    /// app) vive aquí, el único que todavía lee la base vieja, para la importación final.
+    /// </summary>
+    private static NpgsqlConnectionStringBuilder ToBuilder(string connectionString)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        connectionString = connectionString.Trim();
+
+        if (!connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+            !connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            return new NpgsqlConnectionStringBuilder(connectionString);
+        }
+
+        var uri = new Uri(connectionString);
+        string[] userInfo = uri.UserInfo.Split(':', 2);
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.IsDefaultPort || uri.Port <= 0 ? 5432 : uri.Port,
+            Username = Uri.UnescapeDataString(userInfo[0]),
+            Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : null,
+            Database = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/'))
+        };
+
+        foreach (string pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] parts = pair.Split('=', 2);
+            string value = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
+            switch (parts[0].ToLowerInvariant())
+            {
+                case "sslmode":
+                    builder.SslMode = Enum.Parse<SslMode>(value.Replace("-", string.Empty), ignoreCase: true);
+                    break;
+                case "channel_binding":
+                    builder.ChannelBinding = Enum.Parse<ChannelBinding>(value, ignoreCase: true);
+                    break;
+            }
+        }
+
+        return builder;
+    }
+
     private static async Task<T> ScalarAsync<T>(NpgsqlConnection connection, string sql)
     {
         await using var command = new NpgsqlCommand(sql, connection);
@@ -245,7 +290,7 @@ internal static class DevLogMigrationCommands
     {
         try
         {
-            return MeetingAssistant.Infrastructure.Storage.Postgres.PostgresDatabase.ToBuilder(connectionString);
+            return ToBuilder(connectionString);
         }
         catch (Exception exception)
         {

@@ -1,7 +1,7 @@
 // Harness de consola: autotests y utilidades de la app. Cada comando vive en
 // CommandCatalog; aca solo se separa --prompt del resto y se despacha.
 //
-//   (sin argumentos) | <segundos>   graba y corre el pipeline de verdad (cobra)
+//   (sin argumentos) | <segundos>   graba y lo manda a la API de DevLog como la app (cobra)
 //   --<comando> [argumentos]        ver --help
 
 string? promptId = null;
@@ -19,7 +19,8 @@ for (int i = 0; i < args.Length; i++)
 
 if (positional.Count == 0 || !positional[0].StartsWith("--", StringComparison.Ordinal))
 {
-    return await PipelineRunCommand.RecordAsync(new CommandContext(positional, promptId));
+    CommandContext recording = new(positional, promptId);
+    return await ApiCommands.RecordAsync(recording.Configuration, positional);
 }
 
 if (positional[0] is "--help" or "-h")
@@ -48,7 +49,7 @@ return await command.RunAsync(new CommandContext(arguments, promptId));
 static void PrintHelp()
 {
     Console.WriteLine("Uso: MeetingAssistant.Harness [<segundos> | --<comando> [argumentos]] [--prompt <id>]");
-    Console.WriteLine("Sin comando, graba esos segundos (15 por defecto) y corre el pipeline de verdad (cobra).");
+    Console.WriteLine("Sin comando, graba esos segundos (15 por defecto) y los manda a la API de DevLog con el dispositivo del harness (cobra).");
     Console.WriteLine();
     foreach (HarnessCommand command in CommandCatalog.All)
     {
