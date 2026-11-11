@@ -19,6 +19,10 @@ internal static class ApiCommands
     public static string DeviceFile { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAssistant", "harness-device.json");
 
+    /// <summary>El dispositivo de la app (AppPaths.DeviceFile), si la app inició sesión en esta máquina.</summary>
+    private static string AppDeviceFile { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAssistant", "device.json");
+
     private static string QueueDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAssistant", "harness-queue");
 
@@ -60,7 +64,7 @@ internal static class ApiCommands
         var checks = new Checks("--verify-api");
         string token = auth.RequireToken();
 
-        checks.Check("Devices/Select_Me acepta el token del harness", await api.MeAsync(token) is ApiResult<DeviceIdentity>.Success { Value.DeviceName: var name } && name == DeviceName);
+        checks.Check($"Devices/Select_Me acepta el token ({auth.DeviceName})", await api.MeAsync(token) is ApiResult<DeviceIdentity>.Success { Value.DeviceName: var name } && name == auth.DeviceName);
         checks.Check("un token inventado → 401", await api.MeAsync("dlg_" + new string('0', 43)) is ApiResult<DeviceIdentity>.Failure { Error: ApiError.Unauthorized });
         checks.Check("sin token, las reuniones → 401",
             await api.GetSessionsAsync("", 1, 0) is ApiResult<IReadOnlyList<ApiSession>>.Failure { Error: ApiError.Unauthorized });
@@ -256,7 +260,20 @@ internal static class ApiCommands
         (api, baseUrl) = CreateApi(configuration);
         auth = new DeviceAuthService(api, new DpapiDeviceSessionStore(DeviceFile, new DpapiSecretProtector()), DeviceName);
         if (auth.Restore() is not null) return true;
-        Console.Error.WriteLine($"El harness no tiene sesión en {baseUrl}. Corre primero: --api-signin <usuario>.");
+
+        // Sin dispositivo propio, el de la app de esta máquina (mismo usuario de Windows, DPAPI): así
+        // se prueba sin escribir la contraseña otra vez. Se dice, porque las llamadas quedan a su nombre.
+        if (File.Exists(AppDeviceFile))
+        {
+            auth = new DeviceAuthService(api, new DpapiDeviceSessionStore(AppDeviceFile, new DpapiSecretProtector()), Environment.MachineName);
+            if (auth.Restore() is { } session)
+            {
+                Console.WriteLine($"(Sin dispositivo propio del harness: se usa el de la app, «{session.DeviceName}».)");
+                return true;
+            }
+        }
+
+        Console.Error.WriteLine($"El harness no tiene sesión en {baseUrl}. Corre primero: --api-signin <usuario>, o inicia sesión en la app.");
         return false;
     }
 
@@ -315,5 +332,25 @@ internal static class ApiCommands
         // La lista creció copiando; se pisa lo que queda en ella (las copias viejas no se alcanzan).
         for (int i = 0; i < buffer.Count; i++) buffer[i] = '\0';
         return password;
+    }
+}
+
+/// <summary>--verify-capture: graba N segundos con la captura de la app y dice cuánto audio salió. No sube nada.</summary>
+internal static class CaptureCheck
+{
+    public static async Task<int> RunAsync(IReadOnlyList<string> arguments)
+    {
+        int seconds = arguments.Count > 0 && int.TryParse(arguments[0], out int parsed) && parsed > 0 ? parsed : 5;
+        string folder = Path.Combine(Path.GetTempPath(), "capture-check");
+        var capture = new AudioCaptureService();
+        Console.WriteLine($"Grabando {seconds} s (altavoz + micrófono)...");
+        await capture.StartAsync(folder);
+        await Task.Delay(TimeSpan.FromSeconds(seconds));
+        AudioCaptureResult result = await capture.StopAsync();
+        long bytes = new FileInfo(result.AudioPath).Length;
+        Console.WriteLine($"Altavoz: {result.LoopbackDevice}. Micrófono: {result.MicrophoneDevice}.");
+        Console.WriteLine($"{result.AudioPath}: {bytes} bytes en {result.Duration.TotalSeconds:F1} s (esperado ≈ {88200L * seconds} a 44,1 kHz 16 bits mono).");
+        File.Delete(result.AudioPath);
+        return bytes > 44 + 88200L * seconds / 2 ? 0 : 1;
     }
 }

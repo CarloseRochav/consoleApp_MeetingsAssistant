@@ -533,6 +533,10 @@ public sealed class MeetingUploadQueue : IDisposable
 
     private async Task LoopAsync(CancellationToken cancellationToken)
     {
+        // Una sola espera del semáforo viva a la vez. Antes cada vuelta creaba otra y, cuando ganaba
+        // el Task.Delay, la vieja quedaba colgada y se comía el siguiente Kick: una grabación nueva
+        // no despertaba al bucle (encontrado en la prueba real del 2026-11-11).
+        Task? wake = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
@@ -551,9 +555,14 @@ public sealed class MeetingUploadQueue : IDisposable
             try
             {
                 TimeSpan? delay = NextWake();
-                Task woken = _wake.WaitAsync(cancellationToken);
-                if (delay is { } wait) await Task.WhenAny(woken, Task.Delay(wait, _time, cancellationToken));
-                else await woken;
+                wake ??= _wake.WaitAsync(cancellationToken);
+                if (delay is { } wait) await Task.WhenAny(wake, Task.Delay(wait, _time, cancellationToken));
+                else await wake;
+                if (wake.IsCompleted)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    wake = null;
+                }
             }
             catch (OperationCanceledException)
             {

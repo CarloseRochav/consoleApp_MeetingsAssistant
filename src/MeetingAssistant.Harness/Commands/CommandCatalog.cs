@@ -23,6 +23,10 @@ internal static class CommandCatalog
             "Offline. Una grabacion larga sintetica (110 min por defecto) convertida: tamano, tiempo, entra en 1 GiB. Escribe cientos de MB en %TEMP%.", 0, 1,
             context => ApiSelfTests.VerifyLongAudioAsync(context.Arguments)),
 
+        new("--verify-capture", "--verify-capture [segundos]",
+            "Graba N segundos con la captura de la app (altavoz + micro) y dice cuantos bytes salieron. No sube nada.", 0, 1,
+            context => CaptureCheck.RunAsync(context.Arguments)),
+
         // --- La API de DevLog de verdad -------------------------------------------
         new("--api-signin", "--api-signin <usuario>",
             "Inicia sesion del harness (dispositivo harness-MAQUINA); pide la contrasena sin mostrarla y no la guarda.", 1, 1,

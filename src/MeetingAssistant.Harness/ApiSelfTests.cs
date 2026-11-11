@@ -635,7 +635,39 @@ internal static class ApiSelfTests
             QueuedMeeting waiting = queue.EnqueueAudio(waitingAudio, waitingAudio, 10, SessionSource.Window);
             checks.Check("sin sesión → SignedOut y ninguna llamada", await queue.AdvanceAsync(waiting.Id) == QueueStep.SignedOut && api.Calls.Count == calls);
 
-            // 13. Un archivo de la cola roto no frena el resto.
+            // 13. El bucle de verdad (Start): una reunión nueva lo despierta también después de una
+            // espera que terminó por tiempo (el bug del 2026-11-11: el Kick se perdía).
+            await auth.SignInAsync("carlos", FakeDevLogApi.Password.ToCharArray());
+            // Una carpeta propia y vacía: con otras reuniones pendientes el bucle sondea por tiempo y
+            // eso tapa el bug (en la app real la cola estaba vacía).
+            var looping = new MeetingUploadQueue(api, auth, uploader, new JsonQueuedMeetingStore(Path.Combine(root, "loop-queue"), protector), reports, blockBytes: block);
+            looping.Start();
+            async Task<bool> ReachesAsync(string id, QueuedMeetingStatus status, TimeSpan timeout)
+            {
+                var clock = Stopwatch.StartNew();
+                while (clock.Elapsed < timeout)
+                {
+                    if (looping.Items.FirstOrDefault(item => item.Id == id)?.Status == status) return true;
+                    await Task.Delay(100);
+                }
+
+                return false;
+            }
+
+            string loopAudio = Audio("loop1.wav", 1000);
+            QueuedMeeting first = looping.EnqueueAudio(loopAudio, loopAudio, 10, SessionSource.Hotkey);
+            checks.Check("bucle: una reunión encolada llega al servidor sola", await ReachesAsync(first.Id, QueuedMeetingStatus.Processing, TimeSpan.FromSeconds(10)));
+            // Mientras procesa, el bucle duerme con plazo (sondeo de 10 s); el trabajo termina y la
+            // reunión queda lista: el bucle vuelve a dormir sin plazo.
+            api.CompleteJob(looping.Items.Single(item => item.Id == first.Id).IdJob!.Value);
+            checks.Check("bucle: termina en el sondeo siguiente", await ReachesAsync(first.Id, QueuedMeetingStatus.Ready, TimeSpan.FromSeconds(20)));
+            string loopAudio2 = Audio("loop2.wav", 1000);
+            QueuedMeeting second = looping.EnqueueAudio(loopAudio2, loopAudio2, 10, SessionSource.Hotkey);
+            checks.Check("bucle: una reunión nueva después de una espera por tiempo lo despierta (el Kick no se pierde)",
+                await ReachesAsync(second.Id, QueuedMeetingStatus.Processing, TimeSpan.FromSeconds(10)));
+            looping.Dispose();
+
+            // 14. Un archivo de la cola roto no frena el resto.
             await File.WriteAllTextAsync(Path.Combine(queueDir, "broken.json"), "{ esto no es json");
             checks.Check("un JSON roto se aparta (.bad) y el resto se lee", queue.Items.Count > 0 && File.Exists(Path.Combine(queueDir, "broken.json.bad")));
         }
