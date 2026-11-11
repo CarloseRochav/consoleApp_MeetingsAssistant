@@ -9,180 +9,142 @@
     mc:Ignorable="d">
 
     <!--
-        Maestro-detalle en una sola página, no una página de detalle aparte. El
-        NavigationView de MainWindow tiene IsBackButtonVisible="Collapsed", así
-        que una página aparte obligaría a resolver la navegación de vuelta a
-        mano; y el Frame navega con typeof(...) sin parámetro, así que habría que
-        inventar cómo pasarle el id de la sesión. Nada de eso compra algo aquí.
+        Maestro-detalle en una sola página. El NavigationView tiene el botón de
+        atrás oculto y el Frame navega sin parámetro, así que el detalle no es
+        otra página. La re-extracción queda fija abajo: es la acción principal.
+        Si algo "no aparece" en UIA, medir ActualWidth/ActualHeight antes de
+        tocar el XAML: UIA no expone esta sección y ya se reestructuró una vez
+        por esa señal falsa.
     -->
-    <Grid Padding="24" ColumnSpacing="24">
+    <Grid Padding="24" ColumnSpacing="16">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="340" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- ============================ Lista de reuniones ============================ -->
-        <Grid Grid.Column="0" RowSpacing="12">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+        <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16">
+            <Grid RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0"
-                       Text="Historial"
-                       Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Grid.Row="0"
+                           Text="Historial"
+                           Style="{StaticResource PageTitleStyle}" />
 
-            <StackPanel Grid.Row="1" Spacing="8">
-                <Button Content="Actualizar"
-                        Command="{Binding RefreshCommand}"
-                        HorizontalAlignment="Left"
-                        MinWidth="140" />
-                <TextBlock Text="{Binding StatusMessage}"
-                           TextWrapping="Wrap"
-                           Opacity="0.8" />
-                <ProgressBar x:Name="LoadingBar"
-                             IsIndeterminate="True"
-                             Visibility="Collapsed" />
-                <!--
-                    Acá y no en la cabecera del detalle: ese panel está colapsado
-                    hasta que se elige una reunión, así que un fallo al cargar la
-                    lista misma no se veía en ningún lado.
-                -->
-                <views:ErrorPanel Details="{Binding ErrorDetails}" />
+                <StackPanel Grid.Row="1" Spacing="8">
+                    <Button Content="Actualizar"
+                            Command="{Binding RefreshCommand}"
+                            HorizontalAlignment="Left"
+                            MinWidth="140" />
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Style="{StaticResource CaptionTextStyle}" />
+                    <ProgressBar x:Name="LoadingBar"
+                                 IsIndeterminate="True"
+                                 Visibility="Collapsed" />
+                    <views:ErrorPanel Details="{Binding ErrorDetails}" />
+                    <TextBox Header="Buscar en las transcripciones"
+                             PlaceholderText="Una palabra que se dijo en la reunión"
+                             Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTipService.ToolTip="Busca por comienzo de palabra: «factura» encuentra «facturación». Los acentos no importan. Si escribes varias palabras, tienen que aparecer todas." />
+                    <TextBlock Text="{Binding SearchSummary}"
+                               Style="{StaticResource CaptionTextStyle}" />
+                </StackPanel>
 
-                <!--
-                    Busca en las transcripciones, no en los reportes: sólo el
-                    transcript está indexado. Filtra y anota la lista de abajo;
-                    no la reemplaza por otra.
-                -->
-                <TextBox Header="Buscar en las transcripciones"
-                         PlaceholderText="Una palabra que se dijo en la reunión"
-                         Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTipService.ToolTip="Busca por comienzo de palabra: «factura» encuentra «facturación». Los acentos no importan. Si escribes varias palabras, tienen que aparecer todas." />
-                <TextBlock Text="{Binding SearchSummary}"
-                           TextWrapping="Wrap"
-                           Opacity="0.8" />
-            </StackPanel>
+                <ListView Grid.Row="2"
+                          ItemsSource="{Binding Sessions}"
+                          SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                          SelectionMode="Single"
+                          Background="Transparent"
+                          BorderThickness="0">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SessionListItem">
+                            <StackPanel Padding="0,8" Spacing="2">
+                                <TextBlock Text="{x:Bind Title}"
+                                           TextWrapping="Wrap"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="{x:Bind Subtitle}"
+                                           Style="{StaticResource CaptionTextStyle}" />
+                                <TextBlock Text="{x:Bind Snippet, Mode=OneWay}"
+                                           Visibility="{x:Bind HasSnippet, Mode=OneWay}"
+                                           TextWrapping="Wrap"
+                                           FontStyle="Italic"
+                                           FontSize="12" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
 
-            <!--
-                Virtualizado: ListView lo hace solo mientras el contenedor no lo
-                impida. Las filas no traen transcripts completos — SessionSummary
-                es una proyección con una previsualización corta.
-            -->
-            <ListView Grid.Row="2"
-                      ItemsSource="{Binding Sessions}"
-                      SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
-                      SelectionMode="Single">
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="vm:SessionListItem">
-                        <StackPanel Padding="0,8" Spacing="2">
-                            <TextBlock Text="{x:Bind Title}"
-                                       TextWrapping="Wrap"
-                                       FontWeight="SemiBold" />
-                            <TextBlock Text="{x:Bind Subtitle}"
-                                       TextWrapping="Wrap"
-                                       Opacity="0.75"
-                                       FontSize="12" />
-                            <!-- Sólo con búsqueda activa: dónde apareció el término. -->
-                            <TextBlock Text="{x:Bind Snippet, Mode=OneWay}"
-                                       Visibility="{x:Bind HasSnippet, Mode=OneWay}"
-                                       TextWrapping="Wrap"
-                                       FontStyle="Italic"
-                                       FontSize="12" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
+                <StackPanel x:Name="EmptyStatePanel"
+                            Grid.Row="2"
+                            Spacing="8"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                    <TextBlock Text="Todavía no hay reuniones"
+                               Style="{StaticResource SectionTitleStyle}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Graba una reunión desde la pestaña Grabar, con el atajo Ctrl+Alt+F9, o desde la bandeja. Aparecerá acá en cuanto termine."
+                               Style="{StaticResource BodyCopyStyle}" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
-            <!--
-                Una instalación nueva no tiene reuniones. Una tabla vacía sin
-                explicación es peor que el stub que decía "Próximamente": al
-                menos aquél no hacía creer que algo se perdió.
-            -->
-            <StackPanel x:Name="EmptyStatePanel"
-                        Grid.Row="2"
-                        Spacing="8"
-                        VerticalAlignment="Center"
-                        Visibility="Collapsed">
-                <TextBlock Text="Todavía no hay reuniones"
-                           Style="{StaticResource SubtitleTextBlockStyle}"
-                           TextWrapping="Wrap" />
-                <TextBlock Text="Graba una reunión desde la pestaña Grabar, con el atajo Ctrl+Alt+F9, o desde la bandeja. Aparecerá acá en cuanto termine."
-                           TextWrapping="Wrap"
-                           Opacity="0.8" />
-            </StackPanel>
-        </Grid>
+        <Border x:Name="DetailPanel"
+                Grid.Column="1"
+                Style="{StaticResource CardBorderStyle}"
+                Padding="16"
+                Visibility="Collapsed">
+            <Grid RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-        <!-- ================================= Detalle =================================
-            Dos filas: arriba lo que se lee (con scroll propio), abajo la acción,
-            fija. La re-extracción es la acción principal de esta página y no
-            debería quedar al final de un scroll; y el visor del reporte, que es
-            lo que quiere crecer, tiene altura acotada para no competir con ella.
-
-            Nota para quien lea el historial de este archivo: esta forma se
-            alcanzó persiguiendo un fantasma. La automatización de interfaz
-            (UIA) no expone esta sección — ni el ComboBox ni el botón aparecen en
-            el árbol, con cualquiera de las tres estructuras que se probaron —, y
-            eso se leyó como "no se está construyendo". **Medido desde dentro de
-            la app, sí se construye**: con una sesión seleccionada, el botón mide
-            220x32 y es visible, y el panel 663 de alto. O sea que era un límite
-            de la herramienta de medición, no un defecto del layout. Queda dicho
-            para que nadie vuelva a reestructurar esta página por la misma señal
-            falsa: si algo "no aparece" en UIA, medí ActualWidth/ActualHeight
-            antes de tocar el XAML.
-        -->
-        <Grid x:Name="DetailPanel" Grid.Column="1" RowSpacing="12" Visibility="Collapsed">
-            <Grid.RowDefinitions>
-                <!--
-                    Fila estrella: lo que crece y, si no cabe, hace scroll.
-                    Fila Auto: la sección de re-extracción, fija abajo.
-                -->
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="12">
-
-                <!-- Cabecera -->
                 <StackPanel Spacing="4">
                     <TextBlock Text="{Binding SelectedSession.Title}"
-                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               Style="{StaticResource SectionTitleStyle}"
                                TextWrapping="Wrap" />
                     <TextBlock Text="{Binding SelectedSession.Subtitle}"
-                               TextWrapping="Wrap"
-                               Opacity="0.8" />
+                               Style="{StaticResource CaptionTextStyle}" />
                 </StackPanel>
 
-                <!-- Transcripción: acotada, con su propio scroll -->
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding TranscriptDetails}"
-                               TextWrapping="Wrap"
-                               Opacity="0.8" />
-                    <TextBox Text="{Binding Transcript, Mode=OneWay}"
-                             AcceptsReturn="True"
-                             IsReadOnly="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             Height="120" />
-                </StackPanel>
+                <Expander Grid.Row="1"
+                          Header="Transcripción"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{Binding TranscriptDetails}"
+                                   Style="{StaticResource CaptionTextStyle}" />
+                        <TextBox Text="{Binding Transcript, Mode=OneWay}"
+                                 AcceptsReturn="True"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 Height="140" />
+                    </StackPanel>
+                </Expander>
 
-                <!-- Reportes de la sesión. Varios por sesión: es el sentido del esquema. -->
-                <StackPanel Spacing="6">
+                <StackPanel Grid.Row="2" Spacing="6">
                     <TextBlock Text="Reportes de esta reunión"
-                               Style="{StaticResource SubtitleTextBlockStyle}" />
+                               Style="{StaticResource SectionTitleStyle}" />
                     <ListView ItemsSource="{Binding Reports}"
                               SelectedItem="{Binding SelectedReport, Mode=TwoWay}"
                               SelectionMode="Single"
-                              Height="110">
+                              Height="110"
+                              Background="Transparent"
+                              BorderThickness="0">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="vm:ReportListItem">
                                 <StackPanel Padding="0,6" Spacing="2">
                                     <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
                                     <TextBlock Text="{x:Bind Subtitle}"
-                                               Opacity="0.75"
-                                               FontSize="12" />
+                                               Style="{StaticResource CaptionTextStyle}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListView.ItemTemplate>
@@ -194,26 +156,33 @@
                             MinWidth="220" />
                 </StackPanel>
 
-                <!-- El audio archivado en el servidor (DevLog 018): el enlace de 15 min va directo al reproductor. -->
-                <StackPanel Spacing="6">
-                    <TextBlock Text="Audio" Style="{StaticResource SubtitleTextBlockStyle}" />
-                    <TextBlock Text="{Binding AudioHint}" TextWrapping="Wrap" Opacity="0.8" />
+                <StackPanel Grid.Row="3" Spacing="6">
+                    <TextBlock Text="Audio" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Text="{Binding AudioHint}" Style="{StaticResource CaptionTextStyle}" />
                     <Button Content="Escuchar" Command="{Binding ListenCommand}" HorizontalAlignment="Left" MinWidth="140" />
-                    <MediaPlayerElement x:Name="AudioPlayer" AreTransportControlsEnabled="True" Height="100" Visibility="Collapsed" />
+                    <MediaPlayerElement x:Name="AudioPlayer" AreTransportControlsEnabled="True" Height="80" Visibility="Collapsed" />
                 </StackPanel>
 
-                <!-- El reporte, como lo guardó el servidor (no desde el archivo del vault) -->
                 <TabView x:Name="ReportViewer"
+                         Grid.Row="4"
                          IsAddTabButtonVisible="False"
                          TabWidthMode="SizeToContent"
-                         Height="420"
+                         MinHeight="220"
+                         HorizontalAlignment="Stretch"
+                         VerticalAlignment="Stretch"
+                         HorizontalContentAlignment="Stretch"
+                         VerticalContentAlignment="Stretch"
                          SelectionChanged="ReportViewer_SelectionChanged">
-                    <TabViewItem Header="Vista previa" IsClosable="False">
+                    <TabViewItem Header="Vista previa" IsClosable="False"
+                                 HorizontalContentAlignment="Stretch"
+                                 VerticalContentAlignment="Stretch">
                         <WebView2 x:Name="ReportPreview"
                                   HorizontalAlignment="Stretch"
                                   VerticalAlignment="Stretch" />
                     </TabViewItem>
-                    <TabViewItem Header="Markdown" IsClosable="False">
+                    <TabViewItem Header="Markdown" IsClosable="False"
+                                 HorizontalContentAlignment="Stretch"
+                                 VerticalContentAlignment="Stretch">
                         <TextBox Text="{Binding SelectedReportMarkdown, Mode=OneWay}"
                                  AcceptsReturn="True"
                                  IsReadOnly="True"
@@ -223,45 +192,37 @@
                     </TabViewItem>
                 </TabView>
 
-                <!--
-                    Re-extracción. El texto del prompt va en un Expander cerrado: es
-                    útil poder revisarlo, pero no vale ocupar media pantalla de forma
-                    permanente en la fila que no crece.
-                -->
-                    </StackPanel>
-            </ScrollViewer>
-
-            <StackPanel Grid.Row="1" Spacing="8">
-                <TextBlock Text="Volver a extraer con otro prompt"
-                           Style="{StaticResource SubtitleTextBlockStyle}" />
-                <TextBlock Text="{Binding RegenerateHint}"
-                           TextWrapping="Wrap"
-                           Opacity="0.8" />
-                <ComboBox Header="Catálogo"
-                          ItemsSource="{Binding Prompts}"
-                          SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
-                          DisplayMemberPath="DisplayName"
-                          HorizontalAlignment="Stretch" />
-                <TextBlock Text="{Binding SelectedPromptDescription}"
-                           TextWrapping="Wrap"
-                           Opacity="0.8" />
-                <Expander Header="Ver el texto del prompt" HorizontalAlignment="Stretch">
-                    <TextBox Text="{Binding SelectedPromptText, Mode=OneWay}"
-                             AcceptsReturn="True"
-                             IsReadOnly="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             Height="160"
-                             FontFamily="Consolas" />
-                </Expander>
-                <Button Content="Generar reporte nuevo"
-                        Command="{Binding RegenerateReportCommand}"
-                        HorizontalAlignment="Left"
-                        MinWidth="220" />
-                <ProgressBar x:Name="BusyBar"
-                             IsIndeterminate="True"
-                             Visibility="Collapsed" />
-            </StackPanel>
-        </Grid>
+                <StackPanel Grid.Row="5" Spacing="8">
+                    <TextBlock Text="Volver a extraer con otro prompt"
+                               Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Text="{Binding RegenerateHint}"
+                               Style="{StaticResource CaptionTextStyle}" />
+                    <ComboBox Header="Catálogo"
+                              ItemsSource="{Binding Prompts}"
+                              SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
+                              DisplayMemberPath="DisplayName"
+                              HorizontalAlignment="Stretch" />
+                    <TextBlock Text="{Binding SelectedPromptDescription}"
+                               Style="{StaticResource CaptionTextStyle}" />
+                    <Expander Header="Ver el texto del prompt" HorizontalAlignment="Stretch">
+                        <TextBox Text="{Binding SelectedPromptText, Mode=OneWay}"
+                                 AcceptsReturn="True"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 Height="160"
+                                 FontFamily="Consolas" />
+                    </Expander>
+                    <Button Content="Generar reporte nuevo"
+                            Command="{Binding RegenerateReportCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            HorizontalAlignment="Left"
+                            MinWidth="220" />
+                    <ProgressBar x:Name="BusyBar"
+                                 IsIndeterminate="True"
+                                 Visibility="Collapsed" />
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Page>

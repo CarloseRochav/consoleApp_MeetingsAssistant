@@ -2634,6 +2634,9 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
   escuchar el audio archivado en un reproductor de la app (el enlace no pasa por el navegador);
   guardar en el vault un reporte del historial (p. ej. del teléfono). La base local guarda sólo
   vault, subcarpeta y token del endpoint; un botón borra las claves viejas de esta máquina.
+  **Apariencia (2026-11-11):** paleta de DevLog (pizarra, índigo, rojo) en tarjetas sobre Mica,
+  marca del micrófono en lugar del glifo de la plantilla, pastilla de estado en la cola, total de
+  costos en tipo grande y sin gráfica. La ventana de error de arranque sigue sin estilo, a propósito.
 - **Harness/CI:** offline (CI) `--verify-api-client` (29), `--verify-block-upload` (12),
   `--verify-wav-convert` (6), `--verify-device-auth` (18), `--verify-upload-queue` (39),
   `--verify-api-services` (18), más `--verify-settings-config` y `--verify-release`. Contra la API:

@@ -10,22 +10,30 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <ScrollViewer>
-        <StackPanel MaxWidth="520" Margin="32" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="16">
-            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Iniciar sesión" />
-            <TextBlock MaxWidth="480" TextWrapping="Wrap"
-                       Text="Meeting Assistant manda las grabaciones al servidor de DevLog, que las transcribe y escribe el reporte. Inicia sesión una vez con tu usuario de DevLog: esta máquina recibe su propio token (se guarda cifrado para tu usuario de Windows) y la contraseña no se guarda." />
+    <Grid>
+        <Border MaxWidth="440"
+                Margin="32"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Style="{StaticResource CardBorderStyle}">
+            <StackPanel Spacing="14">
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Iniciar sesión" />
+                <TextBlock Style="{StaticResource BodyCopyStyle}"
+                           Text="Tu usuario de DevLog, una vez en esta máquina. El servidor transcribe y escribe el reporte." />
 
-            <InfoBar x:Name="ReasonInfo" IsClosable="False" IsOpen="False" Severity="Warning" />
+                <InfoBar x:Name="ReasonInfo" IsClosable="False" IsOpen="False" Severity="Warning" />
 
-            <TextBox x:Name="UsernameBox" Header="Usuario" />
-            <PasswordBox x:Name="PasswordBox" Header="Contraseña" KeyDown="PasswordBox_KeyDown" />
-            <TextBlock x:Name="DeviceText" MaxWidth="480" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button x:Name="SignInButton" Content="Iniciar sesión" Style="{StaticResource AccentButtonStyle}" Click="SignInButton_Click" />
-                <ProgressRing x:Name="Busy" IsActive="False" Width="20" Height="20" />
+                <TextBox x:Name="UsernameBox" Header="Usuario" />
+                <PasswordBox x:Name="PasswordBox" Header="Contraseña" KeyDown="PasswordBox_KeyDown" />
+                <TextBlock x:Name="DeviceText" Style="{StaticResource CaptionTextStyle}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="SignInButton" Content="Iniciar sesión" Style="{StaticResource PrimaryButtonStyle}" Click="SignInButton_Click" />
+                    <ProgressRing x:Name="Busy" IsActive="False" Width="20" Height="20" />
+                </StackPanel>
+                <TextBlock x:Name="ResultText" Style="{StaticResource BodyCopyStyle}" />
+                <TextBlock Style="{StaticResource CaptionTextStyle}"
+                           Text="Esta máquina recibe su propio token, cifrado para tu usuario de Windows. La contraseña no se guarda." />
             </StackPanel>
-            <TextBlock x:Name="ResultText" MaxWidth="480" TextWrapping="Wrap" />
-        </StackPanel>
-    </ScrollViewer>
+        </Border>
+    </Grid>
 </Window>

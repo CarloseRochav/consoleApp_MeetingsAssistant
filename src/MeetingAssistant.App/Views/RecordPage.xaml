@@ -7,86 +7,150 @@
     xmlns:views="using:MeetingAssistant.App.Views"
     xmlns:vm="using:MeetingAssistant.App.ViewModels"
     mc:Ignorable="d">
-    <ScrollViewer Padding="32">
-        <StackPanel Spacing="16" MaxWidth="880">
-            <TextBlock Text="Grabar reunión" Style="{StaticResource TitleTextBlockStyle}" />
-            <TextBlock Text="Graba (o elige un audio existente) y la reunión se envía al servidor, que la transcribe y escribe el reporte. El .md llega al vault de Obsidian (carpeta MeetingReports). Sin conexión se graba igual: se envía después, también tras reiniciar."
-                       TextWrapping="Wrap" />
-            <TextBlock Text="{Binding SessionText}" TextWrapping="Wrap" Opacity="0.75" />
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="{Binding ButtonText}"
-                        Command="{Binding ToggleRecordingCommand}"
-                        Style="{StaticResource AccentButtonStyle}"
-                        MinWidth="180" />
-                <Button Content="Procesar audio existente"
-                        Click="ProcessExistingAudio_Click"
-                        IsEnabled="{Binding CanLoadExternalSource}"
-                        MinWidth="180" />
-            </StackPanel>
-            <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
-            <views:ErrorPanel Details="{Binding ErrorDetails}" />
+    <Grid Padding="24" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-            <Grid ColumnSpacing="8">
+        <Border Style="{StaticResource CardBorderStyle}">
+            <Grid ColumnSpacing="24">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Reuniones" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Content="Enviar ahora" Command="{Binding SendNowCommand}" />
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Grabar" Style="{StaticResource PageTitleStyle}" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Ellipse Width="12" Height="12" VerticalAlignment="Center"
+                                 Fill="{Binding StageTone, Converter={StaticResource StatusToneBrush}, ConverterParameter=Foreground}" />
+                        <TextBlock Text="{Binding StageTitle}" Style="{StaticResource HeroFigureStyle}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource BodyCopyStyle}" />
+                    <TextBlock Text="{Binding SessionText}" Style="{StaticResource CaptionTextStyle}" />
+                    <TextBlock Style="{StaticResource CaptionTextStyle}"
+                               Text="El audio se envía al servidor y el .md llega al vault (carpeta MeetingReports). Sin conexión se graba igual: se envía después, también tras reiniciar." />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center" MinWidth="220">
+                    <Button Content="{Binding ButtonText}"
+                            Command="{Binding ToggleRecordingCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            HorizontalAlignment="Stretch" />
+                    <Button Content="Procesar audio existente"
+                            Click="ProcessExistingAudio_Click"
+                            IsEnabled="{Binding CanLoadExternalSource}"
+                            HorizontalAlignment="Stretch" />
+                    <views:ErrorPanel Details="{Binding ErrorDetails}" />
+                </StackPanel>
             </Grid>
-            <TextBlock Text="Cada grabación pasa por: esperando → enviando → en el servidor → escribiendo el reporte → listo. Si algo pasajero lo frena (sin red, el tope diario), se dice por qué y se reintenta solo."
-                       TextWrapping="Wrap" Opacity="0.7" FontSize="12" />
-            <ListView x:Name="MeetingList"
-                      ItemsSource="{Binding Meetings}"
-                      SelectedItem="{Binding SelectedMeeting, Mode=TwoWay}"
-                      SelectionMode="Single"
-                      MaxHeight="360">
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="vm:QueueItemViewModel">
-                        <Grid Padding="0,8" ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="{x:Bind Title, Mode=OneWay}" TextWrapping="Wrap" FontWeight="SemiBold" />
-                                <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" TextWrapping="Wrap" />
-                                <ProgressBar Value="{x:Bind Progress, Mode=OneWay}" Maximum="100" Visibility="{x:Bind IsUploading, Mode=OneWay}" />
-                                <TextBlock Text="{x:Bind Detail, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" Opacity="0.75" IsTextSelectionEnabled="True" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                                <Button Content="Abrir" Tag="{x:Bind}" Click="OpenReport_Click" Visibility="{x:Bind CanOpen, Mode=OneWay}" />
-                                <Button Content="Reintentar" Tag="{x:Bind}" Click="Retry_Click" Visibility="{x:Bind CanRetry, Mode=OneWay}" />
-                                <Button Content="Quitar" Tag="{x:Bind}" Click="Remove_Click" Visibility="{x:Bind CanRemove, Mode=OneWay}" />
-                            </StackPanel>
-                        </Grid>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
+        </Border>
 
-            <TextBlock Text="Reporte" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <TextBlock Text="El de la reunión elegida en la lista, leído del .md del vault." Opacity="0.7" FontSize="12" />
-            <TabView x:Name="ReportViewer"
-                     IsAddTabButtonVisible="False"
-                     TabWidthMode="SizeToContent"
-                     MinHeight="420"
-                     SelectionChanged="ReportViewer_SelectionChanged">
-                <TabViewItem Header="Vista previa" IsClosable="False">
-                    <WebView2 x:Name="ReportPreview"
-                              MinHeight="380"
-                              HorizontalAlignment="Stretch"
-                              VerticalAlignment="Stretch" />
-                </TabViewItem>
-                <TabViewItem Header="Markdown" IsClosable="False">
-                    <TextBox Text="{Binding LastGeneratedReport, Mode=OneWay}"
-                             AcceptsReturn="True"
-                             IsReadOnly="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             MinHeight="380"
-                             FontFamily="Consolas" />
-                </TabViewItem>
-            </TabView>
-        </StackPanel>
-    </ScrollViewer>
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="360" MinWidth="280" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource CardBorderStyle}">
+                <Grid RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Reuniones" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Enviar ahora" Command="{Binding SendNowCommand}" />
+                    </Grid>
+                    <TextBlock Grid.Row="1"
+                               Style="{StaticResource CaptionTextStyle}"
+                               Text="Esperando, enviando, en el servidor, escribiendo el reporte, listo. Si algo pasajero lo frena, se dice por qué y se reintenta solo." />
+                    <ListView x:Name="MeetingList"
+                              Grid.Row="2"
+                              ItemsSource="{Binding Meetings}"
+                              SelectedItem="{Binding SelectedMeeting, Mode=TwoWay}"
+                              SelectionMode="Single"
+                              Background="Transparent"
+                              BorderThickness="0">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:QueueItemViewModel">
+                                <Grid Padding="0,8" ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{x:Bind Title, Mode=OneWay}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                        <Border Background="{Binding StatusTone, Converter={StaticResource StatusToneBrush}, ConverterParameter=Surface}"
+                                                CornerRadius="10"
+                                                Padding="8,2"
+                                                HorizontalAlignment="Left">
+                                            <TextBlock Text="{x:Bind StatusText, Mode=OneWay}"
+                                                       FontSize="12"
+                                                       Foreground="{Binding StatusTone, Converter={StaticResource StatusToneBrush}, ConverterParameter=Foreground}" />
+                                        </Border>
+                                        <ProgressBar Value="{x:Bind Progress, Mode=OneWay}" Maximum="100" Visibility="{x:Bind IsUploading, Mode=OneWay}" />
+                                        <TextBlock Text="{x:Bind Detail, Mode=OneWay}"
+                                                   TextWrapping="Wrap"
+                                                   Style="{StaticResource CaptionTextStyle}"
+                                                   IsTextSelectionEnabled="True" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <Button Content="Abrir" Tag="{x:Bind}" Click="OpenReport_Click" Visibility="{x:Bind CanOpen, Mode=OneWay}" />
+                                        <Button Content="Reintentar" Tag="{x:Bind}" Click="Retry_Click" Visibility="{x:Bind CanRetry, Mode=OneWay}" />
+                                        <Button Content="Quitar" Tag="{x:Bind}" Click="Remove_Click" Visibility="{x:Bind CanRemove, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}">
+                <Grid RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Reporte" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Grid.Row="1"
+                               Style="{StaticResource CaptionTextStyle}"
+                               Text="El de la reunión elegida en la lista, leído del .md del vault." />
+                    <TabView x:Name="ReportViewer"
+                             Grid.Row="2"
+                             IsAddTabButtonVisible="False"
+                             TabWidthMode="SizeToContent"
+                             HorizontalAlignment="Stretch"
+                             VerticalAlignment="Stretch"
+                             HorizontalContentAlignment="Stretch"
+                             VerticalContentAlignment="Stretch"
+                             SelectionChanged="ReportViewer_SelectionChanged">
+                        <TabViewItem Header="Vista previa" IsClosable="False"
+                                     HorizontalContentAlignment="Stretch"
+                                     VerticalContentAlignment="Stretch">
+                            <WebView2 x:Name="ReportPreview"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch" />
+                        </TabViewItem>
+                        <TabViewItem Header="Markdown" IsClosable="False"
+                                     HorizontalContentAlignment="Stretch"
+                                     VerticalContentAlignment="Stretch">
+                            <TextBox Text="{Binding LastGeneratedReport, Mode=OneWay}"
+                                     AcceptsReturn="True"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" />
+                        </TabViewItem>
+                    </TabView>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
 </Page>

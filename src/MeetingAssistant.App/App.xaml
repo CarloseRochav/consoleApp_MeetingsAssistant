@@ -8,9 +8,47 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
+                <ResourceDictionary Source="Themes/AppTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+
+            <!--
+                Estos estilos quedan aquí, no en AppTheme.xaml: un diccionario
+                cargado con Source no ve las claves de XamlControlsResources.
+            -->
+            <Style x:Key="PageTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource AppHeadingBrush}" />
+            </Style>
+            <Style x:Key="SectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource AppHeadingBrush}" />
+            </Style>
+            <Style x:Key="BodyCopyStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="CaptionTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource AppMutedBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="HeroFigureStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="32" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{ThemeResource AppHeadingBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="CardBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource AppCardBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource AppCardBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="Padding" Value="20" />
+            </Style>
+            <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="16,8" />
+            </Style>
+            <Style TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

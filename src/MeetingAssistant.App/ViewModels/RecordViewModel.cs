@@ -47,6 +47,10 @@ public sealed partial class QueueItemViewModel : ObservableObject
     [ObservableProperty]
     private bool isFailed;
 
+    /// <summary>waiting, uploading, processing, ready o failed. El color lo resuelve el tema.</summary>
+    [ObservableProperty]
+    private string statusTone = "waiting";
+
     [ObservableProperty]
     private bool canRetry;
 
@@ -84,6 +88,14 @@ public sealed partial class QueueItemViewModel : ObservableObject
         };
         IsUploading = meeting.Status == QueuedMeetingStatus.Uploading;
         IsFailed = meeting.Status == QueuedMeetingStatus.Failed;
+        StatusTone = meeting.Status switch
+        {
+            QueuedMeetingStatus.Uploading => "uploading",
+            QueuedMeetingStatus.Processing or QueuedMeetingStatus.WritingReport => "processing",
+            QueuedMeetingStatus.Ready => "ready",
+            QueuedMeetingStatus.Failed => "failed",
+            _ => "waiting"
+        };
         CanRetry = meeting.Status != QueuedMeetingStatus.Ready;
         CanRemove = meeting.IsFinished;
         CanOpen = meeting.Status == QueuedMeetingStatus.Ready && meeting.ReportPath is { } path && File.Exists(path);
@@ -112,10 +124,14 @@ public partial class RecordViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ButtonText))]
     [NotifyPropertyChangedFor(nameof(CanLoadExternalSource))]
+    [NotifyPropertyChangedFor(nameof(StageTitle))]
+    [NotifyPropertyChangedFor(nameof(StageTone))]
     private bool isRecording;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanLoadExternalSource))]
+    [NotifyPropertyChangedFor(nameof(StageTitle))]
+    [NotifyPropertyChangedFor(nameof(StageTone))]
     [NotifyCanExecuteChangedFor(nameof(ToggleRecordingCommand))]
     private bool isProcessing;
 
@@ -138,6 +154,12 @@ public partial class RecordViewModel : ObservableObject
     public ObservableCollection<QueueItemViewModel> Meetings { get; } = [];
 
     public string ButtonText => IsRecording ? "Detener grabación" : "Grabar reunión";
+
+    /// <summary>La palabra grande de la tarjeta de grabación.</summary>
+    public string StageTitle => IsRecording ? "Grabando" : IsProcessing ? "Guardando" : "Listo";
+
+    /// <summary>waiting no aplica: uploading mientras graba, processing mientras guarda, ready en reposo.</summary>
+    public string StageTone => IsRecording ? "uploading" : IsProcessing ? "processing" : "ready";
 
     public bool CanLoadExternalSource => !IsRecording && !IsProcessing;
 

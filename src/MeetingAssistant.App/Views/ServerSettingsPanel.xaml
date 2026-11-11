@@ -24,7 +24,7 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <Button Content="Guardar en el servidor" Command="{Binding SaveCommand}" Style="{StaticResource AccentButtonStyle}" />
+        <Button Content="Guardar en el servidor" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" />
         <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" MaxWidth="600" Opacity="0.8" />
         <views:ErrorPanel Details="{Binding ErrorDetails}" />
     </StackPanel>

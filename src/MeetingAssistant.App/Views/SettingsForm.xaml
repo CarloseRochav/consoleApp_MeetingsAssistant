@@ -45,7 +45,7 @@
                 Margin="0,16,0,0"
                 Click="SaveButton_Click"
                 Content="Guardar cambios"
-                Style="{StaticResource AccentButtonStyle}" />
+                Style="{StaticResource PrimaryButtonStyle}" />
         <TextBlock x:Name="SaveStatusText" MaxWidth="600" Opacity="0.75" TextWrapping="Wrap" />
         <views:ErrorPanel x:Name="SaveErrorPanel" />
 

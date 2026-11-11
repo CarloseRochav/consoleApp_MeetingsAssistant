@@ -12,27 +12,27 @@
     </Window.SystemBackdrop>
 
     <ScrollViewer>
-        <StackPanel
+        <Border
             MaxWidth="640"
             Margin="32"
-            HorizontalAlignment="Left"
+            HorizontalAlignment="Center"
             VerticalAlignment="Top"
-            Spacing="16">
+            Style="{StaticResource CardBorderStyle}">
+            <StackPanel Spacing="16">
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Configuración inicial" />
+                <TextBlock
+                    Style="{StaticResource BodyCopyStyle}"
+                    Text="A esta instalación le faltan valores de esta máquina (dónde escribir los reportes). No hay claves de proveedor que escribir: la app habla con el servidor de DevLog, y después se inicia sesión con tu usuario." />
 
-            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Configuración inicial" />
-            <TextBlock
-                MaxWidth="600"
-                TextWrapping="Wrap"
-                Text="A esta instalación le faltan valores de esta máquina (dónde escribir los reportes). No hay claves de proveedor que escribir: la app habla con el servidor de DevLog, y después se inicia sesión con tu usuario." />
+                <InfoBar
+                    x:Name="MissingInfo"
+                    Title="Falta"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Warning" />
 
-            <InfoBar
-                x:Name="MissingInfo"
-                Title="Falta"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Warning" />
-
-            <views:SettingsForm x:Name="Form" />
-        </StackPanel>
+                <views:SettingsForm x:Name="Form" />
+            </StackPanel>
+        </Border>
     </ScrollViewer>
 </Window>
