@@ -169,6 +169,21 @@ internal static class ApiCommands
         return await FollowAsync(queue, meeting.Id, clock);
     }
 
+    /// <summary>Retoma lo pendiente de la cola del harness (p. ej. tras matar el proceso a mitad de una subida).</summary>
+    public static async Task<int> ResumeAsync(IConfiguration configuration, IReadOnlyList<string> arguments)
+    {
+        if (!TrySession(configuration, out IDevLogApi api, out DeviceAuthService auth, out _)) return 1;
+        (MeetingUploadQueue queue, _) = CreatePipeline(api, auth, VaultOf(arguments));
+        int failures = 0;
+        foreach (QueuedMeeting pending in queue.Items.Where(item => !item.IsFinished))
+        {
+            Console.WriteLine($"Retomando {pending.Id}: {pending.Status}, trabajo {pending.IdJob}, bloques ya enviados [{string.Join(",", pending.SentBlocks)}] de {AzureBlockUploader.BlockCount(pending.TotalBytes, pending.BlockBytes > 0 ? pending.BlockBytes : MeetingUploadQueue.DefaultBlockBytes)}.");
+            if (await FollowAsync(queue, pending.Id, Stopwatch.StartNew()) != 0) failures++;
+        }
+
+        return failures == 0 ? 0 : 1;
+    }
+
     /// <summary>Re-extraer una sesión de verdad con otro prompt (Jobs opción 2). Cobra el LLM.</summary>
     public static async Task<int> ReextractAsync(IConfiguration configuration, IReadOnlyList<string> arguments)
     {

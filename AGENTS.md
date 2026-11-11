@@ -3,46 +3,56 @@
 ## Project overview
 
 Personal AI assistant for work-assignment meetings. Records audio
-(loopback + microphone), transcribes it (Deepgram Nova-3), extracts a
-structured report via an LLM (Gemini Flash-Lite or DeepSeek via Azure
-Foundry, swappable by config), and saves it as Markdown into an Obsidian
-vault. Windows desktop app (WinUI 3) — not cross-platform, don't try to
-make it portable.
+(loopback + microphone) and saves a structured report as Markdown into an
+Obsidian vault. Since Phase 8 step B (2026-11-10) the desktop is a **thin
+client of the DevLog API**: it records, converts to 16 kHz, uploads, follows
+the job and writes the `.md`; transcription (Deepgram Nova-3) and extraction
+(LLM) run in the server's worker. No provider key and no database connection
+string on the machine. Windows desktop app (WinUI 3) — not cross-platform,
+don't try to make it portable.
 
 ## Stack
 
 .NET 10, C#, WinUI 3 (Windows App SDK 2.3.1), CommunityToolkit.Mvvm,
-NAudio (WASAPI), Deepgram SDK, Google GenAI SDK, Azure.Identity + OpenAI
-SDK (for Azure AI Foundry), `System.Net.HttpListener` for the local
-control endpoint.
+NAudio (WASAPI capture, 16 kHz conversion), `HttpClient` + System.Text.Json
+for the DevLog API and the Azure block upload (no Azure SDK in the app),
+SQLite for this machine's settings, `System.Net.HttpListener` for the local
+control endpoint. The harness alone keeps Npgsql (final import) and
+Azure.Storage.Blobs (publishing the installer).
 
 ## Architecture — non-negotiable rule
 
-`src/MeetingAssistant.Core` must NOT reference ANY provider-specific
-NuGet package (no NAudio, Deepgram, Google.GenAI, Azure.Identity,
-Azure.Storage.Blobs, Npgsql, OpenAI).
-Plain C# and interfaces only. Check `Core.csproj` before considering any
-task done — if it has a provider reference, something went wrong.
+`src/MeetingAssistant.Core` must NOT reference ANY NuGet package (no NAudio,
+Deepgram, Google.GenAI, Azure.*, Npgsql, OpenAI). Plain C# and interfaces
+only (System.Text.Json attributes are part of the runtime, not a package).
+Check `Core.csproj` before considering any task done — CI checks it too.
 
 ```
-Core/Models         → MeetingReport, TaskItem, Priority (schema + robust parsing)
-Core/Abstractions    → interfaces + pure orchestration. ILlmClient,
-                       ITranscriptionClient, IAudioCaptureService,
-                       IReportStorage, ILlmReportExtractor, IMeetingPipeline
-                       (the last one DOES have an implementation here —
-                       it only composes abstractions, no SDKs, doesn't
-                       break the rule)
-Infrastructure       → concrete adapters: Llm/, Transcription/, Audio/,
-                       Storage/, Api/, Cost/
+Core/Models          → DevLog API models (ApiSession, ApiReport, JobRow...),
+                       ApiResult/ApiError, QueuedMeeting, SessionSource
+Core/Abstractions    → IDevLogApi, IDeviceSessionStore, IAudioUploader,
+                       IAudioConverter, IQueuedMeetingStore, IAudioCaptureService,
+                       IReportStorage, IRecordingTrigger, ISettingsStore,
+                       SettingKeyPolicy
+Core/Services        → pure orchestration over those interfaces:
+                       DeviceAuthService (login once → device token; 401 =
+                       revoked), MeetingUploadQueue (the phone's pipeline:
+                       job, blocks with resume, confirm, follow, report → vault),
+                       MeetingRecorder (capture → 16 kHz → queue), and the
+                       history / costs / prompts / server-settings services
+Infrastructure       → Api/ (DevLogApiClient, AzureBlockUploader,
+                       LocalRecordingApiServer), Audio/ (capture,
+                       UploadAudioConverter), Storage/ (vault Markdown, JSON
+                       queue, DPAPI device file, SQLite settings)
 App                  → WinUI 3 shell (MVVM, CommunityToolkit.Mvvm).
                        App/Startup: ConfigurationBootstrapper (the config
                        layers), ServiceRegistration (composition root, one
-                       method per area), BackgroundMaintenance, AppLog,
-                       AppPaths. App.xaml.cs is only the lifecycle.
-Harness              → end-to-end test console. Every command is an entry in
+                       method per area), BackgroundMaintenance (queue, network,
+                       Select_Me), AppLog, AppPaths. App.xaml.cs is only the
+                       lifecycle (setup → sign-in → main window).
+Harness              → test console. Every command is an entry in
                        Commands/CommandCatalog.cs (Command pattern); `--help`
-                       lists them. Provider clients for App and Harness come
-                       from Infrastructure/ProviderClientFactory.cs.
+                       lists them.
 ```
 
 `Infrastructure` references `Core`. `App`/`Harness` reference both. Never
@@ -62,49 +72,43 @@ never merge it or keep building it.
   secrets: it copies the `*.example.json` files. A new offline self-test goes
   into its list. Smart App Control on the dev machine can block freshly built
   harness DLLs (`0x800711C7`); when that happens, CI is where the tests run.
-- Test console (records N seconds, runs the full pipeline):
-  `dotnet run --project src/MeetingAssistant.Harness -- 15`
+- Test console (records N seconds and sends it to the DevLog API like the
+  app; charges): `dotnet run --project src/MeetingAssistant.Harness -- 15`
 - Real app: `dotnet run --project src/MeetingAssistant.App` (requires
-  Developer Mode enabled on Windows)
-- Self-tests, all in the harness, all safe to run (temp DBs, never the real
-  one): `--verify-render`, `--verify-db-selftest`, `--verify-settings-config`,
-  `--verify-reextraction`, `--verify-archive`, `--verify-prompts`,
-  `--verify-pipeline-history <wav>` (this last one makes real Deepgram and LLM
-  calls). `--verify-blob-upload` uploads two small files to the configured
-  Azure Storage account, reads them back and deletes them. `--verify-postgres`
-  runs one store contract against a temp SQLite file and against the configured
-  Postgres, in a throwaway schema it drops afterwards; `--verify-cloud-settings`
-  does the same for the settings layer. `--verify-migration`,
-  `--verify-retention`, `--verify-retry` and `--verify-keyterms` are offline. `--audio-retention <days>` reports which
-  local WAVs would be deleted, checking the real cloud; it deletes only with
-  `--apply`.
-  `--migrate-to-postgres` only simulates unless `--apply` is passed;
-  `--migrate-to-devlog <idUser> [--apply]` copies the Postgres history into
-  DevLog_Backend's `mtg` schema (Fase 8) through its `mtg_import_*` functions,
-  target `DevLog__ConnectionString`; it also only counts without `--apply`, and
-  must not run again once the API creates meetings itself (DevLog's CLAUDE.md,
-  "Cutover rule");
-  `--set-cloud-setting` and `--list-cloud-settings` touch the REAL cloud
-  settings.
-- When isolating a test in its own Postgres schema, never rely on the
-  `search_path` connection-string parameter: Neon's proxy drops it silently and
-  the test writes to `public`. `PostgresDatabase` sets it per connection and
-  verifies `current_schema()`. `--verify-db` inspects the REAL databases
-  read-only (the local SQLite, where settings always live, and the Postgres
-  history if a connection string is configured); `--set-setting <key> [value]` writes one setting into it (omit the
-  value to delete the key).
+  Developer Mode enabled on Windows). First run asks for the DevLog login.
+- Offline self-tests (CI runs them; no network, fake transport): `--verify-api-client`,
+  `--verify-block-upload`, `--verify-wav-convert`, `--verify-device-auth`,
+  `--verify-upload-queue` (also runs the real background loop),
+  `--verify-api-services`, `--verify-settings-config`, `--verify-release`.
+  `--verify-long-audio [min]` is offline but writes hundreds of MB (not in CI);
+  `--verify-capture [s]` records with the real devices and uploads nothing.
+- Against the REAL DevLog API: `--api-signin <user>` gives the harness its own
+  device (`harness-MACHINE`); without one it uses the app's device on this
+  machine. `--verify-api` is read-only. `--api-process-file <wav>`,
+  `--api-resume` and `--api-reextract <idSession> <promptId>` run real jobs
+  (they charge) and write to `local-vault/` unless `--vault` is given.
+- `--migrate-to-devlog <idUser> [--apply]` is the owner's final import (old
+  Postgres → DevLog `mtg`, target `DevLog__ConnectionString`). It compares row
+  by row and refuses `--apply` if any DevLog row would change (the import
+  upserts by source id and the API creates its own rows since 2026-10-19).
+  `--verify-db` inspects the REAL local settings database read-only;
+  `--set-setting <key> [value]` writes one setting into it (omit the value to
+  delete the key).
+
 
 - Installer for other machines: `installer/Build-Release.ps1 [-Publish]` bumps
   the version in `Package.appxmanifest` (commit it), builds a signed,
   self-contained Release `.msix` into `artifacts/release/<version>/` (ignored),
-  and refuses to continue if the package contains `appsettings.json`.
+  and refuses to continue if the package contains `appsettings.json`, a
+  provider or database assembly, or a key name in its defaults.
   `--publish-release <folder> [--apply]` uploads it to the private `releases`
   container and writes the `.appinstaller` with a read-only SAS link;
   `--verify-release` is offline. The install command it prints carries that
   link: never paste it into a tracked file.
 - The packaged config layer is two files: `appsettings.defaults.json` (tracked,
   no secrets, ships in every package) and `appsettings.json` (real keys, Debug
-  only, never in a Release package). A machine missing required settings opens
+  only, never in a Release package; since step B it holds no provider key). A
+  machine missing required settings (vault, `DevLog:BaseUrl`) opens
   `SetupWindow` instead of the startup-error window.
 
 **Use `dotnet run` — not `dotnet build` — to test a change in the real app.**
@@ -121,19 +125,22 @@ console that launches it (the shell broker activates it). The
 ## Non-negotiable conventions
 
 - Configuration is stacked `IConfiguration` layers, in this order:
-  packaged `appsettings.json` → legacy per-user JSON (T9; migrated into the
-  database on first run and replaced by a redacted copy) → SQLite `setting`
-  table → cloud settings from Postgres (only when `Configuration:Source =
-  Database`) → environment variables. **Environment variables stay on top**: they
-  are the escape hatch when a bad stored value prevents startup. Don't reorder
-  it, and don't replace `IConfiguration` with the database — the whole point is
-  that `ReadRequiredSetting`, `StartupConfigurationValidator` and
-  `ConfigPricingCostEstimator` never learn the database exists. Whether a key is
-  a secret (and therefore DPAPI-encrypted) is decided in ONE place,
-  `Core/Abstractions/SettingKeyPolicy.cs` — never inline at a call site. The
-  same file decides which keys may live in the cloud database
-  (`CanLiveInCloud`): never a secret, never a machine-local path, never the
-  keys that say where the cloud is. It is enforced on write AND on read.
+  packaged `appsettings.defaults.json` + `appsettings.json` → legacy per-user
+  JSON (T9; migrated into the database on first run and replaced by a redacted
+  copy) → SQLite `setting` table (this machine only: vault, hotkey, local
+  endpoint token) → environment variables. Since step B there is no cloud
+  layer: shared settings (provider, model, keyterms, audio retention) live in
+  the DevLog API, in the user's own layer, and are edited through it (never a
+  secret, never `Pricing:*`). **Environment variables stay on top**: they are
+  the escape hatch when a bad stored value prevents startup (e.g. a user-level
+  `DevLog__BaseUrl`). Don't reorder it, and don't replace `IConfiguration` with
+  the database. Whether a key is a secret (and therefore DPAPI-encrypted) is
+  decided in ONE place, `Core/Abstractions/SettingKeyPolicy.cs` — never inline
+  at a call site.
+- The device token (`device.json`) and the upload link in each queue file are
+  credentials: DPAPI on disk, `[redacted]` in every `ToString`, never logged.
+  The password is never stored: it travels in one request from a `char[]` that
+  is cleared.
 - The real `appsettings.json` is NEVER committed — only
   `appsettings.example.json` with placeholders. Any new
   `appsettings.json` (new project, new path) must be explicitly checked
