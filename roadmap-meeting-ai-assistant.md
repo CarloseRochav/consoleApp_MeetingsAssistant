@@ -2559,9 +2559,13 @@ contrato en el `CLAUDE.md` de DevLog ("Audio archive").
   `devlog-api:c2217e0` (antes `fa253c9`), revisión `ca-devlog-api--0000008` lista, anónimo → 401,
   sana. La imagen del worker `meeting-assistant-worker:27397f8` se subió al registro, pero el job
   `caj-mtg-worker` **no se actualizó** (falta `-Step Worker`, después del PR del worker).
+  **Comprobado con la API nueva (2026-11-10, 16:54-16:58):** la misma prueba del teléfono, 3/3:
+  71 s de audio, 2.28 MB, reporte 130 s después de parar (trabajo 40, sesión 53). La subida empezó
+  ≈27 s después de parar (antes, en seguida); el procesamiento tardó lo mismo (≈93 s). Causa no
+  investigada; una sola corrida.
 
-**Worker, archivo del audio (2026-11-10, rama `audio-archive`, PR #6 del worker, sin mergear ni desplegar):**
-tres decisiones del 2026-11-10 en `decision-log.md` (pendientes de confirmar por el dueño).
+**Worker, archivo del audio (2026-11-10, rama `audio-archive`, PR #6 del worker, mergeado (`f596b1a`) y desplegado por el dueño el 2026-11-10 (`caj-mtg-worker` corre `meeting-assistant-worker:f596b1a`, Succeeded; modificado 03:41 UTC del 11 = 19:41 local); ninguna corrida todavía con el worker nuevo):**
+tres decisiones del 2026-11-10 en `decision-log.md` (confirmadas por el dueño el 2026-11-10).
 - Al marcar `done` ya no borra el WAV (la base lo archiva en ese paso). Un trabajo fallido conserva
   su audio sin vencimiento; la re-extracción no cambia.
 - `ExpiredAudioCleanup`: al empezar cada corrida, después del catálogo y antes de tomar trabajos
@@ -2578,6 +2582,14 @@ tres decisiones del 2026-11-10 en `decision-log.md` (pendientes de confirmar por
   frena; base caída. **No probado:** producción, Neon, la cuenta real de Storage.
 - **Hallazgo:** un borrado contra Storage inalcanzable gasta los reintentos del SDK (varios
   segundos cada uno): de ahí el corte tras 3 fallos seguidos.
+- **Comprobado en producción (2026-11-10, 19:47-19:51 local), primera corrida del worker nuevo:**
+  reunión desde el teléfono con `tools\Test-MeetingReport.ps1` (57 s de voz, 76 s de audio), 3/3,
+  reporte 132 s después de parar (trabajo 41, sesión 54; corrida `caj-mtg-worker-qfwsl`, Succeeded).
+  **El audio se conservó:** el blob más nuevo de `uploads` (creado 03:49:29 UTC) pesa 2,435,244
+  bytes, lo mismo que subió el teléfono, y sigue ahí tras `done` (03:51); los de los trabajos 39 y
+  40 (worker anterior) ya no están. Revisado sólo nombre, tamaño y fecha. **No medido:** el
+  `audio_expires_at` de la fila (pide la base o el token del teléfono), el link de escucha y una
+  limpieza real (nada vence antes de 30 días).
 
 **Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
 DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:
