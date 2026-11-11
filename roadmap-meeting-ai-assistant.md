@@ -2690,10 +2690,16 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
   (`Devices/InsertUpdate_Devices` opción 1; DevLog no tiene pantalla para esto). En la app, Historial
   → Actualizar: 401 → aviso «Sesión cerrada por el servidor» → sesión cerrada (Revoked) → ventana de
   inicio de sesión (12:39:52); volvió a entrar a las 12:40:13 → dispositivo nuevo, idDevice 7.
-- **No medido:** una llamada de Teams (lo grabado fue voz de texto a voz por los altavoces), una
-  captura real de más de 100 min, y las páginas a mano (Historial, Costos, Configuración: sus
-  servicios se probaron contra producción con `--verify-api`, pero la pantalla no la vio nadie más
-  que el dueño, sin reporte de lo que vio). El dispositivo 6 queda revocado en DevLog.
+- **Llamada real (el dueño, 2026-11-11 12:53):** una llamada de WhatsApp grabada desde la ventana,
+  36 s → 1,0 MB a 16 kHz → trabajo 49, sesión 59, reporte 54, `.md` en el vault ≈90 s después de
+  parar. Dueño: "works". Fue WhatsApp, no Teams (mismo camino: loopback + micrófono).
+- **Captura real de más de 100 min: no se hace, por decisión del dueño (2026-11-11).** Queda la
+  prueba sintética (110 min → 201 MB) y la cuenta del límite (≈9,3 h a 16 kHz).
+- **No medido:** las páginas a mano (Historial, Costos, Configuración): sus servicios se probaron
+  contra producción con `--verify-api`, sin un reporte del dueño de cada pantalla.
+- **Dispositivos viejos:** `tools\Revoke-OldDevices.ps1` (lo corre el dueño, con su login) revoca
+  los dispositivos activos de esta máquina (`CHARLIE`, `harness-CHARLIE`) salvo el que usa la app;
+  sin `-Apply` sólo lista. El 6 ya está revocado; la app usa el 7.
 - **Visto una vez, sin explicar:** la primera grabación con el hotkey mientras sonaba un WAV de 47 MB
   (`SoundPlayer`) salió vacía (sólo cabecera) y la reproducción se cortó a los 13 s. No se repitió
   (10 s sin audio: 829 KB; 40 s con audio: 3,8 MB). La captura no cambió en este paso.
