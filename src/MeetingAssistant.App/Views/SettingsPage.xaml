@@ -16,6 +16,13 @@
 
             <TextBlock Text="Configuración" Style="{StaticResource TitleTextBlockStyle}" />
 
+            <!-- Este dispositivo en la API de DevLog (paso B). -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Cuenta y dispositivo" />
+            <TextBlock x:Name="DeviceText" MaxWidth="600" TextWrapping="Wrap" />
+            <Button x:Name="SignOutButton" Content="Cerrar sesión en esta máquina" Click="SignOutButton_Click" />
+            <TextBlock MaxWidth="600" Opacity="0.6" TextWrapping="Wrap" FontSize="12"
+                       Text="Cerrar sesión borra el token de esta máquina; en el servidor sigue valiendo hasta revocarlo en DevLog (Devices). Lo grabado y pendiente queda en la cola y se envía al volver a iniciar sesión." />
+
             <!-- Inicio automático (T5) -->
             <ToggleSwitch
                 x:Name="StartupToggle"
@@ -28,6 +35,7 @@
                 Text="Consultando el estado configurado en Windows..."
                 TextWrapping="Wrap" />
 
+            <TextBlock Margin="0,24,0,0" Style="{StaticResource SubtitleTextBlockStyle}" Text="Esta máquina" />
             <!-- Los ajustes, compartidos con la ventana de primer arranque. -->
             <views:SettingsForm x:Name="Form" Margin="0,16,0,0" />
 
@@ -36,7 +44,10 @@
                 Margin="0,8,0,0"
                 Opacity="0.6"
                 TextWrapping="Wrap"
-                Text="Los cambios se aplican al reiniciar la app: los clientes de audio, transcripción y LLM se construyen una sola vez al arrancar. El inicio automático es la excepción y se aplica al instante." />
+                Text="Los ajustes de esta máquina se aplican al reiniciar la app. El inicio automático y los ajustes del servidor se aplican al instante." />
+
+            <TextBlock Margin="0,24,0,0" Style="{StaticResource SubtitleTextBlockStyle}" Text="En el servidor" />
+            <views:ServerSettingsPanel x:Name="ServerSettings" />
 
             <!--
                 Prompts. Van al final y con sus propios botones: no los guarda el

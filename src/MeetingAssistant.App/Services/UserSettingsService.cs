@@ -1,217 +1,90 @@
 using MeetingAssistant.Core.Abstractions;
-using MeetingAssistant.Infrastructure;
 using Microsoft.Extensions.Configuration;
 
 namespace MeetingAssistant.App.Services;
 
-/// <summary>
-/// Valores que la app deja editar desde <c>SettingsPage</c>. Un <c>null</c> o
-/// vacío significa "sin override": se borra la clave y vuelve a mandar lo que
-/// traiga el <c>appsettings.json</c> empaquetado.
-/// </summary>
+/// <summary>Los ajustes de ESTA máquina que la app deja editar. Desde el paso B ninguno es una clave de proveedor.</summary>
 public sealed record UserSettings
 {
     public string? VaultPath { get; init; }
     public string? SubFolder { get; init; }
-    public string? LlmProvider { get; init; }
-    public string? DeepgramApiKey { get; init; }
-    public string? DeepgramKeyterms { get; init; }
-    public string? GeminiApiKey { get; init; }
-    public string? GeminiModel { get; init; }
-    public string? AzureEndpoint { get; init; }
-    public string? AzureDeployment { get; init; }
-    public string? AzureApiKey { get; init; }
-    public string? PostgresConnectionString { get; init; }
-    public string? AzureStorageConnectionString { get; init; }
     public string? ApiAuthToken { get; init; }
 }
 
 /// <summary>
-/// Lee la configuración efectiva y escribe los overrides del usuario en la base
-/// local (<c>meetings.db</c>, tabla <c>setting</c>), con las credenciales
-/// cifradas con DPAPI.
-///
-/// **Antes escribía un JSON en claro.** La capa de usuario nació en T9 para
-/// resolver un problema real: instalada, la app lee su <c>appsettings.json</c>
-/// desde <c>C:\Program Files\WindowsApps\...</c>, que es de sólo lectura, así que
-/// cambiar el vault o una API key obligaba a reconstruir, refirmar y reinstalar
-/// el <c>.msix</c>. Eso lo resolvió, pero dejó las claves en texto plano en el
-/// perfil del usuario — anotado entonces como decisión diferida, no como olvido.
-/// Fase 5 paso 5 la cobra: mismo lugar en la pila de configuración, mismo
-/// aspecto en la UI, pero el destino es la base y los secretos se cifran.
-///
-/// El archivo de T9 lo migra una sola vez <c>UserSettingsImporter</c> en el
-/// arranque. <see cref="LegacyFilePath"/> sigue existiendo por dos razones:
-/// el importador necesita saber dónde mirar, y la capa <c>AddJsonFile</c> se
-/// mantiene en la pila (por debajo de SQLite) para que un archivo puesto a mano
-/// siga siendo una vía de escape si la base no abre.
+/// Lee y guarda los ajustes de esta máquina en la base local (SQLite, secretos con DPAPI). Los
+/// ajustes compartidos (proveedor, modelo, términos clave, retención del audio) ya no viven aquí:
+/// son del servidor y se editan en Configuración → "En el servidor" (<c>ServerSettingsService</c>).
 /// </summary>
 public sealed class UserSettingsService
 {
     private readonly IConfiguration _configuration;
     private readonly ISettingsStore _settingsStore;
-    private readonly ICloudSettingsStore? _cloudSettingsStore;
 
-    /// <param name="cloudSettingsStore">
-    /// Sólo está cuando <c>Configuration:Source = Database</c>. Con null, todo
-    /// se guarda únicamente en esta máquina, como antes de Fase 6.
-    /// </param>
-    public UserSettingsService(
-        IConfiguration configuration,
-        ISettingsStore settingsStore,
-        ICloudSettingsStore? cloudSettingsStore = null)
+    public UserSettingsService(IConfiguration configuration, ISettingsStore settingsStore)
     {
         _configuration = configuration;
         _settingsStore = settingsStore;
-        _cloudSettingsStore = cloudSettingsStore;
     }
 
-    /// <summary>
-    /// Ruta del archivo de overrides de T9. Puede no existir — de hecho, tras el
-    /// primer arranque con la base ya no existe: queda una copia redactada al
-    /// lado (<c>appsettings.pre-sqlite.json</c>).
-    /// </summary>
+    /// <summary>El archivo de usuario de T9 (legado): se migra a la base al primer arranque.</summary>
     public static string LegacyFilePath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "MeetingAssistant",
         "appsettings.json");
 
     /// <summary>
-    /// Devuelve lo que la app está usando ahora mismo — o sea el resultado de
-    /// apilar empaquetado + archivo de usuario + base + variables de entorno, no
-    /// sólo la base. Es lo que hay que mostrar en la UI: si una clave viene de una
-    /// variable de entorno, el usuario tiene que verla tal como está en efecto,
-    /// no un campo vacío que le haga creer que falta.
+    /// Lo que el modo local guardaba en esta máquina y desde el paso B no se usa: claves de
+    /// proveedor, cadenas de conexión, conmutadores y ajustes que ahora son del servidor.
     /// </summary>
+    public static IReadOnlyList<string> LeftoverKeys { get; } =
+    [
+        "Deepgram:ApiKey", "Deepgram:Keyterms", "Gemini:ApiKey", "Gemini:Model", "AzureFoundry:ApiKey", "AzureFoundry:Endpoint",
+        "AzureFoundry:Deployment", "Llm:Provider", "Postgres:ConnectionString", "AzureStorage:ConnectionString",
+        "Database:Provider", "Configuration:Source"
+    ];
+
     public UserSettings LoadEffective() => new()
     {
         VaultPath = Read("Storage:VaultPath"),
         SubFolder = Read("Storage:SubFolder"),
-        LlmProvider = Read("Llm:Provider") ?? "Gemini",
-        DeepgramApiKey = Read("Deepgram:ApiKey"),
-        DeepgramKeyterms = Read("Deepgram:Keyterms"),
-        GeminiApiKey = Read("Gemini:ApiKey"),
-        GeminiModel = Read("Gemini:Model"),
-        AzureEndpoint = Read("AzureFoundry:Endpoint"),
-        AzureDeployment = Read("AzureFoundry:Deployment"),
-        AzureApiKey = Read("AzureFoundry:ApiKey"),
-        PostgresConnectionString = Read("Postgres:ConnectionString"),
-        AzureStorageConnectionString = Read("AzureStorage:ConnectionString"),
         ApiAuthToken = Read("Api:AuthToken")
     };
 
-    /// <summary>
-    /// Prueba las cadenas de conexión que cambiaron respecto de
-    /// <paramref name="previous"/>. Devuelve null si todas conectan, o los
-    /// motivos. Una cadena vacía no se prueba: significa "sin nube".
-    /// </summary>
-    public async Task<string?> CheckChangedConnectionsAsync(
-        UserSettings settings,
-        UserSettings? previous,
-        CancellationToken cancellationToken = default)
-    {
-        var problems = new List<string>();
-
-        // Neon dormido tarda unos segundos en despertar; 30 s cubren eso y el
-        // reintento de ConnectionRetry sin dejar el botón colgado para siempre.
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
-
-        if (Changed(settings.PostgresConnectionString, previous?.PostgresConnectionString) &&
-            await CloudConnectionCheck.CheckPostgresAsync(settings.PostgresConnectionString!.Trim(), timeout.Token) is { } postgresProblem)
-        {
-            problems.Add(postgresProblem);
-        }
-
-        if (Changed(settings.AzureStorageConnectionString, previous?.AzureStorageConnectionString) &&
-            await CloudConnectionCheck.CheckAzureStorageAsync(settings.AzureStorageConnectionString!.Trim(), timeout.Token) is { } storageProblem)
-        {
-            problems.Add(storageProblem);
-        }
-
-        return problems.Count == 0 ? null : string.Join(Environment.NewLine, problems);
-
-        static bool Changed(string? value, string? before) =>
-            HasText(value) && !string.Equals(value!.Trim(), before?.Trim(), StringComparison.Ordinal);
-    }
-
-    private static bool HasText(string? value) => !string.IsNullOrWhiteSpace(value);
-
-    /// <summary>
-    /// Escribe los overrides en la base. Cada clave se guarda por separado y las
-    /// credenciales van marcadas como secretas — el flag no se decide acá sino en
-    /// <see cref="SettingKeyPolicy"/>, para que la UI y el importador no puedan
-    /// discrepar sobre qué se cifra.
-    ///
-    /// Un valor vacío <b>borra</b> la clave, que es como se vuelve al valor
-    /// empaquetado. Es el mismo criterio que ya tenía el archivo de T9: si
-    /// guardar un vacío dejara una cadena vacía, no habría forma de volver atrás
-    /// desde la UI.
-    /// </summary>
     public async Task SaveAsync(UserSettings settings, CancellationToken cancellationToken = default)
     {
         (string Key, string? Value)[] values =
         [
             ("Storage:VaultPath", settings.VaultPath),
             ("Storage:SubFolder", settings.SubFolder),
-            ("Llm:Provider", settings.LlmProvider),
-            ("Deepgram:ApiKey", settings.DeepgramApiKey),
-            ("Deepgram:Keyterms", settings.DeepgramKeyterms),
-            ("Gemini:ApiKey", settings.GeminiApiKey),
-            ("Gemini:Model", settings.GeminiModel),
-            ("AzureFoundry:Endpoint", settings.AzureEndpoint),
-            ("AzureFoundry:Deployment", settings.AzureDeployment),
-            ("AzureFoundry:ApiKey", settings.AzureApiKey),
-            ("Postgres:ConnectionString", settings.PostgresConnectionString),
-            ("AzureStorage:ConnectionString", settings.AzureStorageConnectionString),
-            ("Api:AuthToken", settings.ApiAuthToken),
-            // Con una cadena de Postgres, todo lo compartido sale de la nube:
-            // historial, prompts y ajustes. Sin ella se borran los dos
-            // conmutadores y vuelve a mandar lo empaquetado (SQLite, local).
-            ("Database:Provider", HasText(settings.PostgresConnectionString) ? "Postgres" : null),
-            ("Configuration:Source", HasText(settings.PostgresConnectionString) ? "Database" : null)
+            ("Api:AuthToken", settings.ApiAuthToken)
         ];
 
         foreach ((string key, string? value) in values)
         {
-            await _settingsStore.SetAsync(
-                key,
-                value?.Trim(),
-                SettingKeyPolicy.IsSecret(key),
-                cancellationToken);
-        }
-
-        if (_cloudSettingsStore is null) return;
-
-        // Lo local va siempre y va primero: es el respaldo cuando la nube no
-        // contesta. A la nube sólo va lo que SettingKeyPolicy permite — nunca
-        // una credencial, nunca la ruta del vault de esta máquina.
-        try
-        {
-            foreach ((string key, string? value) in values)
-            {
-                if (!SettingKeyPolicy.CanLiveInCloud(key)) continue;
-
-                await _cloudSettingsStore.SetAsync(key, value?.Trim(), isSecret: false, cancellationToken);
-            }
-        }
-        catch (Exception exception)
-        {
-            // Hay que decirlo: al arrancar manda la nube, así que lo que quedó
-            // guardado sólo acá puede volver a ser pisado por el valor viejo.
-            throw new InvalidOperationException(
-                "Se guardó en esta máquina, pero no en la nube. Mientras la nube tenga el valor anterior, " +
-                $"ese es el que va a mandar al reiniciar. Detalle: {exception.Message}",
-                exception);
+            await _settingsStore.SetAsync(key, value?.Trim(), SettingKeyPolicy.IsSecret(key), cancellationToken);
         }
     }
 
+    /// <summary>Cuántas de las claves viejas siguen guardadas en la base local de esta máquina.</summary>
+    public async Task<IReadOnlyList<string>> FindLeftoverKeysAsync(CancellationToken cancellationToken = default) =>
+        (await _settingsStore.GetAllAsync(cancellationToken))
+            .Where(entry => LeftoverKeys.Contains(entry.Key, StringComparer.OrdinalIgnoreCase))
+            .Select(entry => entry.Key)
+            .ToList();
+
     /// <summary>
-    /// Misma regla que <c>App.ReadSetting</c>: un marcador de posición del
-    /// example (<c>&lt;your-api-key&gt;</c>) cuenta como ausente. Si validar y
-    /// leer discreparan, la UI mostraría como configurado algo que la app
-    /// rechaza al arrancar.
+    /// Borra de la base local las claves del modo local. No toca los archivos appsettings.json ni
+    /// las claves en los proveedores: rotarlas es un paso del corte del dueño.
     /// </summary>
+    public async Task<int> DeleteLeftoverKeysAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<string> keys = await FindLeftoverKeysAsync(cancellationToken);
+        foreach (string key in keys) await _settingsStore.RemoveAsync(key, cancellationToken);
+        return keys.Count;
+    }
+
+    /// <summary>Un marcador de posición del example (<c>&lt;...&gt;</c>) cuenta como ausente, igual que en el validador.</summary>
     private string? Read(string key)
     {
         string? value = _configuration[key];

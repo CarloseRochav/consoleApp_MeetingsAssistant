@@ -187,13 +187,22 @@
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
-                    <Button Content="Mostrar el .md en el Explorador"
-                            Command="{Binding OpenInVaultCommand}"
+                    <Button Content="Guardar este reporte en el vault"
+                            Command="{Binding SaveToVaultCommand}"
+                            ToolTipService.ToolTip="Escribe el .md en el vault (por ejemplo, el de una reunión grabada en el teléfono)."
                             HorizontalAlignment="Left"
                             MinWidth="220" />
                 </StackPanel>
 
-                <!-- El reporte, renderizado desde la base (no desde el archivo del vault) -->
+                <!-- El audio archivado en el servidor (DevLog 018): el enlace de 15 min va directo al reproductor. -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Audio" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="{Binding AudioHint}" TextWrapping="Wrap" Opacity="0.8" />
+                    <Button Content="Escuchar" Command="{Binding ListenCommand}" HorizontalAlignment="Left" MinWidth="140" />
+                    <MediaPlayerElement x:Name="AudioPlayer" AreTransportControlsEnabled="True" Height="100" Visibility="Collapsed" />
+                </StackPanel>
+
+                <!-- El reporte, como lo guardó el servidor (no desde el archivo del vault) -->
                 <TabView x:Name="ReportViewer"
                          IsAddTabButtonVisible="False"
                          TabWidthMode="SizeToContent"
@@ -233,7 +242,7 @@
                           SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
                           DisplayMemberPath="DisplayName"
                           HorizontalAlignment="Stretch" />
-                <TextBlock Text="{Binding SelectedPrompt.Description}"
+                <TextBlock Text="{Binding SelectedPromptDescription}"
                            TextWrapping="Wrap"
                            Opacity="0.8" />
                 <Expander Header="Ver el texto del prompt" HorizontalAlignment="Stretch">

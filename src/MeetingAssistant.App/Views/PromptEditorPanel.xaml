@@ -29,7 +29,7 @@
                   DisplayMemberPath="DisplayName"
                   SelectionChanged="PromptCombo_SelectionChanged"
                   HorizontalAlignment="Stretch" />
-        <TextBlock Text="{Binding SelectedPrompt.Description}"
+        <TextBlock Text="{Binding SelectedPromptDescription}"
                    TextWrapping="Wrap"
                    Opacity="0.8" />
         <TextBlock Text="{Binding ActiveVersionText}"
@@ -54,6 +54,10 @@
         <TextBlock Text="{Binding DirtyHint}"
                    TextWrapping="Wrap"
                    Opacity="0.75" />
+
+        <TextBox Header="Nombre de la versión"
+                 Text="{Binding VersionName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 PlaceholderText="v1-mine-1" />
 
         <TextBox Header="Qué cambió (opcional)"
                  Text="{Binding Note, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

@@ -17,10 +17,10 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Padding="24" Spacing="16" MaxWidth="900" HorizontalAlignment="Left">
 
-            <TextBlock Text="Costos estimados"
+            <TextBlock Text="Costos"
                        Style="{StaticResource TitleTextBlockStyle}" />
 
-            <TextBlock Text="Son estimaciones: tokens y minutos de audio multiplicados por los precios de tu configuración. No se compararon con ninguna factura de los proveedores."
+            <TextBlock Text="Los calcula el servidor con sus precios (tokens y minutos de audio), para tus reuniones de todos los dispositivos. Son estimaciones: no se compararon con ninguna factura. Un precio desconocido nunca se cuenta como 0."
                        TextWrapping="Wrap"
                        Opacity="0.8" />
 
@@ -108,14 +108,11 @@
                 </StackPanel>
 
                 <StackPanel Spacing="6">
-                    <TextBlock Text="Por prompt y versión"
+                    <TextBlock Text="Por mes"
                                Style="{StaticResource SubtitleTextBlockStyle}" />
-                    <TextBlock Text="Sólo la parte de LLM: la suma de estas filas es la línea «LLM (reportes)» de arriba, no el total. La transcripción es de la reunión, no de un prompt. Estos números dicen cuántos reportes hay, cuánto costaron y qué tan largos salen; no dicen cuál es mejor."
-                               TextWrapping="Wrap"
-                               Opacity="0.8" />
-                    <ItemsControl ItemsSource="{Binding PromptRows}">
+                    <ItemsControl ItemsSource="{Binding MonthRows}">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PromptUsageRow">
+                            <DataTemplate x:DataType="vm:CostMonthRow">
                                 <StackPanel Padding="0,6" Spacing="2">
                                     <TextBlock Text="{x:Bind Title}"
                                                TextWrapping="Wrap"

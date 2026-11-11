@@ -12,7 +12,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
     /// Los ajustes de arriba y el editor de prompts. Cada uno se guarda con su
     /// propio botón, así que se pregunta por cada uno.
     /// </summary>
-    public bool HasUnsavedChanges => Form.HasUnsavedChanges || PromptEditor.HasUnsavedEdits;
+    public bool HasUnsavedChanges => Form.HasUnsavedChanges || PromptEditor.HasUnsavedEdits || ServerSettings.HasUnsavedChanges;
 
     public async Task<bool> ConfirmLeaveAsync()
     {
@@ -20,6 +20,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
         return await PromptEditor.ConfirmLeaveAsync();
     }
 
+    private readonly MeetingAssistant.Core.Services.DeviceAuthService _auth;
     private readonly StartupTaskService _startupTaskService;
     private bool _isSynchronizing;
     private bool _isBusy;
@@ -28,10 +29,47 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
     {
         InitializeComponent();
         _startupTaskService = App.Services.GetRequiredService<StartupTaskService>();
+        _auth = App.Services.GetRequiredService<MeetingAssistant.Core.Services.DeviceAuthService>();
         Loaded += SettingsPage_Loaded;
     }
 
-    private async void SettingsPage_Loaded(object sender, RoutedEventArgs e) => await RefreshStateAsync();
+    private async void SettingsPage_Loaded(object sender, RoutedEventArgs e)
+    {
+        ShowDevice(null);
+        await RefreshStateAsync();
+        await CheckDeviceAsync();
+    }
+
+    // ------------------------------------------------------- dispositivo (paso B)
+
+    private void ShowDevice(string? serverCheck)
+    {
+        DeviceText.Text = _auth.Current is { } session
+            ? $"Sesión de {session.Username} (idUser {session.IdUser}). Este dispositivo: «{session.DeviceName}» (idDevice {session.IdDevice}). " +
+              $"Servidor: {App.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["DevLog:BaseUrl"]}." +
+              (serverCheck is null ? string.Empty : $" {serverCheck}")
+            : "Sin sesión en el servidor.";
+        SignOutButton.IsEnabled = _auth.IsSignedIn;
+    }
+
+    private async Task CheckDeviceAsync()
+    {
+        if (!_auth.IsSignedIn) return;
+        MeetingAssistant.Core.Services.VerifyOutcome outcome = await _auth.VerifyAsync();
+        ShowDevice(outcome switch
+        {
+            MeetingAssistant.Core.Services.VerifyOutcome.Valid => "El servidor acepta este dispositivo.",
+            MeetingAssistant.Core.Services.VerifyOutcome.Unknown => "No se pudo comprobar con el servidor (¿sin conexión?).",
+            _ => null
+        });
+    }
+
+    private void SignOutButton_Click(object sender, RoutedEventArgs e)
+    {
+        // App escucha SignedOut y abre el inicio de sesión.
+        _auth.SignOut();
+        ShowDevice(null);
+    }
 
     // ------------------------------------------------------- inicio automático
 

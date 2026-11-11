@@ -5,70 +5,67 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:views="using:MeetingAssistant.App.Views"
+    xmlns:vm="using:MeetingAssistant.App.ViewModels"
     mc:Ignorable="d">
     <ScrollViewer Padding="32">
         <StackPanel Spacing="16" MaxWidth="880">
             <TextBlock Text="Grabar reunión" Style="{StaticResource TitleTextBlockStyle}" />
-            <TextBlock Text="Puedes grabar, procesar un audio existente, o adjuntar una transcripción .txt. El reporte se guarda en el vault de Obsidian (carpeta MeetingReports)."
+            <TextBlock Text="Graba (o elige un audio existente) y la reunión se envía al servidor, que la transcribe y escribe el reporte. El .md llega al vault de Obsidian (carpeta MeetingReports). Sin conexión se graba igual: se envía después, también tras reiniciar."
                        TextWrapping="Wrap" />
-            <Button Content="{Binding ButtonText}"
-                    Command="{Binding ToggleRecordingCommand}"
-                    HorizontalAlignment="Left"
-                    MinWidth="180" />
-            <Button Content="Procesar audio existente"
-                    Click="ProcessExistingAudio_Click"
-                    IsEnabled="{Binding CanLoadExternalSource}"
-                    HorizontalAlignment="Left"
-                    MinWidth="180" />
-            <Button Content="Adjuntar transcripción (.txt)"
-                    Click="AttachTranscriptFile_Click"
-                    IsEnabled="{Binding CanLoadExternalSource}"
-                    HorizontalAlignment="Left"
-                    MinWidth="180" />
+            <TextBlock Text="{Binding SessionText}" TextWrapping="Wrap" Opacity="0.75" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="{Binding ButtonText}"
+                        Command="{Binding ToggleRecordingCommand}"
+                        Style="{StaticResource AccentButtonStyle}"
+                        MinWidth="180" />
+                <Button Content="Procesar audio existente"
+                        Click="ProcessExistingAudio_Click"
+                        IsEnabled="{Binding CanLoadExternalSource}"
+                        MinWidth="180" />
+            </StackPanel>
             <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
             <views:ErrorPanel Details="{Binding ErrorDetails}" />
 
-            <TextBlock Text="Transcripción" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <TextBox Text="{Binding LastTranscript, Mode=OneWay}"
-                     AcceptsReturn="True"
-                     IsReadOnly="True"
-                     TextWrapping="Wrap"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     MinHeight="200" />
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Reuniones" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="Enviar ahora" Command="{Binding SendNowCommand}" />
+            </Grid>
+            <TextBlock Text="Cada grabación pasa por: esperando → enviando → en el servidor → escribiendo el reporte → listo. Si algo pasajero lo frena (sin red, el tope diario), se dice por qué y se reintenta solo."
+                       TextWrapping="Wrap" Opacity="0.7" FontSize="12" />
+            <ListView x:Name="MeetingList"
+                      ItemsSource="{Binding Meetings}"
+                      SelectedItem="{Binding SelectedMeeting, Mode=TwoWay}"
+                      SelectionMode="Single"
+                      MaxHeight="360">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:QueueItemViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{x:Bind Title, Mode=OneWay}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <ProgressBar Value="{x:Bind Progress, Mode=OneWay}" Maximum="100" Visibility="{x:Bind IsUploading, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind Detail, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" Opacity="0.75" IsTextSelectionEnabled="True" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                <Button Content="Abrir" Tag="{x:Bind}" Click="OpenReport_Click" Visibility="{x:Bind CanOpen, Mode=OneWay}" />
+                                <Button Content="Reintentar" Tag="{x:Bind}" Click="Retry_Click" Visibility="{x:Bind CanRetry, Mode=OneWay}" />
+                                <Button Content="Quitar" Tag="{x:Bind}" Click="Remove_Click" Visibility="{x:Bind CanRemove, Mode=OneWay}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
 
-            <TextBlock Text="Prompt de extracción" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <TextBlock Text="Cuando la transcripción esté lista, elige cómo procesarla. Puedes cambiar de prompt y volver a generar sobre la misma transcripción."
-                       TextWrapping="Wrap" />
-            <ComboBox Header="Catálogo"
-                      ItemsSource="{Binding Prompts}"
-                      SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
-                      DisplayMemberPath="DisplayName"
-                      IsEnabled="{Binding HasTranscript}"
-                      HorizontalAlignment="Stretch" />
-            <TextBlock Text="{Binding SelectedPrompt.Description}"
-                       TextWrapping="Wrap"
-                       Opacity="0.8" />
-            <TextBlock Text="Prompt seleccionado" />
-            <TextBox Text="{Binding SelectedPromptText, Mode=OneWay}"
-                     AcceptsReturn="True"
-                     IsReadOnly="True"
-                     TextWrapping="Wrap"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     MinHeight="180"
-                     FontFamily="Consolas" />
-            <Button Content="Generar reporte"
-                    Command="{Binding GenerateReportCommand}"
-                    HorizontalAlignment="Left"
-                    MinWidth="180" />
-
-            <TextBlock Text="Reporte generado" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <TextBlock Text="Guardado en el vault de Obsidian" />
-            <TextBlock Text="{Binding LastSavedReportPath}"
-                       TextWrapping="Wrap" />
-            <Button Content="Mostrar en el Explorador"
-                    Command="{Binding OpenSavedReportCommand}"
-                    HorizontalAlignment="Left"
-                    MinWidth="180" />
+            <TextBlock Text="Reporte" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock Text="El de la reunión elegida en la lista, leído del .md del vault." Opacity="0.7" FontSize="12" />
             <TabView x:Name="ReportViewer"
                      IsAddTabButtonVisible="False"
                      TabWidthMode="SizeToContent"

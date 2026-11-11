@@ -32,39 +32,28 @@ public sealed partial class RecordPage : Page
         }
         catch (Exception exception)
         {
-            ViewModel.ErrorDetails =
-                $"No se pudo iniciar la vista previa Markdown: {exception.Message}";
+            ViewModel.ErrorDetails = $"No se pudo iniciar la vista previa Markdown: {exception.Message}";
         }
     }
 
     private void RecordPage_Unloaded(object sender, RoutedEventArgs e)
     {
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        ViewModel.Detach();
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(RecordViewModel.LastGeneratedReport) or null)
-        {
-            UpdatePreview();
-        }
+        if (e.PropertyName is nameof(RecordViewModel.LastGeneratedReport) or null) UpdatePreview();
     }
 
-    private void ReportViewer_SelectionChanged(object sender, SelectionChangedEventArgs args)
-    {
-        UpdatePreview();
-    }
+    private void ReportViewer_SelectionChanged(object sender, SelectionChangedEventArgs args) => UpdatePreview();
 
     private void UpdatePreview()
     {
-        if (ReportPreview.CoreWebView2 is null)
-        {
-            return;
-        }
-
-        bool darkTheme = ActualTheme == ElementTheme.Dark;
+        if (ReportPreview.CoreWebView2 is null) return;
         ReportPreview.NavigateToString(
-            MarkdownPreviewRenderer.ToHtmlDocument(ViewModel.LastGeneratedReport, darkTheme));
+            MarkdownPreviewRenderer.ToHtmlDocument(ViewModel.LastGeneratedReport, ActualTheme == ElementTheme.Dark));
     }
 
     private async void ProcessExistingAudio_Click(object sender, RoutedEventArgs e)
@@ -73,29 +62,24 @@ public sealed partial class RecordPage : Page
         picker.FileTypeFilter.Add(".wav");
         picker.FileTypeFilter.Add(".mp3");
         picker.FileTypeFilter.Add(".m4a");
-        WinRT.Interop.InitializeWithWindow.Initialize(
-            picker,
-            WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
 
         StorageFile? selectedFile = await picker.PickSingleFileAsync();
-        if (selectedFile is not null)
-        {
-            await ViewModel.ProcessExistingAudioAsync(selectedFile.Path);
-        }
+        if (selectedFile is not null) await ViewModel.ProcessExistingAudioAsync(selectedFile.Path);
     }
 
-    private async void AttachTranscriptFile_Click(object sender, RoutedEventArgs e)
+    private void OpenReport_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        picker.FileTypeFilter.Add(".txt");
-        WinRT.Interop.InitializeWithWindow.Initialize(
-            picker,
-            WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        if ((sender as FrameworkElement)?.Tag is QueueItemViewModel item) RecordViewModel.ShowInExplorer(item);
+    }
 
-        StorageFile? selectedFile = await picker.PickSingleFileAsync();
-        if (selectedFile is not null)
-        {
-            await ViewModel.LoadTranscriptFileAsync(selectedFile.Path);
-        }
+    private void Retry_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is QueueItemViewModel item) ViewModel.Retry(item);
+    }
+
+    private void Remove_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is QueueItemViewModel item) ViewModel.Remove(item);
     }
 }

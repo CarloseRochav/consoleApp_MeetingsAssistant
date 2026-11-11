@@ -1,0 +1,31 @@
+<Window
+    x:Class="MeetingAssistant.App.Views.SignInWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Meeting Assistant — iniciar sesión"
+    mc:Ignorable="d">
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <ScrollViewer>
+        <StackPanel MaxWidth="520" Margin="32" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="16">
+            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Iniciar sesión" />
+            <TextBlock MaxWidth="480" TextWrapping="Wrap"
+                       Text="Meeting Assistant manda las grabaciones al servidor de DevLog, que las transcribe y escribe el reporte. Inicia sesión una vez con tu usuario de DevLog: esta máquina recibe su propio token (se guarda cifrado para tu usuario de Windows) y la contraseña no se guarda." />
+
+            <InfoBar x:Name="ReasonInfo" IsClosable="False" IsOpen="False" Severity="Warning" />
+
+            <TextBox x:Name="UsernameBox" Header="Usuario" />
+            <PasswordBox x:Name="PasswordBox" Header="Contraseña" KeyDown="PasswordBox_KeyDown" />
+            <TextBlock x:Name="DeviceText" MaxWidth="480" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="SignInButton" Content="Iniciar sesión" Style="{StaticResource AccentButtonStyle}" Click="SignInButton_Click" />
+                <ProgressRing x:Name="Busy" IsActive="False" Width="20" Height="20" />
+            </StackPanel>
+            <TextBlock x:Name="ResultText" MaxWidth="480" TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</Window>

@@ -1,75 +1,57 @@
 using MeetingAssistant.App.Startup;
 using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Models;
+using MeetingAssistant.Core.Services;
 
 namespace MeetingAssistant.App.Services;
 
 /// <summary>
-/// Centraliza las operaciones de grabación de todos los disparadores
-/// (RecordPage, tray, hotkey y, vía <see cref="IRecordingTrigger"/>, el endpoint
-/// HTTP). Es intencionalmente App-local: expone eventos de ciclo de vida propios
-/// de la UI, mientras que el pipeline de Core permanece agnóstico a proveedor y
-/// a interfaz.
+/// Centraliza las operaciones de grabación de todos los disparadores (RecordPage, bandeja, hotkey y,
+/// vía <see cref="IRecordingTrigger"/>, el endpoint HTTP). Desde el paso B detener ya no espera el
+/// reporte: convierte, deja la reunión en la cola de subidas y vuelve; el reporte llega después
+/// (<see cref="MeetingUploadQueue.ReportReady"/>).
 ///
-/// Los eventos se levantan en el hilo de quien llamó. Desde HTTP eso es un hilo
-/// del pool, así que todo suscriptor que toque XAML tiene que volver al hilo de
-/// UI por su cuenta (RecordViewModel y TrayIconService lo hacen).
+/// Los eventos se levantan en el hilo de quien llamó. Desde HTTP eso es un hilo del pool, así que
+/// todo suscriptor que toque XAML tiene que volver al hilo de UI por su cuenta.
 /// </summary>
 public sealed class RecordingCoordinator : IRecordingTrigger
 {
-    private readonly IMeetingPipeline _pipeline;
+    private readonly MeetingRecorder _recorder;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private bool _isProcessing;
 
-    public RecordingCoordinator(IMeetingPipeline pipeline)
+    public RecordingCoordinator(MeetingRecorder recorder)
     {
-        _pipeline = pipeline;
+        _recorder = recorder;
     }
 
-    public bool IsRecording => _pipeline.IsRecording;
+    public bool IsRecording => _recorder.IsRecording;
 
+    /// <summary>Convirtiendo y encolando (segundos). El envío y el reporte no cuentan: van en segundo plano.</summary>
     public bool IsProcessing => _isProcessing;
 
     public event EventHandler? StateChanged;
 
-    public event EventHandler<RecordingCompletedEventArgs>? RecordingCompleted;
-
-    public event EventHandler<RecordingFailedEventArgs>? RecordingFailed;
-
-    /// <summary>
-    /// La captura arrancó. Existe además de <see cref="StateChanged"/> porque
-    /// aquel se dispara en cada transición (incluidas las de procesamiento) y
-    /// no distingue el arranque de una grabación de un refresco cualquiera.
-    /// </summary>
     public event EventHandler<EventArgs>? RecordingStarted;
 
-    /// <summary>
-    /// Hay transcripción y falta elegir prompt. Es un estado terminal del flujo
-    /// de dos pasos: la app queda esperando al usuario, no procesando.
-    /// </summary>
-    public event EventHandler<TranscriptReadyEventArgs>? TranscriptReady;
+    /// <summary>La grabación quedó guardada y en la cola de subidas.</summary>
+    public event EventHandler<QueuedMeeting>? RecordingQueued;
 
-    /// <summary>
-    /// Se guardó un reporte en el vault. Lo levantan los tres caminos que
-    /// guardan — el de un paso, el de archivo existente y el de extracción tras
-    /// elegir prompt — a diferencia de <see cref="RecordingCompleted"/>, que
-    /// solo cubre los dos primeros porque su payload exige audio y transcripción.
-    /// </summary>
-    public event EventHandler<ReportSavedEventArgs>? ReportSaved;
+    public event EventHandler<RecordingFailedEventArgs>? RecordingFailed;
 
     public async Task StartRecordingAsync(string source, CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
         try
         {
-            if (IsProcessing || _pipeline.IsRecording)
+            if (IsProcessing || _recorder.IsRecording)
             {
                 throw new InvalidOperationException(IsProcessing
-                    ? "Hay una reunión procesándose; espera a que termine para grabar otra."
+                    ? "Se está guardando la grabación anterior; espera un momento."
                     : "Ya hay una grabación en curso.");
             }
 
-            await _pipeline.StartRecordingAsync(source, cancellationToken);
+            await _recorder.StartRecordingAsync(source, cancellationToken);
             OnStateChanged();
             RaiseSafely(RecordingStarted, EventArgs.Empty);
         }
@@ -84,27 +66,23 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         }
     }
 
-    public async Task<MeetingPipelineResult> StopRecordingAndProcessAsync(CancellationToken cancellationToken = default)
+    public async Task<QueuedMeeting> StopRecordingAndQueueAsync(CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
         try
         {
-            if (!IsRecording)
-            {
-                throw new NothingToStopException();
-            }
+            if (!IsRecording) throw new NothingToStopException();
 
             _isProcessing = true;
             OnStateChanged();
 
-            MeetingPipelineResult result = await _pipeline.StopRecordingAndProcessAsync(cancellationToken);
-            RaiseRecordingCompleted(result);
-            RaiseReportSaved(result.SavedReportPath, result.Prompt);
-            return result;
+            QueuedMeeting queued = await _recorder.StopRecordingAndQueueAsync(cancellationToken);
+            RaiseSafely(RecordingQueued, queued);
+            return queued;
         }
         catch (Exception exception)
         {
-            RaiseRecordingFailed(exception, "No se pudo crear el reporte");
+            RaiseRecordingFailed(exception, "No se pudo guardar la grabación");
             throw;
         }
         finally
@@ -115,87 +93,27 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         }
     }
 
-    public async Task<MeetingPipelineResult> ProcessExistingAudioAsync(string audioPath, CancellationToken cancellationToken = default)
-    {
-        await _operationLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (IsRecording || IsProcessing)
-            {
-                throw new InvalidOperationException("No se puede procesar un archivo mientras hay una grabación o proceso en curso.");
-            }
-
-            _isProcessing = true;
-            OnStateChanged();
-
-            MeetingPipelineResult result = await _pipeline.ProcessAudioFileAsync(audioPath, cancellationToken);
-            RaiseRecordingCompleted(result);
-            RaiseReportSaved(result.SavedReportPath, result.Prompt);
-            return result;
-        }
-        catch (Exception exception)
-        {
-            RaiseRecordingFailed(exception, "No se pudo procesar el audio");
-            throw;
-        }
-        finally
-        {
-            _isProcessing = false;
-            OnStateChanged();
-            _operationLock.Release();
-        }
-    }
-
-    public async Task<TranscriptionSession> StopRecordingAndTranscribeAsync(CancellationToken cancellationToken = default)
-    {
-        await _operationLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (!IsRecording)
-            {
-                throw new NothingToStopException();
-            }
-
-            _isProcessing = true;
-            OnStateChanged();
-
-            TranscriptionSession session = await _pipeline.StopRecordingAndTranscribeAsync(cancellationToken);
-            RaiseSafely(TranscriptReady, new TranscriptReadyEventArgs(session));
-            return session;
-        }
-        catch (Exception exception)
-        {
-            RaiseRecordingFailed(exception, "No se pudo transcribir la reunión");
-            throw;
-        }
-        finally
-        {
-            _isProcessing = false;
-            OnStateChanged();
-            _operationLock.Release();
-        }
-    }
-
-    public async Task<TranscriptionSession> TranscribeExistingAudioAsync(string audioPath, CancellationToken cancellationToken = default)
+    /// <summary>Un audio que ya existe ("Procesar audio existente"): se convierte y se encola igual que una grabación.</summary>
+    public async Task<QueuedMeeting> QueueExistingAudioAsync(string audioPath, CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
         try
         {
             if (IsRecording || IsProcessing)
             {
-                throw new InvalidOperationException("No se puede procesar un archivo mientras hay una grabación o proceso en curso.");
+                throw new InvalidOperationException("No se puede procesar un archivo mientras hay una grabación en curso.");
             }
 
             _isProcessing = true;
             OnStateChanged();
 
-            TranscriptionSession session = await _pipeline.TranscribeAudioFileAsync(audioPath, cancellationToken);
-            RaiseSafely(TranscriptReady, new TranscriptReadyEventArgs(session));
-            return session;
+            QueuedMeeting queued = await _recorder.QueueAudioFileAsync(audioPath, SessionSource.Import, cancellationToken);
+            RaiseSafely(RecordingQueued, queued);
+            return queued;
         }
         catch (Exception exception)
         {
-            RaiseRecordingFailed(exception, "No se pudo transcribir el audio");
+            RaiseRecordingFailed(exception, "No se pudo encolar el audio");
             throw;
         }
         finally
@@ -206,120 +124,9 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         }
     }
 
-    /// <summary>
-    /// Registra un transcript adjuntado (.txt) como sesión de importación. Sin
-    /// candado: sólo escribe una fila nueva y no toca la captura ni la sesión de
-    /// ninguna otra operación.
-    /// </summary>
-    public Task<long?> ImportTranscriptAsync(string transcript, CancellationToken cancellationToken = default) =>
-        _pipeline.ImportTranscriptAsync(transcript, cancellationToken);
-
-    /// <summary>
-    /// Genera el reporte del transcript que muestra la ventana.
-    /// <paramref name="sessionId"/> es la reunión a la que pertenece —la que
-    /// devolvió la transcripción o la importación—; null sólo si no hay fila
-    /// (historial apagado o base caída), y entonces el pipeline intenta abrir
-    /// una nueva.
-    /// </summary>
-    public async Task<ExtractionSaveResult> ExtractAndSaveAsync(
-        string transcript,
-        string promptId,
-        long? sessionId,
-        CancellationToken cancellationToken = default)
-    {
-        await _operationLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (IsRecording)
-            {
-                throw new InvalidOperationException("No se puede extraer un reporte mientras hay una grabación en curso.");
-            }
-
-            _isProcessing = true;
-            OnStateChanged();
-
-            ExtractionSaveResult result = sessionId is { } id
-                ? await _pipeline.ExtractForSessionAsync(id, transcript, promptId, cancellationToken)
-                : await _pipeline.ExtractAndSaveAsync(transcript, promptId, cancellationToken);
-            RaiseReportSaved(result.SavedReportPath, result.Prompt);
-            return result;
-        }
-        catch (Exception exception)
-        {
-            RaiseRecordingFailed(exception, "No se pudo crear el reporte");
-            throw;
-        }
-        finally
-        {
-            _isProcessing = false;
-            OnStateChanged();
-            _operationLock.Release();
-        }
-    }
-
-    /// <summary>
-    /// Re-genera un reporte para una sesión del historial con otro prompt.
-    ///
-    /// Pasa por el coordinador, y no directo al pipeline, por dos razones que no
-    /// son de estilo: el <c>_operationLock</c> es lo que <b>de verdad</b>
-    /// serializa las operaciones —así una re-extracción desde Historial no puede
-    /// solaparse con una grabación— y <c>RaiseReportSaved</c> es lo que dispara
-    /// el toast. Un reporte que aparece en el vault sin avisar sería una
-    /// regresión de T4.2.
-    /// </summary>
-    public async Task<ExtractionSaveResult> ExtractForSessionAsync(
-        long sessionId,
-        string transcript,
-        string promptId,
-        CancellationToken cancellationToken = default)
-    {
-        await _operationLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (IsRecording)
-            {
-                throw new InvalidOperationException("No se puede extraer un reporte mientras hay una grabación en curso.");
-            }
-
-            _isProcessing = true;
-            OnStateChanged();
-
-            ExtractionSaveResult result = await _pipeline.ExtractForSessionAsync(
-                sessionId, transcript, promptId, cancellationToken);
-            RaiseReportSaved(result.SavedReportPath, result.Prompt);
-            return result;
-        }
-        catch (Exception exception)
-        {
-            RaiseRecordingFailed(exception, "No se pudo re-generar el reporte");
-            throw;
-        }
-        finally
-        {
-            _isProcessing = false;
-            OnStateChanged();
-            _operationLock.Release();
-        }
-    }
-
-    /// <summary>
-    /// Con el mismo resguardo que el resto de los eventos. Antes se invocaba
-    /// directo, y un suscriptor que lanzara —p. ej. la bandeja tocando XAML desde
-    /// el hilo de una petición HTTP— convertía una grabación correcta en un
-    /// error.
-    /// </summary>
     private void OnStateChanged() => RaiseSafely(StateChanged, EventArgs.Empty);
 
-    private void RaiseRecordingCompleted(MeetingPipelineResult result) =>
-        RaiseSafely(RecordingCompleted, new RecordingCompletedEventArgs(result));
-
-    /// <summary>
-    /// Detener sin nada grabando no es un fallo que haya que avisar: no se
-    /// perdió nada, y quien llamó ya recibe la excepción (el endpoint HTTP
-    /// contesta 409). Los otros resguardos sí avisan: "ya hay una grabación" o
-    /// "hay una reunión procesándose" le explican al usuario por qué el hotkey
-    /// no hizo lo que esperaba.
-    /// </summary>
+    /// <summary>Detener sin nada grabando no es un fallo que haya que avisar (el endpoint contesta 409).</summary>
     private void RaiseRecordingFailed(Exception exception, string operation)
     {
         if (exception is NothingToStopException) return;
@@ -329,19 +136,9 @@ public sealed class RecordingCoordinator : IRecordingTrigger
     /// <summary>Sigue siendo una InvalidOperationException: el contrato hacia afuera no cambia.</summary>
     private sealed class NothingToStopException() : InvalidOperationException("No hay una grabación en curso.");
 
-    private void RaiseReportSaved(string savedReportPath, PromptDefinition prompt) =>
-        RaiseSafely(ReportSaved, new ReportSavedEventArgs(savedReportPath, prompt));
-
-    /// <summary>
-    /// Invoca a cada suscriptor por separado y traga sus excepciones: un
-    /// suscriptor no debe convertir un procesamiento exitoso en un fallo, ni
-    /// ocultar el error original cuando lo que se está propagando ya es una
-    /// excepción.
-    /// </summary>
     private void RaiseSafely<TArgs>(EventHandler<TArgs>? handlers, TArgs args)
     {
-        foreach (EventHandler<TArgs> handler in
-                 handlers?.GetInvocationList().Cast<EventHandler<TArgs>>() ?? [])
+        foreach (EventHandler<TArgs> handler in handlers?.GetInvocationList().Cast<EventHandler<TArgs>>() ?? [])
         {
             try
             {
@@ -349,9 +146,6 @@ public sealed class RecordingCoordinator : IRecordingTrigger
             }
             catch (Exception exception)
             {
-                // Se traga, pero no en silencio: un suscriptor que falla en cada
-                // evento (p. ej. por tocar XAML fuera del hilo de UI) tiene que
-                // poder encontrarse en el log.
                 AppLog.Failure($"RecordingCoordinator.{typeof(TArgs).Name} ({handler.Method.DeclaringType?.Name})", exception);
             }
         }
@@ -373,13 +167,6 @@ public sealed class RecordingCoordinator : IRecordingTrigger
     }
 }
 
-public sealed class RecordingCompletedEventArgs : EventArgs
-{
-    public RecordingCompletedEventArgs(MeetingPipelineResult result) => Result = result;
-
-    public MeetingPipelineResult Result { get; }
-}
-
 public sealed class RecordingFailedEventArgs : EventArgs
 {
     public RecordingFailedEventArgs(Exception exception, string operation)
@@ -390,31 +177,6 @@ public sealed class RecordingFailedEventArgs : EventArgs
 
     public Exception Exception { get; }
 
-    /// <summary>
-    /// Qué se estaba intentando, en texto ya presentable. El evento cubre los
-    /// seis caminos del coordinador, así que sin esto un aviso fuera de la
-    /// ventana no puede decir si falló la grabación, la transcripción o el
-    /// reporte.
-    /// </summary>
+    /// <summary>Qué se estaba intentando, en texto ya presentable.</summary>
     public string Operation { get; }
-}
-
-public sealed class TranscriptReadyEventArgs : EventArgs
-{
-    public TranscriptReadyEventArgs(TranscriptionSession session) => Session = session;
-
-    public TranscriptionSession Session { get; }
-}
-
-public sealed class ReportSavedEventArgs : EventArgs
-{
-    public ReportSavedEventArgs(string savedReportPath, PromptDefinition prompt)
-    {
-        SavedReportPath = savedReportPath;
-        Prompt = prompt;
-    }
-
-    public string SavedReportPath { get; }
-
-    public PromptDefinition Prompt { get; }
 }
