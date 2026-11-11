@@ -28,21 +28,16 @@ public sealed class MarkdownReportStorage : IReportStorage
         _subFolder = configuration["Storage:SubFolder"] ?? "Meetings";
     }
 
-    public Task<string> SaveAsync(MeetingReport report, CancellationToken cancellationToken = default)
-    {
-        return SaveMarkdownAsync(MeetingReportMarkdownRenderer.Render(report), report.Metadata, cancellationToken);
-    }
-
     public async Task<string> SaveMarkdownAsync(
         string markdown,
-        MeetingReportMetadata? metadata,
+        ReportFileMetadata metadata,
         CancellationToken cancellationToken = default)
     {
         string targetDir = Path.Combine(_vaultPath, _subFolder);
         Directory.CreateDirectory(targetDir);
 
-        DateTimeOffset generatedAt = metadata?.GeneratedAtUtc ?? DateTimeOffset.UtcNow;
-        string prefix = SanitizeFilePrefix(metadata?.PromptId) ?? "meeting-report";
+        DateTimeOffset generatedAt = metadata.GeneratedAtUtc;
+        string prefix = SanitizeFilePrefix(metadata.PromptId) ?? "meeting-report";
         string baseName = $"{prefix}-{generatedAt:yyyyMMdd-HHmmss}";
         byte[] content = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(
             RenderDocument(markdown, metadata, generatedAt))).ToArray();
@@ -65,32 +60,26 @@ public sealed class MarkdownReportStorage : IReportStorage
         }
     }
 
-    private static string RenderDocument(string markdown, MeetingReportMetadata? metadata, DateTimeOffset generatedAt)
+    private static string RenderDocument(string markdown, ReportFileMetadata metadata, DateTimeOffset generatedAt)
     {
         var sb = new StringBuilder();
 
         sb.AppendLine("---");
-        sb.AppendLine(string.IsNullOrWhiteSpace(metadata?.PromptId) || metadata.PromptId == ReportExtractionPrompt.Id
+        sb.AppendLine(string.IsNullOrWhiteSpace(metadata.PromptId) || metadata.PromptId == DefaultPromptId
             ? "type: meeting-report"
             : $"type: {metadata.PromptId}");
         sb.AppendLine($"generated: {generatedAt:yyyy-MM-dd HH:mm}");
-        if (metadata is not null)
-        {
-            sb.AppendLine($"llm-provider: {metadata.LlmProvider}");
-            sb.AppendLine($"llm-model: {metadata.LlmModel}");
-            if (!string.IsNullOrWhiteSpace(metadata.PromptId))
-            {
-                sb.AppendLine($"prompt-id: {metadata.PromptId}");
-            }
-            sb.AppendLine($"prompt-version: {metadata.PromptVersion}");
-            sb.AppendLine($"tokens-input: {metadata.InputTokens}");
-            sb.AppendLine($"tokens-output: {metadata.OutputTokens}");
-            // Sin precio no se escribe: un 0 en el frontmatter parecería medido.
-            if (metadata.EstimatedCostUsd is { } cost)
-            {
-                sb.AppendLine($"cost-usd: {cost:F6}");
-            }
-        }
+        AppendIfKnown(sb, "llm-provider", metadata.LlmProvider);
+        AppendIfKnown(sb, "llm-model", metadata.LlmModel);
+        AppendIfKnown(sb, "prompt-id", metadata.PromptId);
+        AppendIfKnown(sb, "prompt-version", metadata.PromptVersion);
+        AppendIfKnown(sb, "tokens-input", metadata.InputTokens?.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendIfKnown(sb, "tokens-output", metadata.OutputTokens?.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        // Sin precio no se escribe: un 0 en el frontmatter parecería medido.
+        AppendIfKnown(sb, "cost-usd", metadata.CostUsd?.ToString("F6", System.Globalization.CultureInfo.InvariantCulture));
+        // Desde el paso B el reporte vive en DevLog: con esto se encuentra la sesión desde el .md.
+        AppendIfKnown(sb, "devlog-session", metadata.IdSession?.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendIfKnown(sb, "devlog-report", metadata.IdReport?.ToString(System.Globalization.CultureInfo.InvariantCulture));
         sb.AppendLine("---");
         sb.AppendLine();
 
@@ -113,6 +102,14 @@ public sealed class MarkdownReportStorage : IReportStorage
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>El prompt de las reuniones de asignación, el que usa el servidor por defecto: su .md es "meeting-report".</summary>
+    public const string DefaultPromptId = "assignment-meeting";
+
+    private static void AppendIfKnown(StringBuilder sb, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) sb.AppendLine($"{key}: {value}");
     }
 
     private static string? SanitizeFilePrefix(string? promptId)

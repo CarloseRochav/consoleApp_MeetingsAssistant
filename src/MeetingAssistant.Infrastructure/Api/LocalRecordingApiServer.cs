@@ -126,12 +126,14 @@ public sealed class LocalRecordingApiServer : IDisposable
                     break;
 
                 case ("POST", "/recording/stop"):
-                    MeetingPipelineResult result = await _recordings.StopRecordingAndProcessAsync(cancellationToken);
+                    // Desde el paso B, detener deja la reunión en la cola de subidas y contesta en
+                    // seguida: el reporte lo hace el servidor y llega al vault después.
+                    QueuedMeeting queued = await _recordings.StopRecordingAndQueueAsync(cancellationToken);
                     await WriteJsonAsync(response, 200, new
                     {
-                        transcript = result.Transcription.Transcript,
-                        report = result.Report,
-                        savedReportPath = result.SavedReportPath
+                        status = "queued",
+                        meetingId = queued.Id,
+                        audioPath = queued.OriginalAudioPath
                     });
                     break;
 
@@ -160,11 +162,8 @@ public sealed class LocalRecordingApiServer : IDisposable
         response.StatusCode = statusCode;
         response.ContentType = "application/json";
 
-        // Reutiliza las mismas JsonSerializerOptions que MeetingReportParser usa
-        // para deserializar (incluye el PriorityJsonConverter) — así el enum
-        // Priority sale como "alta"/"media"/"baja" en la respuesta, consistente
-        // con el resto del sistema, no como un número de enum crudo.
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(payload, MeetingReportParser.SerializerOptions);
+        // Las respuestas son objetos anónimos con nombres en camelCase escritos a mano.
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
 
         response.ContentLength64 = bytes.Length;
         await response.OutputStream.WriteAsync(bytes);
