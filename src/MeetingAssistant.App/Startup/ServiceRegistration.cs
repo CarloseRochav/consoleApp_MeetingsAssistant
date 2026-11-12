@@ -97,6 +97,8 @@ internal static class ServiceRegistration
         services.AddSingleton<ActivityNotificationService>();
         services.AddSingleton<TrayIconService>();
         services.AddSingleton<GlobalHotkeyService>();
+        services.AddSingleton(provider => new LocalAudioRetention(
+            provider.GetRequiredService<IQueuedMeetingStore>(), AppPaths.MeetingOutputDirectory, failure: AppLog.Failure));
         services.AddSingleton<BackgroundMaintenance>();
         return services;
     }

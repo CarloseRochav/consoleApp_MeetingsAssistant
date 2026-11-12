@@ -2699,8 +2699,14 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
   parar. Dueño: "works". Fue WhatsApp, no Teams (mismo camino: loopback + micrófono).
 - **Captura real de más de 100 min: no se hace, por decisión del dueño (2026-11-11).** Queda la
   prueba sintética (110 min → 201 MB) y la cuenta del límite (≈9,3 h a 16 kHz).
-- **No medido:** las páginas a mano (Historial, Costos, Configuración): sus servicios se probaron
-  contra producción con `--verify-api`, sin un reporte del dueño de cada pantalla.
+- **Páginas a mano (Historial, Costos, Configuración): cerrado por el dueño (2026-11-11)**, sin
+  hallazgos reportados. Sus servicios se probaron contra producción con `--verify-api`.
+- **Audio local (decisión del dueño, opción C, 2026-11-11):** el WAV original se borra 30 días
+  después de que su reporte llega al vault (`Storage:LocalAudioRetentionDays`, 0 = nunca); sólo
+  reuniones listas y sólo dentro de la carpeta de grabaciones de la app. Una vez al día.
+  `--verify-local-retention` (9, en la CI). Comprobado que la app arranca el ciclo con 30 días.
+- **Rotar las claves de proveedor y la contraseña de la base vieja: se quita del corte**
+  (decisión del dueño, 2026-11-11).
 - **Dispositivos viejos:** `tools\Revoke-OldDevices.ps1` (lo corre el dueño, con su login) revoca
   los dispositivos activos de esta máquina (`CHARLIE`, `harness-CHARLIE`) salvo el que usa la app;
   sin `-Apply` sólo lista. El 6 ya está revocado; la app usa el 7.
@@ -2710,8 +2716,7 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
 
 **Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
 DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:
-importación final si hace falta, instalar en cada máquina, **rotar las claves de proveedor que
-vivían en los escritorios** y la contraseña de la base vieja, retirar la base vieja).
+importación final si hace falta, instalar en cada máquina, retirar la base vieja; la rotación de claves se quitó, decisión del dueño 2026-11-11).
 
 **Criterio de salida:** una llamada de Teams grabada en el escritorio → `.md` en el vault sin ninguna
 clave de proveedor en la máquina; historial, búsqueda, costos, prompts y re-extracción desde el

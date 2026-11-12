@@ -83,6 +83,9 @@ public sealed record QueuedMeeting
     /// <summary>Dónde quedó el .md en el vault.</summary>
     public string? ReportPath { get; init; }
 
+    /// <summary>Cuándo llegó el .md al vault. De ahí cuentan los días para borrar el WAV original (decisión del dueño, 2026-11-11).</summary>
+    public DateTimeOffset? ReadyAtUtc { get; init; }
+
     /// <summary>Por qué falló, en palabras para el usuario (con el motivo del servidor si lo dio).</summary>
     public string? Error { get; init; }
 

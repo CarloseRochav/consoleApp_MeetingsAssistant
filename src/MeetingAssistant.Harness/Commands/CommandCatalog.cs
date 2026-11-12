@@ -15,6 +15,7 @@ internal static class CommandCatalog
         HarnessCommand.Offline("--verify-device-auth", "Offline. Inicio de sesión del dispositivo, DPAPI, revocado.", ApiSelfTests.VerifyDeviceAuthAsync),
         HarnessCommand.Offline("--verify-upload-queue", "Offline. La cola: sin red, reinicio a mitad, 429, revocado, re-extracción.", ApiSelfTests.VerifyQueueAsync),
         HarnessCommand.Offline("--verify-api-services", "Offline. Costos (nulo nunca es 0), prompts y ajustes permitidos.", ApiSelfTests.VerifyServices),
+        HarnessCommand.Offline("--verify-local-retention", "Offline. El WAV original se borra N dias despues de su reporte, y nada mas.", LocalRetentionSelfTest.Run),
         HarnessCommand.Offline("--verify-settings-config", "Offline. Las capas de configuracion local.", SettingsConfigurationSelfTest.Run),
         HarnessCommand.Offline("--verify-release", "Offline. El .appinstaller y el comando de instalacion.", ReleaseCommands.Verify),
 

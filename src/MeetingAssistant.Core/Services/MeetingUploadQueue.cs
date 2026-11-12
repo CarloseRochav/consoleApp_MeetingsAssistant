@@ -435,7 +435,7 @@ public sealed class MeetingUploadQueue : IDisposable
             // vuelve a escribir (un .md repetido, nunca uno perdido). Es el lado barato del error.
             meeting = Save(meeting with { IdReport = report.IdReport });
             string path = await _reports.SaveMarkdownAsync(report.Markdown, ReportFileMetadata.From(report), cancellationToken);
-            meeting = Save(meeting with { Status = QueuedMeetingStatus.Ready, ReportPath = path, Notice = null, Error = null, RetryCount = 0 });
+            meeting = Save(meeting with { Status = QueuedMeetingStatus.Ready, ReportPath = path, ReadyAtUtc = _time.GetUtcNow(), Notice = null, Error = null, RetryCount = 0 });
             DeleteConvertedCopy(meeting);
             _diagnostic($"Cola: {meeting.Id} lista (trabajo {meeting.IdJob}, sesión {meeting.IdSession}, reporte {report.IdReport}).");
             Raise(ReportReady, meeting);
