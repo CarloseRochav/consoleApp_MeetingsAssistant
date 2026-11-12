@@ -2613,6 +2613,18 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
   propio no se ve desde aquí (**no comprobado**).
 - **Propuesta: no hace falta importación final.** Antes del corte, volver a correr la simulación:
   si sigue sin filas nuevas, el paso 1 del corte no se hace.
+- **Simulación repetida antes del corte (2026-11-12, la corrió el dueño, sin `--apply`):** mismo
+  resultado que el 2026-11-10. Origen `neondb` (viejo) → `devLog-production`. Sesiones,
+  transcripts, reportes, versiones de prompt y subidas: todas iguales, 0 sólo en origen, 0 origen
+  nuevo (la más reciente del origen sigue siendo del 2026-10-14). DevLog creó desde la vez anterior
+  las sesiones 55–59 y los reportes 49–54 (pruebas del 2026-11-11); ningún id choca. Los únicos
+  distintos siguen siendo los tres ajustes base reguardados el 2026-10-19 (`Llm:Provider`,
+  `AzureFoundry:Endpoint`, `AzureFoundry:Deployment`): el comando se negaría a `--apply`.
+  **No reconfirmado hoy** que sus valores sean iguales (el 2026-11-10 lo eran; el md5 sólo dice
+  que la fila difiere, y el 2026-10-19 19:03Z del origen no cambió).
+- **Decisión del dueño (2026-11-12, `decision-log.md`): sin importación final.** El paso 1 del
+  corte no se hace. Aceptado: una reunión guardada sólo en el SQLite propio de otra máquina no la
+  ve esta comprobación.
 
 **Escritorio, pasos 1-6 — cliente de la API (rama `step-b-desktop-client`, 2026-11-10/11).**
 - **Core** (sin paquetes): modelos de la API, `IDevLogApi`, `DeviceAuthService` (login una vez →
@@ -2716,7 +2728,7 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
 
 **Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
 DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:
-importación final si hace falta, instalar en cada máquina, retirar la base vieja; la rotación de claves se quitó, decisión del dueño 2026-11-11).
+~~importación final si hace falta~~ (no hace falta, decisión del dueño 2026-11-12), instalar en cada máquina, retirar la base vieja; la rotación de claves se quitó, decisión del dueño 2026-11-11).
 
 **Criterio de salida:** una llamada de Teams grabada en el escritorio → `.md` en el vault sin ninguna
 clave de proveedor en la máquina; historial, búsqueda, costos, prompts y re-extracción desde el
