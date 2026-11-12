@@ -718,3 +718,65 @@ internal static class ApiSelfTests
         return checks.Finish();
     }
 }
+
+/// <summary>--verify-local-retention: el WAV original se borra N días después del reporte, y nada más.</summary>
+internal static class LocalRetentionSelfTest
+{
+    public static int Run()
+    {
+        Console.WriteLine("=== Retención del audio local (30 días después del reporte) ===");
+        var checks = new Checks("--verify-local-retention");
+        string root = Path.Combine(Path.GetTempPath(), $"retention-{Guid.NewGuid():N}");
+        string recordings = Path.Combine(root, "meeting-output");
+        string elsewhere = Path.Combine(root, "user-music");
+        Directory.CreateDirectory(recordings);
+        Directory.CreateDirectory(elsewhere);
+        try
+        {
+            var store = new JsonQueuedMeetingStore(Path.Combine(root, "queue"), new DpapiSecretProtector());
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+
+            string File(string folder, string name)
+            {
+                string path = Path.Combine(folder, name);
+                System.IO.File.WriteAllBytes(path, new byte[1000]);
+                return path;
+            }
+
+            QueuedMeeting Meeting(string id, QueuedMeetingStatus status, string audio, DateTimeOffset? readyAt, DateTimeOffset? created = null) =>
+                new() { Id = id, CreatedAtUtc = created ?? now.AddDays(-40), Status = status, OriginalAudioPath = audio, ReadyAtUtc = readyAt };
+
+            string old = File(recordings, "old.wav");
+            string recent = File(recordings, "recent.wav");
+            string failed = File(recordings, "failed.wav");
+            string waiting = File(recordings, "waiting.wav");
+            string imported = File(elsewhere, "imported.wav");
+            string legacy = File(recordings, "legacy.wav");
+            store.Save(Meeting("old", QueuedMeetingStatus.Ready, old, now.AddDays(-31)));
+            store.Save(Meeting("recent", QueuedMeetingStatus.Ready, recent, now.AddDays(-29)));
+            store.Save(Meeting("failed", QueuedMeetingStatus.Failed, failed, null));
+            store.Save(Meeting("waiting", QueuedMeetingStatus.Waiting, waiting, null));
+            store.Save(Meeting("imported", QueuedMeetingStatus.Ready, imported, now.AddDays(-60)));
+            store.Save(Meeting("legacy", QueuedMeetingStatus.Ready, legacy, readyAt: null, created: now.AddDays(-35)));
+
+            var retention = new LocalAudioRetention(store, recordings);
+            checks.Check("con 0 días no borra nada", retention.Run(0).Deleted == 0 && System.IO.File.Exists(old));
+
+            LocalAudioRetentionResult result = retention.Run(30);
+            checks.Check("borra el original de un reporte de hace 31 días", !System.IO.File.Exists(old));
+            checks.Check("conserva el de un reporte de hace 29 días", System.IO.File.Exists(recent));
+            checks.Check("nunca toca una reunión fallida (su audio es lo único que queda)", System.IO.File.Exists(failed));
+            checks.Check("nunca toca una que todavía no se envió", System.IO.File.Exists(waiting));
+            checks.Check("nunca toca un audio importado de otra carpeta", System.IO.File.Exists(imported));
+            checks.Check("una lista de antes de ReadyAtUtc cuenta desde que se grabó (hace 35 días)", !System.IO.File.Exists(legacy));
+            checks.Check("dice cuántos y cuánto", result is { Deleted: 2, BytesFreed: 2000, Failed: 0 });
+            checks.Check("una segunda pasada no hace nada", retention.Run(30).Deleted == 0);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+
+        return checks.Finish();
+    }
+}

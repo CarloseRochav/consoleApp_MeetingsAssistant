@@ -52,7 +52,7 @@ jobs:
       - name: Autotests offline
         run: |
           $tests = '--verify-api-client', '--verify-block-upload', '--verify-wav-convert', '--verify-device-auth',
-                   '--verify-upload-queue', '--verify-api-services', '--verify-settings-config', '--verify-release'
+                   '--verify-upload-queue', '--verify-api-services', '--verify-local-retention', '--verify-settings-config', '--verify-release'
           $failed = @()
           foreach ($test in $tests) {
             Write-Host "::group::$test"

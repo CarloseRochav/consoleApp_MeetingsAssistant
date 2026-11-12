@@ -86,5 +86,5 @@ Do not run the final import with --apply, delete the old database or rotate keys
 
 1. Final import, only as the desktop session's step 0 says (none if nothing new; a collision plan if any).
 2. Install the new desktop release on every machine that has the app (the Phase 7 installer).
-3. **Rotate the provider keys** that lived on desktop machines (Deepgram, Gemini, Azure AI Foundry) and the old database's password; the worker gets the new ones through its secrets. Then delete the old database (or keep it read-only for a while: decide then).
+3. ~~Rotate the provider keys that lived on desktop machines and the old database's password~~: **dropped by the owner (2026-11-11, `decision-log.md`)**. Delete the old database (or keep it read-only for a while: decide then). Optionally clear the old keys from each machine's local settings (Settings → "Borrar las claves viejas de esta máquina") and revoke old devices with `tools\Revoke-OldDevices.ps1`.
 4. The roadmap records step B as done, with what was tested.
