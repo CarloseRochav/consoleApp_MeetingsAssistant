@@ -1,0 +1,108 @@
+# The whole DevLog / Meeting Assistant back end on this PC, without Azure (2026-11-16, written when
+# the Azure subscription was suspended; see ../azure-migration-guide.md).
+#
+#   pwsh -File New-LocalEnv.ps1      # once: writes .env (git-ignored) from the local settings files
+#   docker compose up -d --build     # start everything; db/schema.sql loads on the first boot
+#   docker compose down              # stop, keep data (DB and blobs live in named volumes)
+#   docker compose down -v           # stop and WIPE the local DB and blobs
+#
+# Ports on this PC (chosen not to clash with devlog-pg 5433, devlog-azurite 10000, fleet-api 8080):
+#   Postgres 5434 · API 18080 · frontend 18081 · Azurite blob 10010 / queue 10011
+#
+# Why the API and worker share Azurite's network (network_mode: service:azurite): the API signs
+# upload/read links with the endpoint in its storage connection string. With 127.0.0.1:10010 that
+# one address works for the API (same network namespace), for this PC (published port), and for the
+# phone (adb reverse tcp:10010). A hostname like "azurite" would not resolve on the phone.
+#
+# Not here: the DevLog AI agent. It needs Azure AI Foundry and Azure AI Search, which were in the
+# suspended subscription; there is no local stand-in for them.
+name: devlog-local
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devlog_local
+      POSTGRES_DB: devlog_dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ../../../DevLog_Backend/devLog_Backend/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d devlog_dev"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: >
+      azurite --blobHost 0.0.0.0 --blobPort 10010 --queueHost 0.0.0.0 --queuePort 10011
+      --skipApiVersionCheck --loose --location /data
+    volumes:
+      - blobs:/data
+    ports:
+      - "10010:10010"   # blob
+      - "10011:10011"   # queue
+      - "18080:8080"    # the API (it lives in this service's network namespace)
+
+  api:
+    build: ../../../DevLog_Backend/devLog_Backend
+    network_mode: service:azurite
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=devlog_dev;Username=postgres;Password=devlog_local
+      Jwt__Key: ${JWT_KEY:?run New-LocalEnv.ps1 first}
+      Jwt__Issuer: devLog_Backend
+      Jwt__Audience: devLog_Frontend
+      Jwt__ExpiresMinutes: "480"
+      Cors__AllowedOrigins__0: "*"
+      Uploads__ConnectionString: ${STORAGE}
+      Uploads__Container: uploads
+      Uploads__WakeQueue: mtg-jobs
+      Videos__ConnectionString: ${STORAGE}
+      Videos__Container: videos
+      PasswordReset__ResetUrl: http://localhost:18081/reset-password
+      Jobs__TimeZone: America/Tijuana
+      Logging__LogLevel__Default: Information
+
+  worker:
+    build: ../../../MeetingAssistant_Worker
+    network_mode: service:azurite
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+    environment:
+      Worker__Mode: Loop
+      Worker__TimeZone: America/Tijuana
+      ConnectionStrings__DevLog: Host=postgres;Port=5432;Database=devlog_dev;Username=postgres;Password=devlog_local
+      Uploads__ConnectionString: ${STORAGE}
+      Uploads__Container: uploads
+      Uploads__WakeQueue: mtg-jobs
+      Deepgram__ApiKey: ${DEEPGRAM_KEY:-}
+      Gemini__ApiKey: ${GEMINI_KEY:-}
+      # Azure AI Foundry (grok) was in the suspended subscription: extraction runs on Gemini here.
+      Llm__Provider: Gemini
+
+  frontend:
+    build: ../../../DevLog_Frontend
+    depends_on:
+      - api
+    environment:
+      BACKEND_URL: http://azurite:8080
+    ports:
+      - "18081:8080"
+
+volumes:
+  pgdata:
+  blobs:
