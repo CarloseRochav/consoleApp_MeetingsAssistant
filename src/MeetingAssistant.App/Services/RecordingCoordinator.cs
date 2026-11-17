@@ -47,8 +47,8 @@ public sealed class RecordingCoordinator : IRecordingTrigger
             if (IsProcessing || _recorder.IsRecording)
             {
                 throw new InvalidOperationException(IsProcessing
-                    ? "Se está guardando la grabación anterior; espera un momento."
-                    : "Ya hay una grabación en curso.");
+                    ? "The previous recording is still being saved; wait a moment."
+                    : "A recording is already in progress.");
             }
 
             await _recorder.StartRecordingAsync(source, cancellationToken);
@@ -57,7 +57,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         }
         catch (Exception exception)
         {
-            RaiseRecordingFailed(exception, "No se pudo iniciar la grabación");
+            RaiseRecordingFailed(exception, "Could not start the recording");
             throw;
         }
         finally
@@ -82,7 +82,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         }
         catch (Exception exception)
         {
-            RaiseRecordingFailed(exception, "No se pudo guardar la grabación");
+            RaiseRecordingFailed(exception, "Could not save the recording");
             throw;
         }
         finally
@@ -101,7 +101,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         {
             if (IsRecording || IsProcessing)
             {
-                throw new InvalidOperationException("No se puede procesar un archivo mientras hay una grabación en curso.");
+                throw new InvalidOperationException("A file cannot be processed while a recording is in progress.");
             }
 
             _isProcessing = true;
@@ -113,7 +113,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
         }
         catch (Exception exception)
         {
-            RaiseRecordingFailed(exception, "No se pudo encolar el audio");
+            RaiseRecordingFailed(exception, "Could not queue the audio");
             throw;
         }
         finally
@@ -134,7 +134,7 @@ public sealed class RecordingCoordinator : IRecordingTrigger
     }
 
     /// <summary>Sigue siendo una InvalidOperationException: el contrato hacia afuera no cambia.</summary>
-    private sealed class NothingToStopException() : InvalidOperationException("No hay una grabación en curso.");
+    private sealed class NothingToStopException() : InvalidOperationException("There is no recording in progress.");
 
     private void RaiseSafely<TArgs>(EventHandler<TArgs>? handlers, TArgs args)
     {

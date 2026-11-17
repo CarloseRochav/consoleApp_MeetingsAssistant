@@ -1,5 +1,9 @@
 # Handoff: finishing Phase 8 step D (2026-11-05)
 
+**Status (2026-11-16): closed on 2026-11-12.** Do not re-run these prompts. The exit test (tile → `.md` in the vault with the app closed) passed on 2026-11-05 (job 19, session 41). Closed without the two remaining phone tests, both still **not measured**: the "report ready" notification after the app is removed from recents, and the 429 "jobs in progress" message on the phone. The server side of the 429 is tested. See `decision-log.md` (2026-11-12, "Phase 8 step D").
+
+**Language (2026-11-16):** English only, on the phone and the desktop. The phone already was. Inline strings stay inline: no Android `strings.xml`.
+
 Three prompts, one per repo, to run in separate Claude Code sessions **in this order**:
 DevLog_Backend → MeetingAssistant_Worker → (owner deploys both) → MeetingAssistant_App.
 The app prompt's part 1 does not depend on the server and can run at any time.

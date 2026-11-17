@@ -28,7 +28,7 @@ public sealed class DevLogApiClient : IDevLogApi
             (uri.Scheme != Uri.UriSchemeHttps && !uri.IsLoopback))
         {
             // Sólo HTTPS (o localhost, para pruebas contra una API local): el token viaja en cada llamada.
-            throw new ArgumentException("DevLog:BaseUrl tiene que ser una dirección https:// (o http://localhost para pruebas).", nameof(baseUrl));
+            throw new ArgumentException("DevLog:BaseUrl has to be an https:// address (or http://localhost for tests).", nameof(baseUrl));
         }
 
         _http = http;

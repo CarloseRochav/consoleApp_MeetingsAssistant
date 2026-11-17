@@ -39,7 +39,7 @@ public sealed class DpapiSecretProtector : ISecretProtector
         if (!OperatingSystem.IsWindows())
         {
             throw new PlatformNotSupportedException(
-                "El cifrado de secretos usa DPAPI y sólo funciona en Windows.");
+                "Secret encryption uses DPAPI and only works on Windows.");
         }
 
         byte[] encrypted = ProtectedData.Protect(

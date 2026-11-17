@@ -24,7 +24,7 @@ public sealed class MarkdownReportStorage : IReportStorage
     {
         _vaultPath = configuration["Storage:VaultPath"]
             ?? throw new InvalidOperationException(
-                "Falta configurar \"Storage:VaultPath\" en appsettings.json — la ruta de tu vault de Obsidian.");
+                "\"Storage:VaultPath\" is missing in appsettings.json — the path to your Obsidian vault.");
         _subFolder = configuration["Storage:SubFolder"] ?? "Meetings";
     }
 

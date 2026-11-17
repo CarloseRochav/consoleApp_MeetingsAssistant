@@ -5,7 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:views="using:MeetingAssistant.App.Views"
-    Title="Meeting Assistant — configuración inicial"
+    Title="Meeting Assistant — first-time setup"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -19,14 +19,14 @@
             VerticalAlignment="Top"
             Style="{StaticResource CardBorderStyle}">
             <StackPanel Spacing="16">
-                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Configuración inicial" />
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="First-time setup" />
                 <TextBlock
                     Style="{StaticResource BodyCopyStyle}"
-                    Text="A esta instalación le faltan valores de esta máquina (dónde escribir los reportes). No hay claves de proveedor que escribir: la app habla con el servidor de DevLog, y después se inicia sesión con tu usuario." />
+                    Text="This install is missing values for this machine (where to write the reports). There are no provider keys to type: the app talks to the DevLog server, and you sign in with your user afterwards." />
 
                 <InfoBar
                     x:Name="MissingInfo"
-                    Title="Falta"
+                    Title="Missing"
                     IsClosable="False"
                     IsOpen="True"
                     Severity="Warning" />

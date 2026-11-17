@@ -17,7 +17,7 @@ public sealed partial class ServerSettingItem(ServerSetting setting) : Observabl
     public string Hint { get; } = setting.Hint;
 
     /// <summary>Lo que vale si dejo el mío vacío.</summary>
-    public string Placeholder { get; } = setting.BaseValue is { Length: > 0 } baseValue ? $"base: {baseValue}" : "sin valor en la base";
+    public string Placeholder { get; } = setting.BaseValue is { Length: > 0 } baseValue ? $"shared: {baseValue}" : "no shared value";
 
     public string? SavedOwnValue { get; set; } = setting.OwnValue;
 
@@ -64,7 +64,7 @@ public partial class ServerSettingsViewModel(ServerSettingsService settings) : O
         catch (Exception exception)
         {
             AppLog.Failure("ServerSettings.Load", exception);
-            StatusMessage = "No se pudieron leer los ajustes del servidor: " + (exception is ApiException api ? api.Error.Describe() : exception.Message);
+            StatusMessage = "Could not read the server settings: " + (exception is ApiException api ? api.Error.Describe() : exception.Message);
             ErrorDetails = exception.ToString();
         }
         finally
@@ -99,13 +99,13 @@ public partial class ServerSettingsViewModel(ServerSettingsService settings) : O
             }
 
             StatusMessage = problems.Count == 0
-                ? saved == 0 ? "No había cambios." : $"Guardado en el servidor ({saved}). Vale para las reuniones que se procesen desde ahora, en todos tus dispositivos."
-                : $"Guardados {saved}; el servidor rechazó {problems.Count}: {string.Join(" ", problems)}";
+                ? saved == 0 ? "Nothing had changed." : $"Saved on the server ({saved}). Applies to meetings processed from now on, on every device."
+                : $"Saved {saved}; the server rejected {problems.Count}: {string.Join(" ", problems)}";
         }
         catch (Exception exception)
         {
             AppLog.Failure("ServerSettings.Save", exception);
-            StatusMessage = "No se pudo guardar en el servidor: " + (exception is ApiException api ? api.Error.Describe() : exception.Message);
+            StatusMessage = "Could not save on the server: " + (exception is ApiException api ? api.Error.Describe() : exception.Message);
             ErrorDetails = exception.ToString();
         }
         finally

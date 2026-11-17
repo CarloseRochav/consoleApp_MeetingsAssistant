@@ -1304,7 +1304,15 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 
 ---
 
-## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A hecho 2026-10-30; paso B cerrado 2026-11-12)
+## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A hecho 2026-10-30; pasos B y D cerrados 2026-11-12)
+
+**UI en inglés (2026-11-16).** El escritorio y el teléfono usan un solo idioma, inglés
+(decisión del dueño, `decision-log.md`). El teléfono ya lo estaba. El escritorio
+pasa su copia visible (páginas, diálogos, bandeja, avisos, fechas y los avisos
+de la cola) a inglés, sin tabla de recursos. Historial deja de apilar la
+re-extracción: el reporte ocupa la página y «extract again» es un diálogo.
+Configuración se parte en Cuenta, Esta máquina, Servidor y Prompts, y el token
+del endpoint local queda bajo Avanzado.
 
 **Objetivo:** que el escritorio y una app Android en Kotlin sean dos clientes
 delgados de una API propia. La API es la única que habla con la base y con los
@@ -1985,7 +1993,42 @@ video contestan 401 sin token y con un token de dispositivo inventado
 (comprobado). **Sin comprobar en producción:** una subida real con sesión (el
 contenedor `videos` se crea con la primera). **Falta:** el cliente Android (paso D).
 
-### Paso D — app Android (empezado 2026-11-04)
+#### Reproductor: zoom y línea de tiempo (pedido por el dueño 2026-11-16, sin empezar)
+
+**Zoom (pellizco):**
+- Pellizcar con dos dedos agranda el video que se está viendo, de 1× a 4×; con zoom,
+  arrastrar con un dedo mueve la imagen sin salirse del borde.
+- Doble toque en el centro vuelve a 1×. Funciona reproduciendo y en pausa.
+- El zoom es sólo de la vista: no cambia el archivo ni la nube. Al salir del reproductor
+  vuelve a 1×.
+
+**Línea de tiempo:**
+- Barra propia con el estilo de la app (`:core-ui`, roles de `MaterialTheme.colorScheme`),
+  más grande que la de Media3 para agarrarla con el pulgar; muestra tiempo transcurrido y total.
+- Al arrastrarla aparece una miniatura del cuadro en ese punto, encima del dedo, tomada de la
+  **hoja de miniaturas** del video (abajo).
+- Botones de retroceder / avanzar 10 s; doble toque en el lado izquierdo / derecho del video
+  hace lo mismo.
+- Al renovar el enlace (dura ~15 min) la barra y el zoom siguen donde estaban.
+
+**Hoja de miniaturas (decisión del 2026-11-16, `decision-log.md`): la hace el teléfono al subir.**
+- Al terminar la grabación, mientras el archivo sigue en el teléfono, se saca un cuadro cada
+  pocos segundos, se arma la hoja (una imagen con todos los cuadros) y sube junto con el video.
+  El borrado de la copia local después de confirmar no cambia.
+- DevLog sólo la guarda y da un enlace de lectura de corta vida: migración nueva con funciones
+  `vid_*`, endpoint en `VideosController`, mismo contenedor `videos`. Sin ffmpeg y sin tocar el
+  worker: el video sigue aislado de las reuniones (decisión del 2026-11-03).
+- Los videos ya subidos no tienen hoja: la barra funciona sin miniatura.
+- **Por decidir al construir:** cada cuántos segundos un cuadro, tamaño del cuadro, si la hoja
+  cuenta para el límite de 50 GB.
+
+**Reglas:** estados de carga y error de la miniatura (si no llega, la barra funciona sin ella);
+@Preview claro y oscuro; nada se guarda en el teléfono al ver.
+
+**Medir en el teléfono:** cuánto tarda en armarse la hoja de un video largo, cuánto pesa, y la
+miniatura al arrastrar; lo que no se pueda medir se reporta como no medido.
+
+### Paso D — app Android (empezado 2026-11-04; ✅ cerrado 2026-11-12)
 
 Decisiones del dueño (2026-11-04, con razones y lo aceptado en `decision-log.md`):
 repo privado nuevo `C:\Projects\MeetingAssistant_App` (el spike queda como
@@ -1993,6 +2036,11 @@ referencia y evidencia: era de calidad desechable a propósito, lo que pasa al
 app es lo que probó, no su código); se construye por tandas y la primera es el
 esqueleto con el inicio de sesión; la interfaz sigue el lenguaje de diseño de
 DevLog (`DevLog_Frontend/CLAUDE.md`).
+
+**Cierre (2026-11-12, decisión del dueño, `decision-log.md`):** el criterio de salida (tile →
+`.md` con la app cerrada) se cumplió el 2026-11-05. Se cierra **sin** las dos pruebas que faltaban,
+que quedan como **no medidas**: la notificación con la app quitada de recientes y el 429 "trabajos en
+curso" en el teléfono. Sigue el paso E.
 
 **Tanda 1 construida (2026-11-04):** módulos `:core` (Kotlin puro en la JVM: la
 compilación misma impide una dependencia de Android), `:core-android` (sesión con

@@ -32,56 +32,56 @@
                                 <ContentPresenter x:Name="Content"
                                                   HorizontalAlignment="Left"
                                                   VerticalAlignment="Center"
-                                                  Foreground="#FFCBD5E1" />
+                                                  Foreground="{ThemeResource RailLabelBrush}" />
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
                                         <VisualState x:Name="Normal" />
                                         <VisualState x:Name="PointerOver">
                                             <VisualState.Setters>
-                                                <Setter Target="Root.Background" Value="#FF1E293B" />
-                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                                <Setter Target="Root.Background" Value="{ThemeResource RailHoverBrush}" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailOnBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Pressed">
                                             <VisualState.Setters>
-                                                <Setter Target="Root.Background" Value="#FF334155" />
-                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                                <Setter Target="Root.Background" Value="{ThemeResource RailPressedBrush}" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailOnBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Unchecked" />
                                         <VisualState x:Name="UncheckedPointerOver">
                                             <VisualState.Setters>
-                                                <Setter Target="Root.Background" Value="#FF1E293B" />
-                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                                <Setter Target="Root.Background" Value="{ThemeResource RailHoverBrush}" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailOnBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="UncheckedPressed">
                                             <VisualState.Setters>
-                                                <Setter Target="Root.Background" Value="#FF334155" />
-                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                                <Setter Target="Root.Background" Value="{ThemeResource RailPressedBrush}" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailOnBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Checked">
                                             <VisualState.Setters>
-                                                <Setter Target="Root.Background" Value="#FF4F46E5" />
-                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                                <Setter Target="Root.Background" Value="{ThemeResource RailSelectedBrush}" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailOnBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="CheckedPointerOver">
                                             <VisualState.Setters>
-                                                <Setter Target="Root.Background" Value="#FF4338CA" />
-                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                                <Setter Target="Root.Background" Value="{ThemeResource RailSelectedHoverBrush}" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailOnBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="CheckedPressed">
                                             <VisualState.Setters>
-                                                <Setter Target="Root.Background" Value="#FF3730A3" />
-                                                <Setter Target="Content.Foreground" Value="#FFFFFFFF" />
+                                                <Setter Target="Root.Background" Value="{ThemeResource RailSelectedPressedBrush}" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailOnBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Disabled">
                                             <VisualState.Setters>
-                                                <Setter Target="Content.Foreground" Value="#FF64748B" />
+                                                <Setter Target="Content.Foreground" Value="{ThemeResource RailDisabledBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
@@ -98,15 +98,15 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Border Grid.Column="0" Background="#FF0F172A" Padding="12,0,12,16">
+        <Border Grid.Column="0" Background="{ThemeResource RailPanelBrush}" Padding="12,0,12,16">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="48" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <Border Width="28" Height="28" CornerRadius="8" Background="#FF4F46E5">
-                        <SymbolIcon Symbol="Microphone" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border Width="28" Height="28" CornerRadius="8" Background="{ThemeResource RailSelectedBrush}">
+                        <FontIcon Glyph="&#xE720;" FontFamily="Segoe Fluent Icons" FontSize="16" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <TextBlock Text="Meetings"
                                Foreground="White"
@@ -117,26 +117,26 @@
                 <StackPanel Grid.Row="1" Spacing="2" Margin="0,12,0,0">
                     <RadioButton x:Name="RecordNav" Tag="record" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
                         <StackPanel Orientation="Horizontal" Spacing="12">
-                            <SymbolIcon Symbol="Microphone" />
-                            <TextBlock Text="Grabar" VerticalAlignment="Center" />
+                            <FontIcon Glyph="&#xE720;" FontFamily="Segoe Fluent Icons" FontSize="16" />
+                            <TextBlock Text="Record" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton x:Name="HistoryNav" Tag="history" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
                         <StackPanel Orientation="Horizontal" Spacing="12">
-                            <SymbolIcon Symbol="Clock" />
-                            <TextBlock Text="Historial" VerticalAlignment="Center" />
+                            <FontIcon Glyph="&#xE81C;" FontFamily="Segoe Fluent Icons" FontSize="16" />
+                            <TextBlock Text="History" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton x:Name="CostsNav" Tag="costs" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
                         <StackPanel Orientation="Horizontal" Spacing="12">
-                            <SymbolIcon Symbol="Calculator" />
-                            <TextBlock Text="Costos" VerticalAlignment="Center" />
+                            <FontIcon Glyph="&#xE8EF;" FontFamily="Segoe Fluent Icons" FontSize="16" />
+                            <TextBlock Text="Costs" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton x:Name="SettingsNav" Tag="settings" GroupName="ShellNav" Style="{StaticResource NavItemStyle}" Checked="Nav_Checked">
                         <StackPanel Orientation="Horizontal" Spacing="12">
-                            <SymbolIcon Symbol="Setting" />
-                            <TextBlock Text="Configuración" VerticalAlignment="Center" />
+                            <FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="16" />
+                            <TextBlock Text="Settings" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                 </StackPanel>

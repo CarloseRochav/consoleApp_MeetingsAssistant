@@ -45,10 +45,10 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
     private void ShowDevice(string? serverCheck)
     {
         DeviceText.Text = _auth.Current is { } session
-            ? $"Sesión de {session.Username} (idUser {session.IdUser}). Este dispositivo: «{session.DeviceName}» (idDevice {session.IdDevice}). " +
-              $"Servidor: {App.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["DevLog:BaseUrl"]}." +
+            ? $"Signed in as {session.Username} (idUser {session.IdUser}). This device: \"{session.DeviceName}\" (idDevice {session.IdDevice}). " +
+              $"Server: {App.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["DevLog:BaseUrl"]}." +
               (serverCheck is null ? string.Empty : $" {serverCheck}")
-            : "Sin sesión en el servidor.";
+            : "Not signed in on the server.";
         SignOutButton.IsEnabled = _auth.IsSignedIn;
     }
 
@@ -58,8 +58,8 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
         MeetingAssistant.Core.Services.VerifyOutcome outcome = await _auth.VerifyAsync();
         ShowDevice(outcome switch
         {
-            MeetingAssistant.Core.Services.VerifyOutcome.Valid => "El servidor acepta este dispositivo.",
-            MeetingAssistant.Core.Services.VerifyOutcome.Unknown => "No se pudo comprobar con el servidor (¿sin conexión?).",
+            MeetingAssistant.Core.Services.VerifyOutcome.Valid => "The server accepts this device.",
+            MeetingAssistant.Core.Services.VerifyOutcome.Unknown => "Could not check with the server (offline?).",
             _ => null
         });
     }
@@ -82,7 +82,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
 
         _isBusy = true;
         StartupToggle.IsEnabled = false;
-        StartupStatusText.Text = "Actualizando la configuración de inicio...";
+        StartupStatusText.Text = "Updating the startup setting...";
 
         try
         {
@@ -110,7 +110,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
 
         _isBusy = true;
         StartupToggle.IsEnabled = false;
-        StartupStatusText.Text = "Consultando el estado configurado en Windows...";
+        StartupStatusText.Text = "Checking the startup state configured in Windows...";
 
         try
         {
@@ -136,42 +136,42 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
                 case StartupTaskState.Enabled:
                     StartupToggle.IsOn = true;
                     StartupToggle.IsEnabled = true;
-                    StartupStatusText.Text = "Meeting Assistant se iniciará cuando entres a Windows.";
+                    StartupStatusText.Text = "Meeting Assistant will start when you sign in to Windows.";
                     break;
 
                 case StartupTaskState.Disabled:
                     StartupToggle.IsOn = false;
                     StartupToggle.IsEnabled = true;
-                    StartupStatusText.Text = "El inicio automático está desactivado.";
+                    StartupStatusText.Text = "Start with Windows is off.";
                     break;
 
                 case StartupTaskState.DisabledByUser:
                     StartupToggle.IsOn = false;
                     StartupToggle.IsEnabled = false;
                     StartupStatusText.Text =
-                        "Windows deshabilitó el inicio automático. Actívalo desde " +
-                        "Configuración de Windows > Aplicaciones > Inicio.";
+                        "Windows disabled start with Windows. Turn it on from " +
+                        "Windows Settings > Apps > Startup.";
                     break;
 
                 case StartupTaskState.DisabledByPolicy:
                     StartupToggle.IsOn = false;
                     StartupToggle.IsEnabled = false;
                     StartupStatusText.Text =
-                        "Una directiva de Windows bloquea el inicio automático. " +
-                        "Revisa Configuración de Windows > Aplicaciones > Inicio o consulta al administrador.";
+                        "A Windows policy blocks start with Windows. " +
+                        "Check Windows Settings > Apps > Startup, or ask the administrator.";
                     break;
 
                 case StartupTaskState.EnabledByPolicy:
                     StartupToggle.IsOn = true;
                     StartupToggle.IsEnabled = false;
                     StartupStatusText.Text =
-                        "Una directiva de Windows mantiene activo el inicio automático.";
+                        "A Windows policy keeps start with Windows on.";
                     break;
 
                 default:
                     StartupToggle.IsOn = false;
                     StartupToggle.IsEnabled = false;
-                    StartupStatusText.Text = $"Windows devolvió un estado de inicio desconocido: {state}.";
+                    StartupStatusText.Text = $"Windows returned an unknown startup state: {state}.";
                     break;
             }
         }
@@ -181,6 +181,15 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
         }
     }
 
+    private void SectionBar_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        int index = sender.Items.IndexOf(sender.SelectedItem);
+        AccountPanel.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
+        MachinePanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+        ServerPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        PromptsPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void ShowError(Exception exception)
     {
         _isSynchronizing = true;
@@ -188,7 +197,7 @@ public sealed partial class SettingsPage : Page, IConfirmNavigation
         {
             StartupToggle.IsOn = false;
             StartupToggle.IsEnabled = false;
-            StartupStatusText.Text = $"No se pudo consultar el inicio automático: {exception.Message}";
+            StartupStatusText.Text = $"Could not read the startup setting: {exception.Message}";
         }
         finally
         {

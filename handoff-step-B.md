@@ -1,5 +1,7 @@
 # Handoff: Phase 8 step B, the desktop as an API client (2026-11-09)
 
+**Status (2026-11-16): closed.** Prompts 1–3 shipped (DevLog 018, the worker, the desktop client on `release-1.0.4`). The cutover is the owner's 2026-11-12 decisions, at the bottom of this file. A later session must not re-run these prompts or that cutover. The desktop's visible copy is English as of 2026-11-16 (`decision-log.md`, "Product UI language").
+
 Plan and decisions: `roadmap-meeting-ai-assistant.md` (Phase 8, "Paso B — escritorio como cliente")
 and `decision-log.md` (2026-11-09 entries for step B, and the Phase 8 decisions of 2026-10-15).
 
@@ -82,9 +84,15 @@ Do not run the final import with --apply, delete the old database or rotate keys
 
 ---
 
-## Cutover (the owner, after Prompt 3 is tested)
+## Cutover — closed by the owner (2026-11-12)
 
-1. Final import, only as the desktop session's step 0 says (none if nothing new; a collision plan if any).
-2. Install the new desktop release on every machine that has the app (the Phase 7 installer).
-3. ~~Rotate the provider keys that lived on desktop machines and the old database's password~~: **dropped by the owner (2026-11-11, `decision-log.md`)**. Delete the old database (or keep it read-only for a while: decide then). Optionally clear the old keys from each machine's local settings (Settings → "Borrar las claves viejas de esta máquina") and revoke old devices with `tools\Revoke-OldDevices.ps1`.
-4. The roadmap records step B as done, with what was tested.
+Do not run these again. The four decisions are in `decision-log.md` (2026-11-12) and in the roadmap under "Corte — paso B cerrado".
+
+1. **Final import: skipped.** The dry run of 2026-11-12 found every old session, transcript, report, prompt version and upload already in DevLog, nothing in the old database newer than 2026-10-14, and no id collision.
+2. **Install 1.0.4.0 on each machine: left to the owner, later**, following `installer/INSTALL.md`. The release was published on 2026-11-11. Not done at close.
+3. **Key rotation: dropped (2026-11-11).** Clearing the old provider keys on each machine, and `tools\Revoke-OldDevices.ps1 -Apply`, were also dropped at the cutover (2026-11-12). Both can still be done later. The Settings button is now **This machine → "Delete this machine's old keys"** (English UI, 2026-11-16; the old label was "Borrar las claves viejas de esta máquina"). Device 6 was already revoked; the app uses device 7.
+4. **The old database (Neon, `neondb`) is to be deleted by the owner** in the Neon console. Not done at close, and it cannot be undone. After it is gone, `--migrate-to-devlog` cannot run again. A machine still on 1.0.3.0 writes its history there, so delete it after those machines are updated.
+
+The roadmap records step B as done, with what was tested.
+
+**Desktop UI language (2026-11-16, `decision-log.md`):** English only, on the desktop and the phone. The phone already was. Desktop pages, dialogs, tray, toasts, dates (`en-US`, not the Windows locale) and the sentences the queue shows the user are English. Inline strings stay inline: no `.resw`. Code comments, harness check names, and the bootstrapper's diagnostic lines stay as they were (that log still quotes the old Spanish button). A queue row saved before this change can still show its old Spanish failure text. Do not rewrite stored queue files.

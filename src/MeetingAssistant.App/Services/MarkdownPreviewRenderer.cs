@@ -16,7 +16,7 @@ public static class MarkdownPreviewRenderer
     public static string ToHtmlDocument(string? markdown, bool darkTheme)
     {
         string body = string.IsNullOrWhiteSpace(markdown)
-            ? "<p class=\"empty\">Todavía no hay un reporte generado.</p>"
+            ? "<p class=\"empty\">No report yet.</p>"
             : Markdig.Markdown.ToHtml(StripFrontMatter(markdown), Pipeline);
 
         // Misma pizarra e índigo que AppTheme.xaml (DevLog), para que el reporte no parezca otra app.
