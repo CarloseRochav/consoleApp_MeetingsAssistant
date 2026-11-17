@@ -40,7 +40,7 @@ public sealed class StartupTaskService
         catch (Exception exception)
         {
             throw new InvalidOperationException(
-                $"No se encontró la tarea de inicio '{TaskId}' en el manifiesto del paquete.",
+                $"The startup task '{TaskId}' was not found in the package manifest.",
                 exception);
         }
     }

@@ -23,11 +23,11 @@ public sealed class StartupErrorWindow : Window
     {
         _details = BuildDetails(context, exception);
 
-        Title = "MeetingAssistant — error al iniciar";
+        Title = "MeetingAssistant — could not start";
 
         var heading = new TextBlock
         {
-            Text = "La aplicación no pudo iniciarse",
+            Text = "The application could not start",
             FontSize = 20,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 4)
@@ -35,7 +35,7 @@ public sealed class StartupErrorWindow : Window
 
         var summary = new TextBlock
         {
-            Text = $"Falló en: {context}\n{exception.GetType().Name}: {exception.Message}",
+            Text = $"Failed at: {context}\n{exception.GetType().Name}: {exception.Message}",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 12)
         };
@@ -56,7 +56,7 @@ public sealed class StartupErrorWindow : Window
         ScrollViewer.SetHorizontalScrollBarVisibility(detailBox, ScrollBarVisibility.Auto);
         ScrollViewer.SetVerticalScrollBarVisibility(detailBox, ScrollBarVisibility.Auto);
 
-        var copyButton = new Button { Content = "Copiar detalles" };
+        var copyButton = new Button { Content = "Copy details" };
         copyButton.Click += (_, _) =>
         {
             var package = new DataPackage();
@@ -64,7 +64,7 @@ public sealed class StartupErrorWindow : Window
             Clipboard.SetContent(package);
         };
 
-        var closeButton = new Button { Content = "Cerrar" };
+        var closeButton = new Button { Content = "Close" };
         closeButton.Click += (_, _) => Close();
 
         var buttons = new StackPanel
@@ -78,7 +78,7 @@ public sealed class StartupErrorWindow : Window
 
         var logHint = new TextBlock
         {
-            Text = $"Copia guardada en: {AppLog.FilePath}",
+            Text = $"A copy is saved at: {AppLog.FilePath}",
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Opacity = 0.7,
@@ -94,9 +94,9 @@ public sealed class StartupErrorWindow : Window
 
     private static string BuildDetails(string context, Exception exception) =>
         $"""
-         Contexto : {context}
-         Fecha    : {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
-         Log      : {AppLog.FilePath}
+         Context : {context}
+         Time    : {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
+         Log     : {AppLog.FilePath}
 
          {exception}
          """;

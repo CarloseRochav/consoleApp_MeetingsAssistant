@@ -37,7 +37,7 @@ public sealed partial class SetupWindow : Window
 
         AppLog.Diagnostic($"Primer arranque: AppInstance.Restart no pudo reiniciar ({reason}).");
         MissingInfo.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Informational;
-        MissingInfo.Title = "Guardado";
-        MissingInfo.Message = "No se pudo reiniciar sola: cierra esta ventana y vuelve a abrir Meeting Assistant.";
+        MissingInfo.Title = "Saved";
+        MissingInfo.Message = "Could not restart on its own: close this window and open Meeting Assistant again.";
     }
 }

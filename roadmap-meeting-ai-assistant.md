@@ -1304,7 +1304,15 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 
 ---
 
-## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A hecho 2026-10-30)
+## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A hecho 2026-10-30; pasos B y D cerrados 2026-11-12)
+
+**UI en inglés (2026-11-16).** El escritorio y el teléfono usan un solo idioma, inglés
+(decisión del dueño, `decision-log.md`). El teléfono ya lo estaba. El escritorio
+pasa su copia visible (páginas, diálogos, bandeja, avisos, fechas y los avisos
+de la cola) a inglés, sin tabla de recursos. Historial deja de apilar la
+re-extracción: el reporte ocupa la página y «extract again» es un diálogo.
+Configuración se parte en Cuenta, Esta máquina, Servidor y Prompts, y el token
+del endpoint local queda bajo Avanzado.
 
 **Objetivo:** que el escritorio y una app Android en Kotlin sean dos clientes
 delgados de una API propia. La API es la única que habla con la base y con los
@@ -1985,7 +1993,42 @@ video contestan 401 sin token y con un token de dispositivo inventado
 (comprobado). **Sin comprobar en producción:** una subida real con sesión (el
 contenedor `videos` se crea con la primera). **Falta:** el cliente Android (paso D).
 
-### Paso D — app Android (empezado 2026-11-04)
+#### Reproductor: zoom y línea de tiempo (pedido por el dueño 2026-11-16, sin empezar)
+
+**Zoom (pellizco):**
+- Pellizcar con dos dedos agranda el video que se está viendo, de 1× a 4×; con zoom,
+  arrastrar con un dedo mueve la imagen sin salirse del borde.
+- Doble toque en el centro vuelve a 1×. Funciona reproduciendo y en pausa.
+- El zoom es sólo de la vista: no cambia el archivo ni la nube. Al salir del reproductor
+  vuelve a 1×.
+
+**Línea de tiempo:**
+- Barra propia con el estilo de la app (`:core-ui`, roles de `MaterialTheme.colorScheme`),
+  más grande que la de Media3 para agarrarla con el pulgar; muestra tiempo transcurrido y total.
+- Al arrastrarla aparece una miniatura del cuadro en ese punto, encima del dedo, tomada de la
+  **hoja de miniaturas** del video (abajo).
+- Botones de retroceder / avanzar 10 s; doble toque en el lado izquierdo / derecho del video
+  hace lo mismo.
+- Al renovar el enlace (dura ~15 min) la barra y el zoom siguen donde estaban.
+
+**Hoja de miniaturas (decisión del 2026-11-16, `decision-log.md`): la hace el teléfono al subir.**
+- Al terminar la grabación, mientras el archivo sigue en el teléfono, se saca un cuadro cada
+  pocos segundos, se arma la hoja (una imagen con todos los cuadros) y sube junto con el video.
+  El borrado de la copia local después de confirmar no cambia.
+- DevLog sólo la guarda y da un enlace de lectura de corta vida: migración nueva con funciones
+  `vid_*`, endpoint en `VideosController`, mismo contenedor `videos`. Sin ffmpeg y sin tocar el
+  worker: el video sigue aislado de las reuniones (decisión del 2026-11-03).
+- Los videos ya subidos no tienen hoja: la barra funciona sin miniatura.
+- **Por decidir al construir:** cada cuántos segundos un cuadro, tamaño del cuadro, si la hoja
+  cuenta para el límite de 50 GB.
+
+**Reglas:** estados de carga y error de la miniatura (si no llega, la barra funciona sin ella);
+@Preview claro y oscuro; nada se guarda en el teléfono al ver.
+
+**Medir en el teléfono:** cuánto tarda en armarse la hoja de un video largo, cuánto pesa, y la
+miniatura al arrastrar; lo que no se pueda medir se reporta como no medido.
+
+### Paso D — app Android (empezado 2026-11-04; ✅ cerrado 2026-11-12)
 
 Decisiones del dueño (2026-11-04, con razones y lo aceptado en `decision-log.md`):
 repo privado nuevo `C:\Projects\MeetingAssistant_App` (el spike queda como
@@ -1993,6 +2036,11 @@ referencia y evidencia: era de calidad desechable a propósito, lo que pasa al
 app es lo que probó, no su código); se construye por tandas y la primera es el
 esqueleto con el inicio de sesión; la interfaz sigue el lenguaje de diseño de
 DevLog (`DevLog_Frontend/CLAUDE.md`).
+
+**Cierre (2026-11-12, decisión del dueño, `decision-log.md`):** el criterio de salida (tile →
+`.md` con la app cerrada) se cumplió el 2026-11-05. Se cierra **sin** las dos pruebas que faltaban,
+que quedan como **no medidas**: la notificación con la app quitada de recientes y el 429 "trabajos en
+curso" en el teléfono. Sigue el paso E.
 
 **Tanda 1 construida (2026-11-04):** módulos `:core` (Kotlin puro en la JVM: la
 compilación misma impide una dependencia de Android), `:core-android` (sesión con
@@ -2497,7 +2545,7 @@ bloqueado.
 en DevLog_Backend y el worker; ver "Avance del paso A" arriba (paso A hecho el
 2026-10-30).
 
-### Paso B — escritorio como cliente (plan del 2026-11-09; escritorio hecho en la rama `step-b-desktop-client` el 2026-11-10/11, falta el corte)
+### Paso B — escritorio como cliente (plan del 2026-11-09; escritorio hecho en la rama `step-b-desktop-client` el 2026-11-10/11; ✅ cerrado 2026-11-12, instalar y borrar la base vieja quedan al dueño)
 
 **Objetivo:** el escritorio pasa a ser un cliente delgado de la API de DevLog, como la app Android:
 graba, dispara (hotkey, bandeja, endpoint local), sube y escribe el `.md` en el vault. **Ninguna
@@ -2613,6 +2661,18 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
   propio no se ve desde aquí (**no comprobado**).
 - **Propuesta: no hace falta importación final.** Antes del corte, volver a correr la simulación:
   si sigue sin filas nuevas, el paso 1 del corte no se hace.
+- **Simulación repetida antes del corte (2026-11-12, la corrió el dueño, sin `--apply`):** mismo
+  resultado que el 2026-11-10. Origen `neondb` (viejo) → `devLog-production`. Sesiones,
+  transcripts, reportes, versiones de prompt y subidas: todas iguales, 0 sólo en origen, 0 origen
+  nuevo (la más reciente del origen sigue siendo del 2026-10-14). DevLog creó desde la vez anterior
+  las sesiones 55–59 y los reportes 49–54 (pruebas del 2026-11-11); ningún id choca. Los únicos
+  distintos siguen siendo los tres ajustes base reguardados el 2026-10-19 (`Llm:Provider`,
+  `AzureFoundry:Endpoint`, `AzureFoundry:Deployment`): el comando se negaría a `--apply`.
+  **No reconfirmado hoy** que sus valores sean iguales (el 2026-11-10 lo eran; el md5 sólo dice
+  que la fila difiere, y el 2026-10-19 19:03Z del origen no cambió).
+- **Decisión del dueño (2026-11-12, `decision-log.md`): sin importación final.** El paso 1 del
+  corte no se hace. Aceptado: una reunión guardada sólo en el SQLite propio de otra máquina no la
+  ve esta comprobación.
 
 **Escritorio, pasos 1-6 — cliente de la API (rama `step-b-desktop-client`, 2026-11-10/11).**
 - **Core** (sin paquetes): modelos de la API, `IDevLogApi`, `DeviceAuthService` (login una vez →
@@ -2716,13 +2776,28 @@ bases; sólo ids y fechas en la consola) y **se niega a `--apply` si alguna fila
 
 **Orden:** retraso entre reintentos (`handoff-retry-delay.md`, mismos dos repos de servidor) →
 DevLog (archivo del audio) → worker (archivo) → despliegue (dueño) → escritorio → corte (dueño:
-importación final si hace falta, instalar en cada máquina, retirar la base vieja; la rotación de claves se quitó, decisión del dueño 2026-11-11).
+~~importación final si hace falta~~ (no hace falta, decisión del dueño 2026-11-12), instalar en cada máquina (después, `installer/INSTALL.md`), borrar la base vieja (dueño); la rotación de claves se quitó, decisión del dueño 2026-11-11).
 
 **Criterio de salida:** una llamada de Teams grabada en el escritorio → `.md` en el vault sin ninguna
 clave de proveedor en la máquina; historial, búsqueda, costos, prompts y re-extracción desde el
 escritorio por la API; grabar sin red y enviar después; un reinicio a mitad de una subida que
 reanuda; una grabación de más de 100 min que entra; un dispositivo revocado vuelve al inicio de
 sesión. Lo que no se pueda medir se reporta como no medido.
+
+**Corte — ✅ paso B cerrado por el dueño (2026-11-12, cuatro decisiones en `decision-log.md`):**
+1. **Importación final: no se hace.** La simulación del 2026-11-12 no encontró filas nuevas (arriba).
+2. **Instalar la 1.0.4.0 en cada máquina: lo hace el dueño, después**, con `installer/INSTALL.md`
+   (publicada el 2026-11-11; el comando con el enlace sigue sólo en
+   `artifacts\release\1.0.4.0\install-command.txt`, ignorado). **Sin hacer al cerrar:** ninguna
+   máquina instalada todavía con la versión firmada; esta PC corre la registración de desarrollo.
+3. **Borrar las claves viejas de cada máquina y revocar los dispositivos viejos: se quita.**
+   Las claves de proveedor siguen cifradas en los ajustes locales y no se rotaron; un dispositivo
+   de esta máquina distinto del de la app (p. ej. `harness-CHARLIE`) puede seguir activo. El
+   botón de Configuración y `tools\Revoke-OldDevices.ps1` siguen ahí para más adelante.
+4. **La base vieja (Neon, `neondb`) se borra.** La borra el dueño en la consola de Neon
+   (**sin hacer al cerrar**). Mejor después de actualizar las máquinas: una en 1.0.3.0 todavía
+   escribe ahí su historial. Después de borrarla, `--migrate-to-devlog`, `Postgres:ConnectionString`
+   del harness y Npgsql quedan sin uso (quitarlos es otro cambio).
 
 ### Consecuencias de Container Apps para el paso A
 

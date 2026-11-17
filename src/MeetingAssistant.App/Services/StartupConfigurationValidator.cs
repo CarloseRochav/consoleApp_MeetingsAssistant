@@ -11,9 +11,9 @@ public static class StartupConfigurationValidator
 {
     private static readonly (string Key, string Hint)[] AlwaysRequired =
     [
-        ("Storage:VaultPath", "ruta a tu vault de Obsidian donde se guardan los reportes"),
-        ("Api:AuthToken", "token del endpoint local — enciende el micrófono, nunca debe quedar vacío"),
-        ("DevLog:BaseUrl", "dirección de la API de DevLog (viene en appsettings.defaults.json)")
+        ("Storage:VaultPath", "path to your Obsidian vault, where reports are saved"),
+        ("Api:AuthToken", "token for the local endpoint — it turns the microphone on; it must not stay empty"),
+        ("DevLog:BaseUrl", "DevLog API address (it comes in appsettings.defaults.json)")
     ];
 
     public static IReadOnlyList<string> FindMissing(IConfiguration configuration)

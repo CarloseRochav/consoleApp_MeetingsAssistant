@@ -210,9 +210,9 @@ public sealed record CapRefusal(
 
     /// <summary>En palabras para el usuario, con los números del servidor.</summary>
     public string Describe() => IsInFlightLimit
-        ? $"Hay otras reuniones procesándose ({InFlight} de {MaxInFlight} a la vez). Se reintenta solo."
-        : $"Se alcanzó el tope de gasto de hoy (US${SpentUsd:0.00} de US${CapUsd:0.00}" +
-          (Unpriced > 0 ? $", {Unpriced} sin precio" : string.Empty) +
-          (ResetsAt is { } resets ? $"; se renueva {resets.ToLocalTime():dd/MM HH:mm}" : string.Empty) +
-          "). Se reintenta solo.";
+        ? $"Other meetings are still being processed ({InFlight} of {MaxInFlight} at once). It will retry on its own."
+        : $"Today's spending cap was reached (US${SpentUsd:0.00} of US${CapUsd:0.00}" +
+          (Unpriced > 0 ? $", {Unpriced} unpriced" : string.Empty) +
+          (ResetsAt is { } resets ? $"; it resets {resets.ToLocalTime():d HH:mm}" : string.Empty) +
+          "). It will retry on its own.";
 }

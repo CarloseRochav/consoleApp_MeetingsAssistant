@@ -93,10 +93,10 @@ public sealed partial class PromptEditorPanel : UserControl
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "Hay cambios sin guardar",
-                Content = $"Los cambios en «{promptName}» no se guardaron. Si sigues, se pierden.",
-                PrimaryButtonText = "Descartar cambios",
-                CloseButtonText = "Seguir editando",
+                Title = "Unsaved changes",
+                Content = $"Changes to \"{promptName}\" were not saved. If you continue, they are lost.",
+                PrimaryButtonText = "Discard changes",
+                CloseButtonText = "Keep editing",
                 DefaultButton = ContentDialogButton.Close
             };
 

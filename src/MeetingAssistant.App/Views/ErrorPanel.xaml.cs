@@ -84,14 +84,14 @@ public sealed partial class ErrorPanel : UserControl
             // Sin esto el contenido se pierde al cerrar la app.
             Clipboard.Flush();
 
-            CopiedText.Text = $"Copiado a las {DateTime.Now:HH:mm:ss}.";
+            CopiedText.Text = $"Copied at {DateTime.Now:HH:mm:ss}.";
         }
         catch (Exception exception)
         {
             // El portapapeles puede estar tomado por otra app. El texto sigue
             // seleccionable a mano en el detalle.
             AppLog.Failure("ErrorPanel.Copy", exception);
-            CopiedText.Text = "No se pudo copiar. Puedes seleccionar el texto a mano.";
+            CopiedText.Text = "Could not copy. You can select the text by hand.";
         }
     }
 

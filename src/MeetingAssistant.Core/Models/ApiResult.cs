@@ -33,25 +33,25 @@ public abstract record ApiError
     /// <summary>401: sin token, contraseña mal, o un dispositivo revocado.</summary>
     public sealed record Unauthorized : ApiError
     {
-        public override string Describe() => "El servidor no acepta las credenciales (401).";
+        public override string Describe() => "The server does not accept the credentials (401).";
     }
 
     /// <summary>403: con sesión, pero sin permiso.</summary>
     public sealed record Forbidden : ApiError
     {
-        public override string Describe() => "El servidor no lo permite (403).";
+        public override string Describe() => "The server does not allow this (403).";
     }
 
     /// <summary>404: no existe, o no es tuyo (la API contesta igual en los dos casos).</summary>
     public sealed record NotFound : ApiError
     {
-        public override string Describe() => "El servidor no lo encontró (404).";
+        public override string Describe() => "The server could not find it (404).";
     }
 
     /// <summary>429 sin los números del tope (p. ej. el login: 10 intentos cada 15 minutos).</summary>
     public sealed record RateLimited : ApiError
     {
-        public override string Describe() => "Demasiados intentos (429). Espera un rato.";
+        public override string Describe() => "Too many attempts (429). Wait a while.";
     }
 
     /// <summary>429 de Jobs con los números del servidor: el tope diario o los trabajos en curso. Pasajero.</summary>
@@ -64,25 +64,25 @@ public abstract record ApiError
     public sealed record Rejected(int Code, string Message) : ApiError
     {
         public override string Describe() =>
-            string.IsNullOrWhiteSpace(Message) ? $"El servidor lo rechazó (HTTP {Code})." : $"El servidor lo rechazó (HTTP {Code}): {Message}";
+            string.IsNullOrWhiteSpace(Message) ? $"The server rejected it (HTTP {Code})." : $"The server rejected it (HTTP {Code}): {Message}";
     }
 
     /// <summary>5xx: falló el servidor.</summary>
     public sealed record Server(int Code) : ApiError
     {
-        public override string Describe() => $"El servidor tuvo un problema (HTTP {Code}).";
+        public override string Describe() => $"The server had a problem (HTTP {Code}).";
     }
 
     /// <summary>Sin respuesta: sin red, plazo vencido, conexión cortada. <see cref="Detail"/> nunca lleva un enlace ni un token.</summary>
     public sealed record Network(string Detail) : ApiError
     {
-        public override string Describe() => "No se pudo llegar al servidor (sin conexión o no responde).";
+        public override string Describe() => "Could not reach the server (offline, or it did not answer).";
     }
 
     /// <summary>Una respuesta que la app no pudo leer.</summary>
     public sealed record Unexpected(string Detail) : ApiError
     {
-        public override string Describe() => $"Respuesta inesperada del servidor: {Detail}";
+        public override string Describe() => $"Unexpected answer from the server: {Detail}";
     }
 
     /// <summary>En palabras para el usuario.</summary>

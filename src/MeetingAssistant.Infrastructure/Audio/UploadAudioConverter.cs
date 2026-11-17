@@ -32,7 +32,7 @@ public sealed class UploadAudioConverter : IAudioConverter
             {
                 1 => samples,
                 2 => samples.ToMono(),
-                _ => throw new NotSupportedException($"Audio de {samples.WaveFormat.Channels} canales: sólo se convierte mono o estéreo.")
+                _ => throw new NotSupportedException($"Audio with {samples.WaveFormat.Channels} channels: only mono or stereo can be converted.")
             };
             if (samples.WaveFormat.SampleRate != TargetSampleRate)
             {

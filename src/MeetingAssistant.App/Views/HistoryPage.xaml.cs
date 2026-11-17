@@ -40,7 +40,7 @@ public sealed partial class HistoryPage : Page
             // Mismo criterio que RecordPage: si el runtime de WebView2 no está,
             // la página tiene que seguir sirviendo — la pestaña "Markdown"
             // muestra el reporte igual.
-            ViewModel.ErrorDetails = $"No se pudo iniciar la vista previa Markdown: {exception.Message}";
+            ViewModel.ErrorDetails = $"Could not start the Markdown preview: {exception.Message}";
         }
 
         await ViewModel.RefreshCommand.ExecuteAsync(null);
@@ -73,9 +73,34 @@ public sealed partial class HistoryPage : Page
             case nameof(HistoryViewModel.IsEmpty):
             case nameof(HistoryViewModel.IsBusy):
             case nameof(HistoryViewModel.HasSelection):
+            case nameof(HistoryViewModel.SelectedReport):
+            case nameof(HistoryViewModel.CanRegenerate):
                 ApplyVisibility();
                 break;
         }
+    }
+
+    private ContentDialog ExtractDialog => (ContentDialog)Resources["ExtractDialog"];
+
+    private async void ExtractAgain_Click(object sender, RoutedEventArgs e)
+    {
+        ContentDialog dialog = ExtractDialog;
+        dialog.XamlRoot = XamlRoot;
+        dialog.DataContext = ViewModel;
+        dialog.RequestedTheme = ActualTheme;
+        dialog.IsPrimaryButtonEnabled = ViewModel.CanRegenerate;
+        await dialog.ShowAsync();
+    }
+
+    private void ExtractDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    {
+        if (!ViewModel.CanRegenerate)
+        {
+            args.Cancel = true;
+            return;
+        }
+
+        ViewModel.RegenerateReportCommand.Execute(null);
     }
 
     /// <summary>
@@ -90,7 +115,19 @@ public sealed partial class HistoryPage : Page
         LoadingBar.Visibility = ViewModel.IsLoading ? Visibility.Visible : Visibility.Collapsed;
         EmptyStatePanel.Visibility = ViewModel.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         DetailPanel.Visibility = ViewModel.HasSelection ? Visibility.Visible : Visibility.Collapsed;
-        BusyBar.Visibility = ViewModel.IsBusy ? Visibility.Visible : Visibility.Collapsed;
+        ReportCombo.Visibility = ViewModel.HasSelection && ViewModel.Reports.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (ExtractDialog.Content is StackPanel extractBody)
+        {
+            foreach (UIElement child in extractBody.Children)
+            {
+                if (child is ProgressBar busy)
+                {
+                    busy.Visibility = ViewModel.IsBusy ? Visibility.Visible : Visibility.Collapsed;
+                    break;
+                }
+            }
+        }
+        if (ExtractDialog.DataContext is not null) ExtractDialog.IsPrimaryButtonEnabled = ViewModel.CanRegenerate;
     }
 
     /// <summary>

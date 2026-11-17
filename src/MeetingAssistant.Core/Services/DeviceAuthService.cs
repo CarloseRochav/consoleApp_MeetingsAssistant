@@ -42,7 +42,7 @@ public enum SignedOutReason
 
 /// <summary>Sin sesión de dispositivo: hay que iniciar sesión otra vez.</summary>
 public sealed class DeviceSignedOutException()
-    : InvalidOperationException("Esta máquina no tiene sesión en el servidor. Inicia sesión otra vez.");
+    : InvalidOperationException("This machine is not signed in on the server. Sign in again.");
 
 /// <summary>
 /// La sesión de esta máquina con la API (Fase 8, paso B). Iniciar sesión = el login del usuario de
@@ -114,7 +114,7 @@ public sealed class DeviceAuthService
         {
             if (string.IsNullOrWhiteSpace(username) || password.Length == 0)
             {
-                return new SignInResult(SignInOutcome.MissingFields, "Escribe el usuario y la contraseña.");
+                return new SignInResult(SignInOutcome.MissingFields, "Enter the username and the password.");
             }
 
             LoginResult login;
@@ -149,13 +149,13 @@ public sealed class DeviceAuthService
             catch (Exception exception)
             {
                 return new SignInResult(SignInOutcome.CouldNotSave,
-                    $"Se creó el dispositivo pero no se pudo guardar en esta máquina ({exception.GetType().Name}). " +
-                    "Revócalo en DevLog y vuelve a intentar.");
+                    $"The device was created but could not be saved on this machine ({exception.GetType().Name}). " +
+                    "Revoke it in DevLog and try again.");
             }
 
             lock (_sync) _current = session;
             Raise(SignedIn, session);
-            return new SignInResult(SignInOutcome.Success, $"Sesión iniciada como {session.Username} en «{DeviceName}».", session);
+            return new SignInResult(SignInOutcome.Success, $"Signed in as {session.Username} on \"{DeviceName}\".", session);
         }
         finally
         {
@@ -210,9 +210,9 @@ public sealed class DeviceAuthService
 
     private static SignInResult FailureOf(ApiError error, bool wrongCredentials) => error switch
     {
-        ApiError.Unauthorized when wrongCredentials => new SignInResult(SignInOutcome.WrongCredentials, "Usuario o contraseña incorrectos."),
-        ApiError.RateLimited => new SignInResult(SignInOutcome.TooManyAttempts, "Demasiados intentos. Espera unos minutos y vuelve a probar."),
-        ApiError.Network => new SignInResult(SignInOutcome.Offline, "No se pudo llegar al servidor. Revisa la conexión."),
+        ApiError.Unauthorized when wrongCredentials => new SignInResult(SignInOutcome.WrongCredentials, "Wrong username or password."),
+        ApiError.RateLimited => new SignInResult(SignInOutcome.TooManyAttempts, "Too many attempts. Wait a few minutes and try again."),
+        ApiError.Network => new SignInResult(SignInOutcome.Offline, "Could not reach the server. Check the connection."),
         _ => new SignInResult(SignInOutcome.Failed, error.Describe())
     };
 

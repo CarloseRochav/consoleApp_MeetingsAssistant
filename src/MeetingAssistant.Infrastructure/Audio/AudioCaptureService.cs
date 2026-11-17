@@ -27,7 +27,7 @@ public sealed class AudioCaptureService : IAudioCaptureService
         {
             if (isCapturing)
             {
-                throw new InvalidOperationException("Ya hay una captura de audio en curso.");
+                throw new InvalidOperationException("An audio capture is already in progress.");
             }
 
             captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -46,7 +46,7 @@ public sealed class AudioCaptureService : IAudioCaptureService
         {
             if (!isCapturing || captureTask is null || captureCancellation is null)
             {
-                throw new InvalidOperationException("No hay una captura de audio en curso para detener.");
+                throw new InvalidOperationException("There is no audio capture in progress to stop.");
             }
 
             task = captureTask;

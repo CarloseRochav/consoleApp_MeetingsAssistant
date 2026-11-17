@@ -11,7 +11,7 @@
         <TextBlock MaxWidth="600"
                    Opacity="0.75"
                    TextWrapping="Wrap"
-                   Text="Tus ajustes en el servidor, para todos tus dispositivos (también el teléfono). Vacío = vale el de la base compartida. Las claves de los proveedores y los precios no se ven ni se cambian aquí: son del servidor." />
+                   Text="Your settings on the server, for every device (including the phone). Empty = the shared value applies. Provider keys and prices are not shown or changed here: they belong to the server." />
         <ItemsControl ItemsSource="{Binding Items}">
             <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:ServerSettingItem">
@@ -24,7 +24,7 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <Button Content="Guardar en el servidor" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+        <Button Content="Save on the server" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" />
         <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" MaxWidth="600" Opacity="0.8" />
         <views:ErrorPanel Details="{Binding ErrorDetails}" />
     </StackPanel>
