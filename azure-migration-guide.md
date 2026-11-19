@@ -283,9 +283,9 @@ Only after section 8 passes:
 | **Budget and alert emails** on the new subscription | The only early warning before a suspension |
 | **A custom domain** for the API and frontend | The next move changes DNS, not the apps |
 | **Make the Android API address a build setting**, not a constant in `build.gradle.kts` | Point the phone at a local stack, staging or a new host without code edits |
-| **All Azure names in one file** (or Bicep/IaC) instead of constants in three scripts | One place to change; the whole environment can be recreated by one command |
+| **All Azure names in one file** (or Bicep/IaC) instead of constants in three scripts | One place to change; the whole environment can be recreated by one command. **Planned** (2026-11-18): Bicep "stamps" in `C:\Projects\DevLog_Infra` (`docs/portable-deployment-plan.md`) |
 | **A second copy of the video library** (blob soft delete, or a periodic AzCopy to another account or a disk) | The phone deletes its copy after upload, so the cloud copy is the only one |
-| **A local stack** (Docker Compose: Postgres, Azurite, API, worker, frontend) | Development and testing don't stop when Azure does |
+| **A local stack** (Docker Compose: Postgres, Azurite, API, worker, frontend) | Development and testing don't stop when Azure does. **Done**: first in `local-stack/` (2026-11-16), moved to `C:\Projects\DevLog_Infra` (2026-11-18) |
 
 ---
 
