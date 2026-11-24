@@ -2826,6 +2826,13 @@ va en la web, el escritorio y Android. Revierte en parte la decisión del 2026-1
   armado del selector. **Sin probar:** la app real (la página, el guardado y una grabación de verdad
   con un tipo personalizado), que hace el dueño.
 
+**Android (hecho 2026-11-23, `MeetingAssistant_App`, rama `conversation-type-picker`):** fila
+"Conversation type" en Meetings (junto a "Reports folder") con una lista de opciones: "Default
+(nombre)" y el catálogo vivo. Se guarda en el teléfono y se lee **al empezar** cada grabación (el
+teléfono guarda la reunión al empezar), así que vale también para el tile. Mismo respaldo con un
+tipo archivado (se manda sin tipo, con una nota en la fila). Probado: 64 tests de `:core` (6
+nuevos) y `assembleDebug`. **Sin probar en el teléfono** (no había uno conectado).
+
 ### Consecuencias de Container Apps para el paso A
 
 - **Arranque en frío:** Container Apps puede escalar a cero sin uso, así que la
