@@ -56,6 +56,7 @@ internal static class ServiceRegistration
         services.AddSingleton<MeetingCostsService>();
         services.AddSingleton<PromptLibraryService>();
         services.AddSingleton<ServerSettingsService>();
+        services.AddSingleton<ConversationTypesService>();
         return services;
     }
 
@@ -85,7 +86,12 @@ internal static class ServiceRegistration
             AppPaths.MeetingOutputDirectory,
             AppPaths.UploadDirectory,
             AppLog.Diagnostic,
-            AppLog.Failure));
+            AppLog.Failure)
+        {
+            // El tipo elegido en la página Grabar, guardado en esta máquina: vale desde el arranque,
+            // también para el atajo, la bandeja y el endpoint sin abrir la página.
+            ConversationType = NullIfBlank(provider.GetRequiredService<IConfiguration>()[RecordViewModel.ConversationTypeKey])
+        });
         services.AddSingleton<RecordingCoordinator>();
         // El endpoint HTTP vive en Infrastructure y no puede ver App: entra por esta interfaz de
         // Core, que es el mismo coordinador (mismo candado y mismos avisos).
@@ -119,4 +125,6 @@ internal static class ServiceRegistration
         services.AddSingleton<MainWindow>();
         return services;
     }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

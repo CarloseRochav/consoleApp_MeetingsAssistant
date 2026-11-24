@@ -111,7 +111,8 @@ public sealed class MeetingUploadQueue : IDisposable
         }
     }
 
-    public QueuedMeeting EnqueueAudio(string audioPath, string? originalAudioPath, double? durationSeconds, string trigger)
+    /// <param name="promptId">El tipo de conversación elegido; null = el de por defecto del usuario en el servidor.</param>
+    public QueuedMeeting EnqueueAudio(string audioPath, string? originalAudioPath, double? durationSeconds, string trigger, string? promptId = null)
     {
         var meeting = new QueuedMeeting
         {
@@ -121,10 +122,11 @@ public sealed class MeetingUploadQueue : IDisposable
             AudioPath = audioPath,
             OriginalAudioPath = originalAudioPath,
             DurationSeconds = durationSeconds,
-            TotalBytes = new FileInfo(audioPath).Length
+            TotalBytes = new FileInfo(audioPath).Length,
+            PromptId = string.IsNullOrWhiteSpace(promptId) ? null : promptId.Trim()
         };
         Save(meeting);
-        _diagnostic($"Cola: {meeting.Id} encolada ({meeting.TotalBytes / 1048576.0:F1} MB, {trigger}).");
+        _diagnostic($"Cola: {meeting.Id} encolada ({meeting.TotalBytes / 1048576.0:F1} MB, {trigger}, tipo {meeting.PromptId ?? "por defecto"}).");
         Kick();
         return meeting;
     }
@@ -307,8 +309,16 @@ public sealed class MeetingUploadQueue : IDisposable
             }
 
             long size = new FileInfo(meeting.AudioPath).Length;
-            switch (await _api.CreateJobAsync(token, Source, cancellationToken))
+            switch (await _api.CreateJobAsync(token, Source, meeting.PromptId, cancellationToken))
             {
+                case ApiResult<JobUpload>.Failure { Error: ApiError.Rejected { Code: 400 } } when meeting.PromptId is { } gone:
+                    // El tipo elegido se archivó (o desapareció) entre la grabación y el envío. La reunión
+                    // no se pierde por eso: se manda con el tipo por defecto, y la fila lo dice.
+                    _diagnostic($"Cola: {meeting.Id}: el tipo {gone} ya no está en el catálogo; se envía con el de por defecto.");
+                    return ScheduleRetry(
+                        meeting with { PromptId = null },
+                        $"The conversation type \"{gone}\" is no longer available; this meeting is sent with your default type.",
+                        immediate: true);
                 case ApiResult<JobUpload>.Success success:
                     JobUpload job = success.Value;
                     if (job.MaxBytes > 0 && size > job.MaxBytes)

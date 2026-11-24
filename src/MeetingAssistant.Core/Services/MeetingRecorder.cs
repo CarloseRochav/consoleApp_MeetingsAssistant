@@ -42,6 +42,13 @@ public sealed class MeetingRecorder : IRecordingTrigger
 
     public bool IsRecording => _capture.IsCapturing;
 
+    /// <summary>
+    /// El tipo de conversación de las próximas grabaciones (Spec A): se lee al guardar cada una, así
+    /// que vale para las que empiezan con el atajo, la bandeja o el endpoint. Null = el de por defecto
+    /// del usuario en el servidor. Lo fija la página Grabar.
+    /// </summary>
+    public string? ConversationType { get; set; }
+
     public async Task StartRecordingAsync(string source, CancellationToken cancellationToken = default)
     {
         await _capture.StartAsync(_outputDirectory, cancellationToken);
@@ -61,6 +68,7 @@ public sealed class MeetingRecorder : IRecordingTrigger
     private async Task<QueuedMeeting> QueueAsync(string originalPath, TimeSpan? duration, string trigger, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_uploadDirectory);
+        string? promptId = ConversationType;
         string target = Path.Combine(_uploadDirectory, $"{Path.GetFileNameWithoutExtension(originalPath)}-{Guid.NewGuid().ToString("N")[..6]}-16k.wav");
 
         try
@@ -69,7 +77,7 @@ public sealed class MeetingRecorder : IRecordingTrigger
             _diagnostic(
                 $"Audio convertido para subir: {conversion.SourceFormat}, {conversion.SourceBytes / 1048576.0:F1} MB → " +
                 $"16000 Hz 16 bits mono, {conversion.TargetBytes / 1048576.0:F1} MB, {conversion.Duration.TotalMinutes:F1} min.");
-            return _queue.EnqueueAudio(conversion.TargetPath, originalPath, conversion.Duration.TotalSeconds, trigger);
+            return _queue.EnqueueAudio(conversion.TargetPath, originalPath, conversion.Duration.TotalSeconds, trigger, promptId);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -77,7 +85,7 @@ public sealed class MeetingRecorder : IRecordingTrigger
             // y si pasa el límite del servidor la cola lo dice).
             _failure("MeetingRecorder.Convert", exception);
             TryDelete(target);
-            return _queue.EnqueueAudio(originalPath, originalPath, duration?.TotalSeconds, trigger);
+            return _queue.EnqueueAudio(originalPath, originalPath, duration?.TotalSeconds, trigger, promptId);
         }
     }
 

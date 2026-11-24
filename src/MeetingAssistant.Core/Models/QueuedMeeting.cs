@@ -74,7 +74,10 @@ public sealed record QueuedMeeting
 
     public long? IdSession { get; init; }
 
-    /// <summary>El prompt de una re-extracción; null en una transcripción (el servidor usa el de por defecto).</summary>
+    /// <summary>
+    /// El prompt de una re-extracción, o el tipo de conversación elegido para una grabación (Spec A,
+    /// migración 019). Null en una grabación = el tipo por defecto del usuario en el servidor.
+    /// </summary>
     public string? PromptId { get; init; }
 
     /// <summary>El reporte que se escribió (o se va a escribir) en el vault.</summary>

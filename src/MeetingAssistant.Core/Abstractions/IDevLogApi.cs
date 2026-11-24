@@ -23,8 +23,12 @@ public interface IDevLogApi
     /// <summary>Devices/Select_Me: 401 una vez revocado el dispositivo.</summary>
     Task<ApiResult<DeviceIdentity>> MeAsync(string deviceToken, CancellationToken cancellationToken = default);
 
-    /// <summary>Jobs/InsertUpdate_Jobs opción 0: un trabajo y su enlace de subida. 429 = tope diario o demasiados en curso.</summary>
-    Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Jobs/InsertUpdate_Jobs opción 0: un trabajo y su enlace de subida. 429 = tope diario o demasiados en curso.
+    /// <paramref name="promptId"/> es el tipo de conversación (migración 019): null = el de por defecto del usuario
+    /// en el servidor (<c>Meetings:DefaultPromptId</c>, o el del worker). 400 si ya no está en el catálogo vivo.
+    /// </summary>
+    Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, string? promptId = null, CancellationToken cancellationToken = default);
 
     /// <summary>Jobs/InsertUpdate_Jobs opción 1: la subida terminó. 409 = sin archivo o ya pasó ese paso; 400 = demasiado grande.</summary>
     Task<ApiResult<JobRow>> ConfirmJobAsync(string deviceToken, long idJob, CancellationToken cancellationToken = default);

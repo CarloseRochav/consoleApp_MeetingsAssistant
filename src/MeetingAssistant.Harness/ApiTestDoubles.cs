@@ -63,6 +63,12 @@ internal sealed class FakeDevLogApi : IDevLogApi
 
     public List<string> Sources { get; } = [];
 
+    /// <summary>El prompt_id de cada CreateJobAsync, en orden (null = el de por defecto).</summary>
+    public List<string?> CreatedPromptIds { get; } = [];
+
+    /// <summary>Tipos que el servidor ya no tiene en el catálogo vivo: CreateJobAsync contesta 400.</summary>
+    public HashSet<string> UnknownPrompts { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public string ValidToken { get; set; } = GoodToken;
 
     public long MaxBytes { get; set; } = 1L << 30;
@@ -138,10 +144,16 @@ internal sealed class FakeDevLogApi : IDevLogApi
             new ApiResult<DeviceIdentity>.Success(new DeviceIdentity("1", "carlos", "7", "TEST")));
     }
 
-    public Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, CancellationToken cancellationToken = default)
+    public Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, string? promptId = null, CancellationToken cancellationToken = default)
     {
         if (Fails(nameof(CreateJobAsync), out ApiResult<JobUpload> failure)) return Task.FromResult(failure);
         if (Unauthorized<JobUpload>(deviceToken) is { } denied) return Task.FromResult(denied);
+        CreatedPromptIds.Add(promptId);
+        if (promptId is not null && UnknownPrompts.Contains(promptId))
+        {
+            return Task.FromResult<ApiResult<JobUpload>>(new ApiError.Rejected(400, "Unknown prompt_id."));
+        }
+
         Sources.Add(source);
         long id = _nextJob++;
         Jobs[id] = new JobRow(id, "awaiting_upload", null, null, null, 0, "transcribe", null, source, DateTimeOffset.UtcNow);

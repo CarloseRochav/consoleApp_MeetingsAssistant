@@ -33,6 +33,17 @@
                         Click="ProcessExistingAudio_Click"
                         IsEnabled="{Binding CanLoadExternalSource}"
                         HorizontalAlignment="Stretch" />
+                <!-- Spec A: el tipo de conversación de las próximas grabaciones (un reporte por grabación). -->
+                <ComboBox Header="Conversation type"
+                          ItemsSource="{Binding ConversationTypes}"
+                          SelectedItem="{Binding SelectedConversationType, Mode=TwoWay}"
+                          DisplayMemberPath="Label"
+                          HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Conversation type" />
+                <TextBlock Text="{Binding ConversationTypeHint}"
+                           Style="{StaticResource CaptionTextStyle}"
+                           TextWrapping="Wrap"
+                           MaxWidth="260" />
             </StackPanel>
         </Grid>
 

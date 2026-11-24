@@ -72,8 +72,8 @@ public sealed class DevLogApiClient : IDevLogApi
     public Task<ApiResult<DeviceIdentity>> MeAsync(string deviceToken, CancellationToken cancellationToken = default) =>
         SendAsync<DeviceIdentity>(HttpMethod.Get, "Devices/Select_Me", content: null, deviceToken, cancellationToken);
 
-    public Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, CancellationToken cancellationToken = default) =>
-        PostAsync<JobUpload>("Jobs/InsertUpdate_Jobs", new { option = 0, source }, deviceToken, cancellationToken);
+    public Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, string? promptId = null, CancellationToken cancellationToken = default) =>
+        PostAsync<JobUpload>("Jobs/InsertUpdate_Jobs", new { option = 0, source, prompt_id = promptId }, deviceToken, cancellationToken);
 
     public Task<ApiResult<JobRow>> ConfirmJobAsync(string deviceToken, long idJob, CancellationToken cancellationToken = default) =>
         PostAsync<JobRow>("Jobs/InsertUpdate_Jobs", new { option = 1, idJob }, deviceToken, cancellationToken);
