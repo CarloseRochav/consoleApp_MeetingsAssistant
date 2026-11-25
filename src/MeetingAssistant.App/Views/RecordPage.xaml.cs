@@ -25,6 +25,9 @@ public sealed partial class RecordPage : Page
     private async void RecordPage_Loaded(object sender, RoutedEventArgs e)
     {
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ViewModel.Meetings.CollectionChanged += (_, _) => ApplyEmpty();
+        ApplyEmpty();
+        _ = ViewModel.LoadConversationTypesAsync();
         try
         {
             await ReportPreview.EnsureCoreWebView2Async();
@@ -32,7 +35,7 @@ public sealed partial class RecordPage : Page
         }
         catch (Exception exception)
         {
-            ViewModel.ErrorDetails = $"No se pudo iniciar la vista previa Markdown: {exception.Message}";
+            ViewModel.ErrorDetails = $"Could not start the Markdown preview: {exception.Message}";
         }
     }
 
@@ -45,6 +48,13 @@ public sealed partial class RecordPage : Page
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(RecordViewModel.LastGeneratedReport) or null) UpdatePreview();
+    }
+
+    private void ApplyEmpty()
+    {
+        bool empty = ViewModel.Meetings.Count == 0;
+        EmptyStatePanel.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+        MeetingList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void ReportViewer_SelectionChanged(object sender, SelectionChangedEventArgs args) => UpdatePreview();

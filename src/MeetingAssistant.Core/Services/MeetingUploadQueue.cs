@@ -111,7 +111,8 @@ public sealed class MeetingUploadQueue : IDisposable
         }
     }
 
-    public QueuedMeeting EnqueueAudio(string audioPath, string? originalAudioPath, double? durationSeconds, string trigger)
+    /// <param name="promptId">El tipo de conversación elegido; null = el de por defecto del usuario en el servidor.</param>
+    public QueuedMeeting EnqueueAudio(string audioPath, string? originalAudioPath, double? durationSeconds, string trigger, string? promptId = null)
     {
         var meeting = new QueuedMeeting
         {
@@ -121,10 +122,11 @@ public sealed class MeetingUploadQueue : IDisposable
             AudioPath = audioPath,
             OriginalAudioPath = originalAudioPath,
             DurationSeconds = durationSeconds,
-            TotalBytes = new FileInfo(audioPath).Length
+            TotalBytes = new FileInfo(audioPath).Length,
+            PromptId = string.IsNullOrWhiteSpace(promptId) ? null : promptId.Trim()
         };
         Save(meeting);
-        _diagnostic($"Cola: {meeting.Id} encolada ({meeting.TotalBytes / 1048576.0:F1} MB, {trigger}).");
+        _diagnostic($"Cola: {meeting.Id} encolada ({meeting.TotalBytes / 1048576.0:F1} MB, {trigger}, tipo {meeting.PromptId ?? "por defecto"}).");
         Kick();
         return meeting;
     }
@@ -247,7 +249,7 @@ public sealed class MeetingUploadQueue : IDisposable
                 // Un archivo que no se pudo leer, el vault que no se pudo escribir... Se reintenta
                 // espaciado: casi siempre es pasajero (un disco ocupado, un antivirus).
                 _failure($"MeetingUploadQueue.Advance({id})", exception);
-                step = ScheduleRetry(Get(id) ?? meeting, $"Error en esta máquina: {exception.Message}");
+                step = ScheduleRetry(Get(id) ?? meeting, $"Error on this machine: {exception.Message}");
             }
 
             if (step == QueueStep.Waiting) _notBefore[id] = _time.GetUtcNow() + ProcessingPoll;
@@ -287,11 +289,11 @@ public sealed class MeetingUploadQueue : IDisposable
                     meeting = Save(meeting with { Status = QueuedMeetingStatus.Processing, IdJob = success.Value.IdJob, Notice = null, RetryCount = 0 });
                     break;
                 case ApiResult<JobRow>.Failure { Error: ApiError.NotFound }:
-                    return Fail(meeting, "El servidor ya no tiene esta reunión.");
+                    return Fail(meeting, "The server no longer has this meeting.");
                 case ApiResult<JobRow>.Failure { Error: ApiError.Rejected { Code: 409 } }:
-                    return Fail(meeting, "Esta reunión no tiene transcripción en el servidor: no se puede volver a extraer.");
+                    return Fail(meeting, "This meeting has no transcript on the server: it cannot be extracted again.");
                 case ApiResult<JobRow>.Failure { Error: ApiError.Rejected { Code: 400 } rejected }:
-                    return Fail(meeting, $"El servidor rechazó el prompt: {Clean(rejected.Message)}");
+                    return Fail(meeting, $"The server rejected the prompt: {Clean(rejected.Message)}");
                 case ApiResult<JobRow>.Failure failure:
                     return FailureOf(meeting, session, failure.Error);
             }
@@ -303,17 +305,25 @@ public sealed class MeetingUploadQueue : IDisposable
         {
             if (meeting.AudioPath is null || !File.Exists(meeting.AudioPath))
             {
-                return Fail(meeting, $"No se encuentra el audio en esta máquina: {meeting.AudioPath ?? "(sin ruta)"}.");
+                return Fail(meeting, $"The audio is not on this machine: {meeting.AudioPath ?? "(no path)"}.");
             }
 
             long size = new FileInfo(meeting.AudioPath).Length;
-            switch (await _api.CreateJobAsync(token, Source, cancellationToken))
+            switch (await _api.CreateJobAsync(token, Source, meeting.PromptId, cancellationToken))
             {
+                case ApiResult<JobUpload>.Failure { Error: ApiError.Rejected { Code: 400 } } when meeting.PromptId is { } gone:
+                    // El tipo elegido se archivó (o desapareció) entre la grabación y el envío. La reunión
+                    // no se pierde por eso: se manda con el tipo por defecto, y la fila lo dice.
+                    _diagnostic($"Cola: {meeting.Id}: el tipo {gone} ya no está en el catálogo; se envía con el de por defecto.");
+                    return ScheduleRetry(
+                        meeting with { PromptId = null },
+                        $"The conversation type \"{gone}\" is no longer available; this meeting is sent with your default type.",
+                        immediate: true);
                 case ApiResult<JobUpload>.Success success:
                     JobUpload job = success.Value;
                     if (job.MaxBytes > 0 && size > job.MaxBytes)
                     {
-                        return Fail(meeting, $"La grabación es demasiado grande para enviarla ({size / 1048576} MB; el límite es {job.MaxBytes / 1048576} MB).");
+                        return Fail(meeting, $"The recording is too large to send ({size / 1048576} MB; the limit is {job.MaxBytes / 1048576} MB).");
                     }
 
                     meeting = Save(meeting with
@@ -355,11 +365,11 @@ public sealed class MeetingUploadQueue : IDisposable
                 case BlockUploadOutcome.LinkRejected:
                     // Un trabajo nuevo es un blob nuevo: los bloques de éste ya no sirven.
                     Save(meeting with { Status = QueuedMeetingStatus.Waiting, IdJob = null, UploadUrl = null, UploadExpiresAt = null, SentBlocks = [] });
-                    return ScheduleRetry(Get(meeting.Id)!, "El enlace de subida venció; se pide otro.", immediate: true);
+                    return ScheduleRetry(Get(meeting.Id)!, "The upload link expired; a new one will be requested.", immediate: true);
                 case BlockUploadOutcome.Interrupted:
-                    return ScheduleRetry(meeting, "Se cortó la conexión durante la subida; sigue donde quedó.");
+                    return ScheduleRetry(meeting, "The connection dropped during the upload; it continues from where it stopped.");
                 case BlockUploadOutcome.Failed failed:
-                    return ScheduleRetry(meeting, $"Storage rechazó la subida (HTTP {failed.Code}); se reintenta.");
+                    return ScheduleRetry(meeting, $"Storage rejected the upload (HTTP {failed.Code}); it will retry.");
             }
 
             switch (await _api.ConfirmJobAsync(token, meeting.IdJob!.Value, cancellationToken))
@@ -372,10 +382,10 @@ public sealed class MeetingUploadQueue : IDisposable
                     meeting = Save(meeting with { Status = QueuedMeetingStatus.Processing, UploadUrl = null, Notice = null, RetryCount = 0 });
                     break;
                 case ApiResult<JobRow>.Failure { Error: ApiError.Rejected { Code: 400 } }:
-                    return Fail(meeting, "El servidor rechazó el archivo por demasiado grande.");
+                    return Fail(meeting, "The server rejected the file because it is too large.");
                 case ApiResult<JobRow>.Failure { Error: ApiError.NotFound }:
                     Save(meeting with { Status = QueuedMeetingStatus.Waiting, IdJob = null, UploadUrl = null, SentBlocks = [] });
-                    return ScheduleRetry(Get(meeting.Id)!, "El servidor ya no tiene esta subida; empieza de nuevo.", immediate: true);
+                    return ScheduleRetry(Get(meeting.Id)!, "The server no longer has this upload; it starts over.", immediate: true);
                 case ApiResult<JobRow>.Failure failure:
                     return FailureOf(meeting, session, failure.Error);
             }
@@ -402,11 +412,11 @@ public sealed class MeetingUploadQueue : IDisposable
                     meeting = Save(meeting with { Status = QueuedMeetingStatus.WritingReport, IdSession = idSession, Notice = null, RetryCount = 0 });
                     break;
                 case "failed":
-                    return Fail(meeting, "El servidor no pudo procesar esta reunión" + (string.IsNullOrWhiteSpace(job.Error) ? "." : $": {Clean(job.Error)}"));
+                    return Fail(meeting, "The server could not process this meeting" + (string.IsNullOrWhiteSpace(job.Error) ? "." : $": {Clean(job.Error)}"));
                 default:
                     // queued con un error = el servidor reintenta (retraso de 017); se dice por qué.
                     string? notice = job.Status == "queued" && !string.IsNullOrWhiteSpace(job.Error)
-                        ? $"El servidor reintenta (intento {job.Attempts}): {Clean(job.Error)}"
+                        ? $"The server is retrying (attempt {job.Attempts}): {Clean(job.Error)}"
                         : null;
                     if (notice != meeting.Notice) Save(meeting with { Notice = notice });
                     return QueueStep.Waiting;
@@ -442,7 +452,7 @@ public sealed class MeetingUploadQueue : IDisposable
             return QueueStep.Done;
         }
 
-        return ScheduleRetry(meeting, $"Nada que hacer en el estado {meeting.Status}.");
+        return ScheduleRetry(meeting, $"Nothing to do in state {meeting.Status}.");
     }
 
     /// <summary>
@@ -483,9 +493,9 @@ public sealed class MeetingUploadQueue : IDisposable
             case ApiError.RateLimited:
             case ApiError.Network:
             case ApiError.Server:
-                return ScheduleRetry(meeting, error.Describe() + " Se reintenta solo.");
+                return ScheduleRetry(meeting, error.Describe() + " It will retry on its own.");
             case ApiError.NotFound:
-                return Fail(meeting, "El servidor ya no tiene el trabajo de esta reunión.");
+                return Fail(meeting, "The server no longer has this meeting's job.");
             default:
                 return Fail(meeting, error.Describe());
         }
@@ -499,7 +509,7 @@ public sealed class MeetingUploadQueue : IDisposable
             : wait ?? Min(TimeSpan.FromTicks(FirstRetry.Ticks * (1L << Math.Min(count - 1, 10))), MaxRetry);
         DateTimeOffset next = _time.GetUtcNow() + delay;
         _notBefore[meeting.Id] = next;
-        string notice = delay > TimeSpan.Zero ? $"{reason} Próximo intento: {next.ToLocalTime():HH:mm:ss}." : reason;
+        string notice = delay > TimeSpan.Zero ? $"{reason} Next attempt: {next.ToLocalTime():HH:mm:ss}." : reason;
         Save(meeting with { Notice = notice, RetryCount = count });
         return QueueStep.Retry;
     }
@@ -627,5 +637,5 @@ public sealed class MeetingUploadQueue : IDisposable
 
     private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 
-    private const string SignedOutNotice = "Sin sesión en el servidor: inicia sesión para seguir. La grabación está guardada.";
+    private const string SignedOutNotice = "Not signed in on the server: sign in to continue. The recording is saved.";
 }

@@ -18,7 +18,7 @@
              Severity="Error"
              IsOpen="False"
              IsClosable="True"
-             Title="Ocurrió un error">
+             Title="Something went wrong">
         <InfoBar.Content>
             <StackPanel Spacing="10" Margin="0,0,16,14">
                 <TextBlock x:Name="SummaryText"
@@ -26,7 +26,7 @@
                            IsTextSelectionEnabled="True" />
 
                 <Expander x:Name="DetailsExpander"
-                          Header="Detalle técnico"
+                          Header="Technical detail"
                           HorizontalAlignment="Stretch"
                           HorizontalContentAlignment="Stretch">
                     <TextBox x:Name="DetailsBox"
@@ -38,16 +38,16 @@
                              MaxHeight="240"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                             AutomationProperties.Name="Detalle técnico del error" />
+                             AutomationProperties.Name="Technical detail of the error" />
                 </Expander>
 
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <Button x:Name="CopyButton"
                             Click="CopyButton_Click"
-                            AutomationProperties.Name="Copiar el error al portapapeles">
+                            AutomationProperties.Name="Copy the error to the clipboard">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <SymbolIcon Symbol="Copy" />
-                            <TextBlock Text="Copiar" />
+                            <TextBlock Text="Copy" />
                         </StackPanel>
                     </Button>
                     <TextBlock x:Name="CopiedText"

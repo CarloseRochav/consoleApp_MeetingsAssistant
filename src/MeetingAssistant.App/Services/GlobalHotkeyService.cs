@@ -54,7 +54,7 @@ public sealed class GlobalHotkeyService : IDisposable
             if (!SetWindowSubclass(_windowHandle, _subclassProc, SubclassId, UIntPtr.Zero))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "No se pudo conectar el manejador de mensajes del hotkey.");
+                    "Could not attach the hotkey message handler.");
             }
 
             if (!RegisterHotKey(_windowHandle, HotkeyId, modifiers | ModNoRepeat, key))
@@ -63,7 +63,7 @@ public sealed class GlobalHotkeyService : IDisposable
                 RemoveWindowSubclass(_windowHandle, _subclassProc, SubclassId);
                 _windowHandle = 0;
                 throw new Win32Exception(error,
-                    $"No se pudo registrar el hotkey global {displayName}; probablemente ya está en uso.");
+                    $"Could not register the global hotkey {displayName}; it is probably already in use.");
             }
 
             _isRegistered = true;
@@ -73,7 +73,7 @@ public sealed class GlobalHotkeyService : IDisposable
         catch (Exception exception)
         {
             AppLog.Failure("GlobalHotkeyService.Register", exception);
-            _trayIcon.ShowError("Hotkey no disponible", exception.Message);
+            _trayIcon.ShowError("Hotkey unavailable", exception.Message);
             return false;
         }
     }
@@ -85,7 +85,7 @@ public sealed class GlobalHotkeyService : IDisposable
             if (_isRegistered && !UnregisterHotKey(_windowHandle, HotkeyId))
             {
                 AppLog.Failure("GlobalHotkeyService.Unregister",
-                    new Win32Exception(Marshal.GetLastWin32Error(), "No se pudo liberar el hotkey global."));
+                    new Win32Exception(Marshal.GetLastWin32Error(), "Could not release the global hotkey."));
             }
 
             RemoveWindowSubclass(_windowHandle, _subclassProc, SubclassId);
@@ -127,7 +127,7 @@ public sealed class GlobalHotkeyService : IDisposable
         catch (Exception exception)
         {
             AppLog.Failure("GlobalHotkeyService.ToggleRecording", exception);
-            _trayIcon.ShowError("Error de hotkey", exception.Message);
+            _trayIcon.ShowError("Hotkey error", exception.Message);
         }
         finally
         {
@@ -163,12 +163,12 @@ public sealed class GlobalHotkeyService : IDisposable
                 "control" or "ctrl" => ModControl,
                 "shift" => ModShift,
                 "windows" or "win" => ModWin,
-                _ => throw new FormatException($"Modificador de hotkey no reconocido: '{part}'.")
+                _ => throw new FormatException($"Unrecognized hotkey modifier: '{part}'.")
             };
         }
 
         if (result == 0)
-            throw new FormatException("Hotkey:Modifiers debe contener al menos un modificador.");
+            throw new FormatException("Hotkey:Modifiers must contain at least one modifier.");
 
         return result;
     }
@@ -183,7 +183,7 @@ public sealed class GlobalHotkeyService : IDisposable
             int.TryParse(key[1..], out int functionKey) && functionKey is >= 1 and <= 24)
             return (uint)(0x70 + functionKey - 1);
 
-        throw new FormatException($"Tecla de hotkey no reconocida: '{value}'. Usa A-Z, 0-9 o F1-F24.");
+        throw new FormatException($"Unrecognized hotkey: '{value}'. Use A-Z, 0-9, or F1-F24.");
     }
 
     private static string FormatModifiers(uint modifiers)

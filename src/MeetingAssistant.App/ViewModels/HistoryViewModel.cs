@@ -16,18 +16,18 @@ namespace MeetingAssistant.App.ViewModels;
 /// </summary>
 public sealed partial class SessionListItem : ObservableObject
 {
-    /// <summary>Fijada a es-ES: toda la UI está en español (con la del sistema salía "Thursday 27 de August").</summary>
-    internal static readonly CultureInfo DisplayCulture = CultureInfo.GetCultureInfo("es-ES");
+    /// <summary>Fijada a en-US: la UI es inglés (con la del sistema, un Windows en español mezclaba los dos).</summary>
+    internal static readonly CultureInfo DisplayCulture = CultureInfo.GetCultureInfo("en-US");
 
     private static readonly Dictionary<string, string> SourceLabels = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["desktop"] = "Escritorio",
-        ["android"] = "Teléfono",
-        [SessionSource.Hotkey] = "Escritorio (atajo de teclado)",
-        [SessionSource.Tray] = "Escritorio (bandeja)",
-        [SessionSource.Http] = "Escritorio (endpoint HTTP)",
-        [SessionSource.Window] = "Escritorio (ventana)",
-        [SessionSource.Import] = "Escritorio (importado)",
+        ["desktop"] = "Desktop",
+        ["android"] = "Phone",
+        [SessionSource.Hotkey] = "Desktop (keyboard shortcut)",
+        [SessionSource.Tray] = "Desktop (tray)",
+        [SessionSource.Http] = "Desktop (HTTP endpoint)",
+        [SessionSource.Window] = "Desktop (window)",
+        [SessionSource.Import] = "Desktop (imported)",
         [SessionSource.Harness] = "Harness"
     };
 
@@ -62,7 +62,7 @@ public sealed partial class SessionListItem : ObservableObject
 
     public bool HasSnippet => !string.IsNullOrWhiteSpace(Snippet);
 
-    public string Title => StartedAtLocal.ToString("dddd d 'de' MMMM, HH:mm", DisplayCulture);
+    public string Title => StartedAtLocal.ToString("dddd, d MMMM, HH:mm", DisplayCulture);
 
     /// <summary>Una sesión sin transcript se dice, no se disfraza. Un costo desconocido nunca se muestra como 0.</summary>
     public string Subtitle
@@ -72,10 +72,10 @@ public sealed partial class SessionListItem : ObservableObject
             var parts = new List<string> { SourceLabel };
             if (Session.DurationSeconds is { } seconds) parts.Add($"{seconds / 60:F0} min");
             parts.Add(!HasTranscript
-                ? "sin transcripción"
-                : Session.ReportCount switch { 0 => "sin reportes", 1 => "1 reporte", _ => $"{Session.ReportCount} reportes" });
+                ? "no transcript"
+                : Session.ReportCount switch { 0 => "no reports", 1 => "1 report", _ => $"{Session.ReportCount} reports" });
             if (!Cost.IsNothing) parts.Add(Cost.Text());
-            if (HasArchivedAudio) parts.Add($"audio hasta el {Session.AudioExpiresAt!.Value.ToLocalTime().ToString("dd/MM", DisplayCulture)}");
+            if (HasArchivedAudio) parts.Add($"audio until {Session.AudioExpiresAt!.Value.ToLocalTime().ToString("d", DisplayCulture)}");
             return string.Join(" · ", parts);
         }
     }
@@ -97,7 +97,7 @@ public sealed class ReportListItem(ApiReport report)
         {
             var parts = new List<string> { Report.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture) };
             if (Report.LlmModel is not null) parts.Add(Report.LlmModel);
-            parts.Add(Report.CostMicroUsd is { } cost ? CostAmount.Usd(cost) : "costo desconocido");
+            parts.Add(Report.CostMicroUsd is { } cost ? CostAmount.Usd(cost) : "unknown cost");
             if (Report.TokensOutput is { } tokens) parts.Add($"{tokens:N0} tokens");
             return string.Join(" · ", parts);
         }
@@ -141,6 +141,7 @@ public partial class HistoryViewModel : ObservableObject
     private string? statusMessage;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private string? errorDetails;
 
     [ObservableProperty]
@@ -190,7 +191,7 @@ public partial class HistoryViewModel : ObservableObject
 
     public ObservableCollection<PromptEntry> Prompts { get; } = [];
 
-    public bool IsEmpty => !IsLoading && _allSessions.Count == 0;
+    public bool IsEmpty => !IsLoading && string.IsNullOrEmpty(ErrorDetails) && _allSessions.Count == 0;
 
     public bool HasSelection => SelectedSession is not null;
 
@@ -208,15 +209,15 @@ public partial class HistoryViewModel : ObservableObject
     {
         get
         {
-            if (SelectedSession is null) return "Elige una reunión de la lista.";
+            if (SelectedSession is null) return "Pick a meeting from the list.";
             if (!HasTranscript)
             {
-                return "Esta reunión no tiene transcripción en el servidor, así que no se puede volver a extraer. " +
-                    "Suele significar que la grabación falló antes de transcribir.";
+                return "This meeting has no transcript on the server, so it cannot be extracted again. " +
+                    "That usually means the recording failed before it was transcribed.";
             }
 
-            return "Lo hace el servidor y cuesta una llamada al LLM (cuenta en el tope diario). Queda como un reporte más de " +
-                "esta reunión, y el .md nuevo llega al vault por la cola de Grabar, sin pisar el anterior.";
+            return "The server does this, and it costs one LLM call (it counts toward the daily cap). It is added as another report " +
+                "for this meeting, and the new .md reaches the vault through the Record queue, without replacing the previous one.";
         }
     }
 
@@ -224,8 +225,8 @@ public partial class HistoryViewModel : ObservableObject
     {
         null => string.Empty,
         { HasArchivedAudio: true } session =>
-            $"El audio está archivado en el servidor hasta el {session.Session.AudioExpiresAt!.Value.ToLocalTime().ToString("dd/MM/yyyy", SessionListItem.DisplayCulture)}.",
-        _ => "No hay audio para escuchar en el servidor (reuniones anteriores al archivo, importadas del escritorio viejo, o vencidas)."
+            $"The audio is kept on the server until {session.Session.AudioExpiresAt!.Value.ToLocalTime().ToString("d", SessionListItem.DisplayCulture)}.",
+        _ => "There is no audio to play on the server (meetings from before the archive, imported from the old desktop, or expired)."
     };
 
     public HistoryViewModel(MeetingHistoryService history, PromptLibraryService prompts, MeetingUploadQueue queue, IReportStorage reportStorage)
@@ -241,7 +242,7 @@ public partial class HistoryViewModel : ObservableObject
     {
         IsLoading = true;
         ErrorDetails = null;
-        StatusMessage = "Cargando el historial...";
+        StatusMessage = "Loading history...";
         long? previouslySelected = SelectedSession?.SessionId;
 
         try
@@ -253,9 +254,9 @@ public partial class HistoryViewModel : ObservableObject
             StatusMessage = sessions.Count switch
             {
                 0 => null,
-                1 => "1 reunión registrada.",
-                PageSize => $"Las {PageSize} reuniones más recientes.",
-                _ => $"{sessions.Count} reuniones registradas."
+                1 => "1 meeting on record.",
+                PageSize => $"The {PageSize} most recent meetings.",
+                _ => $"{sessions.Count} meetings on record."
             };
 
             await ApplySearchAsync(++_searchVersion, previouslySelected);
@@ -268,7 +269,7 @@ public partial class HistoryViewModel : ObservableObject
             _allSessions.Clear();
             Sessions.Clear();
             SearchSummary = null;
-            StatusMessage = "No se pudo leer el historial del servidor. Grabar sigue funcionando: lo grabado espera en la cola. " +
+            StatusMessage = "Could not read history from the server. Recording still works: what you record waits in the queue. " +
                 (exception is ApiException api ? api.Error.Describe() : exception.Message);
             ErrorDetails = exception.ToString();
         }
@@ -318,7 +319,7 @@ public partial class HistoryViewModel : ObservableObject
             if (version != _searchVersion) return;
             AppLog.Failure("HistoryViewModel.Search", exception);
             ShowSessions(_allSessions, snippets: null, sessionToKeepSelected);
-            SearchSummary = "No se pudo buscar en las transcripciones. Se muestra la lista completa, sin filtrar.";
+            SearchSummary = "Could not search the transcripts. The full list is shown, unfiltered.";
             ErrorDetails = exception.ToString();
             return;
         }
@@ -347,15 +348,15 @@ public partial class HistoryViewModel : ObservableObject
         {
             matches.Count switch
             {
-                0 => $"Ninguna transcripción menciona «{query}».",
-                1 => $"1 reunión menciona «{query}».",
-                _ => $"{matches.Count} reuniones mencionan «{query}», ordenadas por relevancia y no por fecha."
+                0 => $"No transcript mentions \"{query}\".",
+                1 => $"1 meeting mentions \"{query}\".",
+                _ => $"{matches.Count} meetings mention \"{query}\", ordered by relevance rather than date."
             }
         };
-        if (truncated) parts.Add($"Hay más: se muestran las primeras {SearchLimit}.");
-        if (outsideLoadedPage > 0) parts.Add($"{outsideLoadedPage} coincidencia(s) más son de reuniones anteriores a las {PageSize} cargadas.");
+        if (truncated) parts.Add($"There are more: the first {SearchLimit} are shown.");
+        if (outsideLoadedPage > 0) parts.Add($"{outsideLoadedPage} more match(es) are from meetings older than the {PageSize} loaded.");
         int withoutTranscript = _allSessions.Count(session => !session.HasTranscript);
-        if (withoutTranscript > 0) parts.Add($"{withoutTranscript} de tus {_allSessions.Count} reuniones no tienen transcripción y no se pueden buscar.");
+        if (withoutTranscript > 0) parts.Add($"{withoutTranscript} of your {_allSessions.Count} meetings have no transcript and cannot be searched.");
         SearchSummary = string.Join(" ", parts);
     }
 
@@ -397,9 +398,9 @@ public partial class HistoryViewModel : ObservableObject
 
             Transcript = storedTranscript?.Text;
             TranscriptDetails = storedTranscript is null
-                ? "Sin transcripción en el servidor."
-                : $"{storedTranscript.Text.Length:N0} caracteres · {storedTranscript.Provider ?? "proveedor desconocido"} · " +
-                  (storedTranscript.CostMicroUsd is { } cost ? CostAmount.Usd(cost) : "costo desconocido") + " · " +
+                ? "No transcript on the server."
+                : $"{storedTranscript.Text.Length:N0} characters · {storedTranscript.Provider ?? "unknown provider"} · " +
+                  (storedTranscript.CostMicroUsd is { } cost ? CostAmount.Usd(cost) : "unknown cost") + " · " +
                   storedTranscript.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture);
 
             Reports.Clear();
@@ -409,7 +410,7 @@ public partial class HistoryViewModel : ObservableObject
         catch (Exception exception)
         {
             AppLog.Failure("HistoryViewModel.LoadSessionDetail", exception);
-            TranscriptDetails = "No se pudo leer el detalle de esta reunión.";
+            TranscriptDetails = "Could not read this meeting's detail.";
             ErrorDetails = exception.ToString();
         }
     }
@@ -421,8 +422,8 @@ public partial class HistoryViewModel : ObservableObject
         if (SelectedSession is not { } session || SelectedPrompt is not { } prompt) return;
 
         QueuedMeeting queued = _queue.EnqueueReextract(session.SessionId, prompt.PromptId, SessionSource.Window);
-        StatusMessage = $"Re-extracción de la reunión del {session.StartedAtLocal.ToString("dd/MM", SessionListItem.DisplayCulture)} con " +
-            $"«{prompt.DisplayName}» en la cola ({queued.Id}). Su estado se ve en Grabar; el .md llega al vault cuando el servidor termine.";
+        StatusMessage = $"Extracting the meeting of {session.StartedAtLocal.ToString("d", SessionListItem.DisplayCulture)} again with " +
+            $"\"{prompt.DisplayName}\" is in the queue ({queued.Id}). Its status is on Record; the .md reaches the vault when the server finishes.";
     }
 
     private bool CanListen() => SelectedSession?.HasArchivedAudio == true && !IsBusy;
@@ -439,17 +440,17 @@ public partial class HistoryViewModel : ObservableObject
             if (SelectedSession?.SessionId != session.SessionId) return;
             if (link is null)
             {
-                StatusMessage = "El servidor ya no tiene el audio de esta reunión (vencido o borrado).";
+                StatusMessage = "The server no longer has this meeting's audio (expired or deleted).";
                 return;
             }
 
             AudioSource = new Uri(link.Url);
-            StatusMessage = $"Audio listo para escuchar (el enlace vale hasta las {link.ExpiresAt.ToLocalTime():HH:mm}).";
+            StatusMessage = $"Audio ready to play (the link lasts until {link.ExpiresAt.ToLocalTime():HH:mm}).";
         }
         catch (Exception exception)
         {
             AppLog.Failure("HistoryViewModel.Listen", exception);
-            StatusMessage = $"No se pudo pedir el audio: {(exception is ApiException api ? api.Error.Describe() : exception.Message)}";
+            StatusMessage = $"Could not request the audio: {(exception is ApiException api ? api.Error.Describe() : exception.Message)}";
             ErrorDetails = exception.ToString();
         }
         finally
@@ -468,13 +469,13 @@ public partial class HistoryViewModel : ObservableObject
         try
         {
             string path = await _reportStorage.SaveMarkdownAsync(report.Markdown, ReportFileMetadata.From(report));
-            StatusMessage = $"Guardado en el vault: {path}";
+            StatusMessage = $"Saved to the vault: {path}";
             Process.Start(new ProcessStartInfo { FileName = "explorer.exe", Arguments = $"/select,\"{path}\"", UseShellExecute = true });
         }
         catch (Exception exception)
         {
             AppLog.Failure("HistoryViewModel.SaveToVault", exception);
-            StatusMessage = $"No se pudo escribir en el vault: {exception.Message}";
+            StatusMessage = $"Could not write to the vault: {exception.Message}";
             ErrorDetails = exception.ToString();
         }
     }

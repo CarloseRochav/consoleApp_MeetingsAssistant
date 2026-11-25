@@ -1,5 +1,7 @@
 # Handoff: a delay between job retries (2026-11-09)
 
+**Status (2026-11-16): done.** Confirmed by the owner 2026-11-09 (DevLog 017 and the worker). Do not re-run these prompts. `Jobs/Select_Jobs` does not return `retry_after`; a waiting retry stays `queued` with the last error. The deploy order at the bottom already ran.
+
 Found while testing step D on the phone (roadmap, step D, "Los 404 de Azure AI Foundry"): on
 2026-11-10 01:03-01:04 UTC Azure AI Foundry answered `HTTP 404 DeploymentNotFound` for `grok-4.6`
 for about 90 seconds. Nothing was wrong with the deployment (checked read-only: it exists, unchanged

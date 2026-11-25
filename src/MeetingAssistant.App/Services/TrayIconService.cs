@@ -56,7 +56,7 @@ public sealed class TrayIconService : IDisposable
 
         var openWindowItem = new MenuFlyoutItem
         {
-            Text = "Abrir ventana principal",
+            Text = "Open main window",
             Command = new RelayCommand(() => OpenMainWindowRequested?.Invoke(this, EventArgs.Empty))
         };
         menu.Items.Add(openWindowItem);
@@ -64,7 +64,7 @@ public sealed class TrayIconService : IDisposable
 
         var exitItem = new MenuFlyoutItem
         {
-            Text = "Salir",
+            Text = "Exit",
             Command = new RelayCommand(() => ExitRequested?.Invoke(this, EventArgs.Empty))
         };
         menu.Items.Add(exitItem);
@@ -147,6 +147,6 @@ public sealed class TrayIconService : IDisposable
     private void RefreshToggleLabel()
     {
         if (_toggleRecordingItem is not null)
-            _toggleRecordingItem.Text = _coordinator.IsRecording ? "Detener grabación" : "Grabar reunión";
+            _toggleRecordingItem.Text = _coordinator.IsRecording ? "Stop recording" : "Record meeting";
     }
 }

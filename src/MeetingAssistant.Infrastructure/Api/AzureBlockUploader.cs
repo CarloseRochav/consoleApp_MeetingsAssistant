@@ -34,7 +34,7 @@ public sealed class AzureBlockUploader(HttpClient http) : IAudioUploader
             await using var file = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, useAsync: true);
             long size = file.Length;
             int count = BlockCount(size, blockBytes);
-            if (count > MaxBlocks) throw new InvalidOperationException($"Azure acepta como mucho {MaxBlocks} bloques por blob; hace falta un bloque más grande.");
+            if (count > MaxBlocks) throw new InvalidOperationException($"Azure accepts at most {MaxBlocks} blocks per blob; a larger block is required.");
 
             byte[] buffer = new byte[blockBytes];
             for (int index = 0; index < count; index++)

@@ -1,6 +1,8 @@
 using MeetingAssistant.App.Views;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 
 namespace MeetingAssistant.App;
 
@@ -16,8 +18,14 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/AppIcon.ico");
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.PreferredMinimumWidth = 1100;
+            presenter.PreferredMinimumHeight = 720;
+        }
+
         AppWindow.Closing += AppWindow_Closing;
-        ContentFrame.Navigate(typeof(RecordPage));
+        ContentFrame.Navigate(typeof(RecordPage), null, new EntranceNavigationTransitionInfo());
         _restoringSelection = true;
         RecordNav.IsChecked = true;
         _restoringSelection = false;
@@ -101,7 +109,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        ContentFrame.Navigate(page);
+        ContentFrame.Navigate(page, null, new EntranceNavigationTransitionInfo());
         _currentTag = tag;
     }
 }

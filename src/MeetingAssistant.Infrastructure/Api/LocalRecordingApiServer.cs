@@ -39,8 +39,8 @@ public sealed class LocalRecordingApiServer : IDisposable
 
         _authToken = configuration["Api:AuthToken"]
             ?? throw new InvalidOperationException(
-                "Falta configurar \"Api:AuthToken\" en appsettings.json. " +
-                "Este endpoint enciende el micrófono — no debe exponerse sin token.");
+                "\"Api:AuthToken\" is missing in appsettings.json. " +
+                "This endpoint turns the microphone on — it must not be exposed without a token.");
 
         int port = configuration.GetValue<int?>("Api:Port") ?? 5757;
 
@@ -52,7 +52,7 @@ public sealed class LocalRecordingApiServer : IDisposable
     {
         if (_listenLoop is not null)
         {
-            throw new InvalidOperationException("LocalRecordingApiServer ya está corriendo.");
+            throw new InvalidOperationException("LocalRecordingApiServer is already running.");
         }
 
         _cts = new CancellationTokenSource();
@@ -104,7 +104,7 @@ public sealed class LocalRecordingApiServer : IDisposable
         string? providedToken = request.Headers["X-Api-Token"];
         if (string.IsNullOrEmpty(providedToken) || providedToken != _authToken)
         {
-            await WriteJsonAsync(response, 401, new { error = "Token inválido o ausente." });
+            await WriteJsonAsync(response, 401, new { error = "Missing or invalid token." });
             return;
         }
 
@@ -112,7 +112,7 @@ public sealed class LocalRecordingApiServer : IDisposable
         bool isLoopback = remoteAddress is not null && IPAddress.IsLoopback(remoteAddress);
         if (!isLoopback)
         {
-            await WriteJsonAsync(response, 403, new { error = "Solo se aceptan conexiones desde localhost." });
+            await WriteJsonAsync(response, 403, new { error = "Only localhost connections are accepted." });
             return;
         }
 
@@ -138,7 +138,7 @@ public sealed class LocalRecordingApiServer : IDisposable
                     break;
 
                 default:
-                    await WriteJsonAsync(response, 404, new { error = "Ruta no encontrada." });
+                    await WriteJsonAsync(response, 404, new { error = "Route not found." });
                     break;
             }
         }

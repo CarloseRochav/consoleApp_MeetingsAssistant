@@ -47,6 +47,18 @@ internal static class ApiSelfTests
         checks.Check("la respuesta se lee (v_id, maxBytes, expiresAt)",
             created is ApiResult<JobUpload>.Success { Value: { IdJob: 41, MaxBytes: 1073741824 } job } && job.ExpiresAt.Hour == 20);
         checks.Check("el ToString del trabajo no muestra el enlace", created is ApiResult<JobUpload>.Success s && !s.Value.ToString().Contains("SECRET"));
+        using (JsonDocument body = JsonDocument.Parse(request.Body))
+        {
+            checks.Check("crear trabajo sin tipo: prompt_id ausente o null (el servidor usa el de por defecto)",
+                !body.RootElement.TryGetProperty("prompt_id", out JsonElement none) || none.ValueKind == JsonValueKind.Null);
+        }
+
+        await api.CreateJobAsync("dlg_token", "desktop", "custom-daily-standup");
+        using (JsonDocument body = JsonDocument.Parse(handler.Requests[^1].Body))
+        {
+            checks.Check("crear trabajo con tipo: prompt_id va en el cuerpo (Spec A)",
+                body.RootElement.TryGetProperty("prompt_id", out JsonElement type) && type.GetString() == "custom-daily-standup");
+        }
 
         handler.Respond = (_, _) => FakeHttpHandler.Json(HttpStatusCode.OK, """{"idUser":"1","username":"carlos","idDevice":"7","deviceName":"PC"}""");
         await api.MeAsync("dlg_token");
@@ -110,7 +122,7 @@ internal static class ApiSelfTests
             cap is ApiError.CapReached { Refusal: { CapUsd: 2m, InFlight: 1, MaxInFlight: 3, Unpriced: 1 } refusal } && !refusal.IsInFlightLimit);
         checks.Check("el aviso del tope lleva lo gastado y el tope", cap?.Describe().Contains("2,01") == true || cap?.Describe().Contains("2.01") == true);
         ApiError? inFlight = await ErrorFor(HttpStatusCode.TooManyRequests, """{"message":"x","spentUsd":0.1,"capUsd":2,"unpriced":0,"inFlight":3,"maxInFlight":3}""");
-        checks.Check("429 por trabajos en curso se reconoce y dice 3 de 3", inFlight is ApiError.CapReached { Refusal.IsInFlightLimit: true } && inFlight.Describe().Contains("3 de 3"));
+        checks.Check("429 por trabajos en curso se reconoce y dice 3 of 3", inFlight is ApiError.CapReached { Refusal.IsInFlightLimit: true } && inFlight.Describe().Contains("3 of 3"));
         checks.Check("429 sin cuerpo (login) → RateLimited", await ErrorFor(HttpStatusCode.TooManyRequests, "") is ApiError.RateLimited);
         checks.Check("503 → Server", await ErrorFor(HttpStatusCode.ServiceUnavailable, "Uploads are not configured") is ApiError.Server { Code: 503 });
         checks.Check("400 con texto JSON → Rejected con el motivo",
@@ -495,11 +507,52 @@ internal static class ApiSelfTests
             step = await queue.AdvanceAsync(offline.Id);
             current = queue.Items.Single(item => item.Id == offline.Id);
             checks.Check("sin red → Retry, sigue esperando (no falla)", step == QueueStep.Retry && current.Status == QueuedMeetingStatus.Waiting);
-            checks.Check("dice por qué y cuándo reintenta", current.Notice?.Contains("No se pudo llegar") == true && current.Notice.Contains("Próximo intento"));
+            checks.Check("dice por qué y cuándo reintenta", current.Notice?.Contains("Could not reach") == true && current.Notice.Contains("Next attempt"));
             step = await queue.AdvanceAsync(offline.Id);
             checks.Check("vuelve la red → sube", step == QueueStep.Waiting && queue.Items.Single(item => item.Id == offline.Id).Status == QueuedMeetingStatus.Processing);
             api.CompleteJob(queue.Items.Single(item => item.Id == offline.Id).IdJob!.Value);
             checks.Check("y termina", await queue.AdvanceAsync(offline.Id) == QueueStep.Done);
+            checks.Check("sin tipo elegido: los trabajos se crearon sin prompt_id", api.CreatedPromptIds.All(id => id is null));
+
+            // 2b. Tipo de conversación (Spec A): el elegido llega al trabajo; uno archivado entre la
+            // grabación y el envío no pierde la reunión, se manda con el de por defecto.
+            api.CreatedPromptIds.Clear();
+            string typedAudio = Audio("typed.wav", 1024);
+            QueuedMeeting typed = queue.EnqueueAudio(typedAudio, typedAudio, 10, SessionSource.Window, "custom-daily-standup");
+            checks.Check("encolada con su tipo", typed.PromptId == "custom-daily-standup");
+            step = await queue.AdvanceAsync(typed.Id);
+            checks.Check("el trabajo se creó con ese prompt_id",
+                step == QueueStep.Waiting && api.CreatedPromptIds.SequenceEqual(["custom-daily-standup"]));
+            checks.Check("el tipo sobrevive en la cola guardada (otra cola lo lee igual)",
+                NewQueue().Items.Single(item => item.Id == typed.Id).PromptId == "custom-daily-standup");
+            api.CompleteJob(queue.Items.Single(item => item.Id == typed.Id).IdJob!.Value);
+            checks.Check("y termina", await queue.AdvanceAsync(typed.Id) == QueueStep.Done);
+
+            api.CreatedPromptIds.Clear();
+            api.UnknownPrompts.Add("custom-archived");
+            string archivedAudio = Audio("archived.wav", 1024);
+            QueuedMeeting archived = queue.EnqueueAudio(archivedAudio, archivedAudio, 10, SessionSource.Hotkey, "custom-archived");
+            step = await queue.AdvanceAsync(archived.Id);
+            current = queue.Items.Single(item => item.Id == archived.Id);
+            checks.Check("tipo archivado → 400 → no falla: vuelve a intentar sin tipo, ya",
+                step == QueueStep.Retry && current is { Status: QueuedMeetingStatus.Waiting, PromptId: null } && current.Notice?.Contains("no longer available") == true);
+            step = await queue.AdvanceAsync(archived.Id);
+            checks.Check("el segundo intento va sin prompt_id y sube",
+                step == QueueStep.Waiting && api.CreatedPromptIds.SequenceEqual(["custom-archived", null]) &&
+                queue.Items.Single(item => item.Id == archived.Id).Status == QueuedMeetingStatus.Processing);
+            api.CompleteJob(queue.Items.Single(item => item.Id == archived.Id).IdJob!.Value);
+            checks.Check("y termina con el de por defecto", await queue.AdvanceAsync(archived.Id) == QueueStep.Done);
+
+            // El selector: "Default" primero (con el nombre del default del usuario, si sigue vivo) y el catálogo en su orden.
+            CatalogPrompt Prompt(string id, string name) => new(id, "1", name, "", "Markdown", "text");
+            IReadOnlyList<CatalogPrompt> catalog = [Prompt("assignment", "Work assignment"), Prompt("custom-daily-standup", "Daily standup")];
+            IReadOnlyList<ConversationTypeOption> options = ConversationTypesService.Build(catalog, "CUSTOM-DAILY-STANDUP");
+            checks.Check("selector: Default con el nombre del default (sin distinguir mayúsculas), luego el catálogo",
+                options.Select(option => option.Label).SequenceEqual(["Default (Daily standup)", "Work assignment", "Daily standup"]) &&
+                options[0].PromptId is null && options[2].PromptId == "custom-daily-standup");
+            checks.Check("selector: sin default, o con uno archivado, dice \"the server's\"",
+                ConversationTypesService.Build(catalog, null)[0].Label == "Default (the server's)" &&
+                ConversationTypesService.Build(catalog, "custom-gone")[0].Label == "Default (the server's)");
 
             // 3. Reinicio a mitad de la subida: otra cola sobre la misma carpeta sigue donde quedó.
             uploader.BlocksSent.Clear();
@@ -533,12 +586,12 @@ internal static class ApiSelfTests
             api.FailNext[nameof(IDevLogApi.CreateJobAsync)] = new ApiError.CapReached(new CapRefusal("x", 0.4m, 2m, 0, 3, 3, DateTimeOffset.UtcNow.AddHours(5)));
             step = await queue.AdvanceAsync(capped.Id);
             current = queue.Items.Single(item => item.Id == capped.Id);
-            checks.Check("429 por trabajos en curso → Retry con «3 de 3»", step == QueueStep.Retry && current.Notice?.Contains("3 de 3") == true);
+            checks.Check("429 por trabajos en curso → Retry con «3 of 3»", step == QueueStep.Retry && current.Notice?.Contains("3 of 3") == true);
             api.FailNext[nameof(IDevLogApi.CreateJobAsync)] = new ApiError.CapReached(new CapRefusal("x", 2.05m, 2m, 1, 0, 3, DateTimeOffset.UtcNow.AddHours(5)));
             await queue.AdvanceAsync(capped.Id);
             current = queue.Items.Single(item => item.Id == capped.Id);
             checks.Check("429 por el tope diario → lo gastado, el tope y lo sin precio",
-                current.Notice?.Contains("tope de gasto") == true && current.Notice.Contains("1 sin precio") && current.Status == QueuedMeetingStatus.Waiting);
+                current.Notice?.Contains("spending cap") == true && current.Notice.Contains("1 unpriced") && current.Status == QueuedMeetingStatus.Waiting);
 
             // 5. El servidor falla el trabajo: se dice su motivo.
             await queue.AdvanceAsync(capped.Id);
@@ -561,7 +614,7 @@ internal static class ApiSelfTests
             step = await queue.AdvanceAsync(revoked.Id);
             current = queue.Items.Single(item => item.Id == revoked.Id);
             checks.Check("401 → SignedOut, sesión cerrada, la reunión sigue en Processing",
-                step == QueueStep.SignedOut && !auth.IsSignedIn && current.Status == QueuedMeetingStatus.Processing && current.Notice?.Contains("inicia sesión") == true);
+                step == QueueStep.SignedOut && !auth.IsSignedIn && current.Status == QueuedMeetingStatus.Processing && current.Notice?.Contains("sign in") == true);
             api.CompleteJob(current.IdJob!.Value);
             await auth.SignInAsync("carlos", FakeDevLogApi.Password.ToCharArray());
             checks.Check("con la sesión nueva (otro token) termina", await queue.AdvanceAsync(revoked.Id) == QueueStep.Done);
@@ -597,7 +650,7 @@ internal static class ApiSelfTests
             QueuedMeeting big = queue.EnqueueAudio(bigAudio, bigAudio, 10, SessionSource.Window);
             step = await queue.AdvanceAsync(big.Id);
             checks.Check("más grande que maxBytes → Failed, sin subir", step == QueueStep.Failed &&
-                queue.Items.Single(item => item.Id == big.Id).Error?.Contains("demasiado grande") == true);
+                queue.Items.Single(item => item.Id == big.Id).Error?.Contains("too large") == true);
             api.MaxBytes = 1L << 30;
 
             // 10. El servidor sigue: en cola con un error = reintenta (017).
@@ -608,8 +661,8 @@ internal static class ApiSelfTests
             api.Jobs[current.IdJob!.Value] = api.Jobs[current.IdJob.Value] with { Status = "queued", Error = "DeploymentNotFound", Attempts = 1 };
             step = await queue.AdvanceAsync(retrying.Id);
             current = queue.Items.Single(item => item.Id == retrying.Id);
-            checks.Check("en cola con error → Waiting, «El servidor reintenta (intento 1)»",
-                step == QueueStep.Waiting && current.Notice?.Contains("intento 1") == true && current.Notice.Contains("DeploymentNotFound"));
+            checks.Check("en cola con error → Waiting, «The server is retrying (attempt 1)»",
+                step == QueueStep.Waiting && current.Notice?.Contains("attempt 1") == true && current.Notice.Contains("DeploymentNotFound"));
 
             // 11. Re-extracción: trabajo opción 2, el reporte de su prompt.
             long idSession = api.CompleteJob(current.IdJob!.Value);
@@ -626,7 +679,7 @@ internal static class ApiSelfTests
             api.FailNext[nameof(IDevLogApi.ReextractAsync)] = new ApiError.Rejected(409, "no transcript");
             QueuedMeeting noTranscript = queue.EnqueueReextract(idSession, "functional-spec", SessionSource.Window);
             checks.Check("re-extraer sin transcripción (409) → Failed, dicho en palabras",
-                await queue.AdvanceAsync(noTranscript.Id) == QueueStep.Failed && queue.Items.Single(item => item.Id == noTranscript.Id).Error!.Contains("no tiene transcripción"));
+                await queue.AdvanceAsync(noTranscript.Id) == QueueStep.Failed && queue.Items.Single(item => item.Id == noTranscript.Id).Error!.Contains("no transcript"));
 
             // 12. Sin sesión no se toca la red.
             auth.SignOut();
@@ -686,14 +739,14 @@ internal static class ApiSelfTests
         Console.WriteLine("=== Costos, prompts y ajustes por la API (reglas de presentación) ===");
         var checks = new Checks("--verify-api-services");
 
-        checks.Check("costo desconocido nunca es 0: null con 2 sin precio → «desconocido»", new CostAmount(null, 2).Text().StartsWith("desconocido"));
-        checks.Check("nada que costear → «nada», no «US$0»", new CostAmount(null, 0).Text() == "nada");
-        checks.Check("conocido + desconocidos → «US$… + 1 sin precio»", new CostAmount(12_300, 1).Text() == "US$0,0123 + 1 sin precio");
-        checks.Check("desde un dólar, centavos", new CostAmount(1_234_567).Text() == "US$1,23");
+        checks.Check("costo desconocido nunca es 0: null con 2 sin precio → «unknown»", new CostAmount(null, 2).Text().StartsWith("unknown"));
+        checks.Check("nada que costear → «nothing», no «US$0»", new CostAmount(null, 0).Text() == "nothing");
+        checks.Check("conocido + desconocidos → «US$… + 1 unpriced»", new CostAmount(12_300, 1).Text() == "US$0.0123 + 1 unpriced");
+        checks.Check("desde un dólar, centavos", new CostAmount(1_234_567).Text() == "US$1.23");
         checks.Check("la suma de null y null sigue siendo null", (new CostAmount(null, 1) + new CostAmount(null, 0)).KnownMicroUsd is null);
         checks.Check("la suma de null y un monto es el monto", (new CostAmount(null, 1) + new CostAmount(500)) is { KnownMicroUsd: 500, UnknownCount: 1 });
         CostPeriod period = CostPeriod.From(new ApiCostRow(null, 3, null, 2, 4000, 0, 10, 20));
-        checks.Check("el total de un período con la transcripción sin precio lo dice", period.Total.Text() == "US$0,0040 + 2 sin precio");
+        checks.Check("el total de un período con la transcripción sin precio lo dice", period.Total.Text() == "US$0.0040 + 2 unpriced");
 
         var catalog = new CatalogPrompt("assignment-meeting", "v1", "Reunión de asignación", "", "StructuredMeetingReport", "TEXTO DEL CÓDIGO");
         DateTimeOffset t0 = DateTimeOffset.UtcNow.AddDays(-2);

@@ -44,6 +44,17 @@
             <SolidColorBrush x:Key="AppCardBrush" Color="#F7FFFFFF" />
             <SolidColorBrush x:Key="AppCardBorderBrush" Color="#FFE2E8F0" />
 
+            <!-- The rail is the same slate in both themes (owner decision 2026-11-11). -->
+            <SolidColorBrush x:Key="RailPanelBrush" Color="#FF0F172A" />
+            <SolidColorBrush x:Key="RailHoverBrush" Color="#FF1E293B" />
+            <SolidColorBrush x:Key="RailPressedBrush" Color="#FF334155" />
+            <SolidColorBrush x:Key="RailLabelBrush" Color="#FFCBD5E1" />
+            <SolidColorBrush x:Key="RailSelectedBrush" Color="#FF4F46E5" />
+            <SolidColorBrush x:Key="RailSelectedHoverBrush" Color="#FF4338CA" />
+            <SolidColorBrush x:Key="RailSelectedPressedBrush" Color="#FF3730A3" />
+            <SolidColorBrush x:Key="RailOnBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="RailDisabledBrush" Color="#FF64748B" />
+
             <SolidColorBrush x:Key="StatusWaitingForegroundBrush" Color="#FF475569" />
             <SolidColorBrush x:Key="StatusWaitingSurfaceBrush" Color="#FFF1F5F9" />
             <SolidColorBrush x:Key="StatusUploadingForegroundBrush" Color="#FF4338CA" />
@@ -89,6 +100,16 @@
             <SolidColorBrush x:Key="AppMutedBrush" Color="#FF94A3B8" />
             <SolidColorBrush x:Key="AppCardBrush" Color="#EB0F172A" />
             <SolidColorBrush x:Key="AppCardBorderBrush" Color="#FF334155" />
+
+            <SolidColorBrush x:Key="RailPanelBrush" Color="#FF0F172A" />
+            <SolidColorBrush x:Key="RailHoverBrush" Color="#FF1E293B" />
+            <SolidColorBrush x:Key="RailPressedBrush" Color="#FF334155" />
+            <SolidColorBrush x:Key="RailLabelBrush" Color="#FFCBD5E1" />
+            <SolidColorBrush x:Key="RailSelectedBrush" Color="#FF4F46E5" />
+            <SolidColorBrush x:Key="RailSelectedHoverBrush" Color="#FF4338CA" />
+            <SolidColorBrush x:Key="RailSelectedPressedBrush" Color="#FF3730A3" />
+            <SolidColorBrush x:Key="RailOnBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="RailDisabledBrush" Color="#FF64748B" />
 
             <SolidColorBrush x:Key="StatusWaitingForegroundBrush" Color="#FFCBD5E1" />
             <SolidColorBrush x:Key="StatusWaitingSurfaceBrush" Color="#FF1E293B" />

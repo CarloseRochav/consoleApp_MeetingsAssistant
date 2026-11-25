@@ -12,11 +12,11 @@ public sealed class CostMonthRow(CostPeriod period)
 {
     public string Title { get; } = period.Month is { } month
         ? month.UtcDateTime.ToString("MMMM yyyy", SessionListItem.DisplayCulture)
-        : "Sin mes";
+        : "No month";
 
     public string Details { get; } =
-        $"{(period.Sessions == 1 ? "1 reunión" : $"{period.Sessions} reuniones")} · transcripción {period.Transcripts.Text()} · " +
-        $"reportes {period.Reports.Text()} · total {period.Total.Text()}";
+        $"{(period.Sessions == 1 ? "1 meeting" : $"{period.Sessions} meetings")} · transcription {period.Transcripts.Text()} · " +
+        $"reports {period.Reports.Text()} · total {period.Total.Text()}";
 
     public override string ToString() => $"{Title}. {Details}";
 }
@@ -66,7 +66,7 @@ public partial class CostViewModel(MeetingCostsService costs) : ObservableObject
     {
         IsLoading = true;
         ErrorDetails = null;
-        StatusMessage = "Calculando...";
+        StatusMessage = "Calculating...";
         try
         {
             Show(await costs.LoadAsync());
@@ -77,7 +77,7 @@ public partial class CostViewModel(MeetingCostsService costs) : ObservableObject
             HasData = false;
             Caveats.Clear();
             MonthRows.Clear();
-            StatusMessage = "No se pudieron leer los costos del servidor. " +
+            StatusMessage = "Could not read costs from the server. " +
                 (exception is ApiException api ? api.Error.Describe() : exception.Message);
             ErrorDetails = exception.ToString();
         }
@@ -98,25 +98,25 @@ public partial class CostViewModel(MeetingCostsService costs) : ObservableObject
 
         LlmCostText = totals.Reports.Text();
         TranscriptionCostText = totals.Transcripts.Text();
-        TotalLabel = totals.Total.IsPartlyUnknown || totals.Total.KnownMicroUsd is null ? "Total (incompleto, ver abajo)" : "Total";
+        TotalLabel = totals.Total.IsPartlyUnknown || totals.Total.KnownMicroUsd is null ? "Total (incomplete, see below)" : "Total";
         TotalCostText = totals.Total.Text();
 
         if (totals.Reports.UnknownCount > 0)
         {
-            Caveats.Add($"{totals.Reports.UnknownCount} reporte(s) no tienen precio (el modelo no tenía precio en la base del servidor). " +
-                "No suman al total, y no cuentan como 0.");
+            Caveats.Add($"{totals.Reports.UnknownCount} report(s) have no price (the model had no price in the server's table). " +
+                "They are not added to the total, and they are not counted as 0.");
         }
 
         if (totals.Transcripts.UnknownCount > 0)
         {
-            Caveats.Add($"{totals.Transcripts.UnknownCount} transcripción(es) no tienen precio (se hicieron antes de que hubiera un precio por minuto). " +
-                "La transcripción puede costar más que el LLM, así que el total está incompleto.");
+            Caveats.Add($"{totals.Transcripts.UnknownCount} transcript(s) have no price (they were made before there was a price per minute). " +
+                "Transcription can cost more than the LLM, so the total is incomplete.");
         }
 
         AverageText = totals.TokensInput is { } input && totals.TokensOutput is { } output
-            ? $"{input:N0} tokens de entrada y {output:N0} de salida en {(totals.Sessions == 1 ? "1 reunión" : $"{totals.Sessions} reuniones")}."
+            ? $"{input:N0} input tokens and {output:N0} output tokens across {(totals.Sessions == 1 ? "1 meeting" : $"{totals.Sessions} meetings")}."
             : null;
-        PeriodText = overview.Months.Count > 0 ? $"{overview.Months.Count} mes(es) con reuniones, por mes UTC." : null;
+        PeriodText = overview.Months.Count > 0 ? $"{overview.Months.Count} month(s) with meetings, by UTC month." : null;
 
         foreach (CostPeriod month in overview.Months) MonthRows.Add(new CostMonthRow(month));
     }

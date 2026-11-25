@@ -91,7 +91,7 @@ public sealed class JsonQueuedMeetingStore : IQueuedMeetingStore
     {
         if (id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || id.Contains("..", StringComparison.Ordinal))
         {
-            throw new ArgumentException("Id de reunión no válido.", nameof(id));
+            throw new ArgumentException("Invalid meeting id.", nameof(id));
         }
 
         return Path.Combine(_directory, $"{id}.json");

@@ -37,10 +37,10 @@ public sealed partial class SettingsForm : UserControl
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "Hay ajustes sin guardar",
-                Content = "Cambiaste ajustes y no pulsaste «Guardar cambios». Si sigues, se pierden.",
-                PrimaryButtonText = "Descartar cambios",
-                CloseButtonText = "Seguir editando",
+                Title = "Unsaved settings",
+                Content = "You changed settings and did not click \"Save changes\". If you leave, they are lost.",
+                PrimaryButtonText = "Discard changes",
+                CloseButtonText = "Keep editing",
                 DefaultButton = ContentDialogButton.Close
             };
 
@@ -70,7 +70,7 @@ public sealed partial class SettingsForm : UserControl
             SubFolderBox.Text = settings.SubFolder ?? string.Empty;
             ApiTokenBox.Password = settings.ApiAuthToken ?? string.Empty;
             ValidateVaultPath();
-            SettingsFilePathText.Text = $"Se guarda en: {AppPaths.DatabasePath} (el token, cifrado para este usuario de Windows)";
+            SettingsFilePathText.Text = $"Saved in: {AppPaths.DatabasePath} (the token is encrypted for this Windows user)";
             _savedFields = ReadFields();
         }
         finally
@@ -86,8 +86,8 @@ public sealed partial class SettingsForm : UserControl
             IReadOnlyList<string> leftover = await _userSettingsService.FindLeftoverKeysAsync();
             LeftoverPanel.Visibility = leftover.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             LeftoverText.Text =
-                $"Esta máquina todavía guarda {leftover.Count} ajuste(s) del modo local, que ya no se usan: {string.Join(", ", leftover)}. " +
-                "Borrarlos no rota las claves en los proveedores (eso es parte del corte).";
+                $"This machine still stores {leftover.Count} setting(s) from local mode, which are no longer used: {string.Join(", ", leftover)}. " +
+                "Deleting them does not rotate the keys at the providers (that is part of the cutover).";
         }
         catch (Exception exception)
         {
@@ -101,7 +101,7 @@ public sealed partial class SettingsForm : UserControl
         try
         {
             int deleted = await _userSettingsService.DeleteLeftoverKeysAsync();
-            SaveStatusText.Text = $"Se borraron {deleted} ajuste(s) viejos de la base local.";
+            SaveStatusText.Text = $"Deleted {deleted} old setting(s) from the local database.";
             await RefreshLeftoverAsync();
         }
         catch (Exception exception)
@@ -136,7 +136,7 @@ public sealed partial class SettingsForm : UserControl
         catch (Exception exception)
         {
             AppLog.Failure("SettingsForm.BrowseVault", exception);
-            VaultPathStatusText.Text = $"No se pudo abrir el selector de carpetas: {exception.Message}";
+            VaultPathStatusText.Text = $"Could not open the folder picker: {exception.Message}";
         }
     }
 
@@ -145,19 +145,19 @@ public sealed partial class SettingsForm : UserControl
         string path = VaultPathBox.Text.Trim();
         if (string.IsNullOrEmpty(path))
         {
-            VaultPathStatusText.Text = "Sin ruta configurada: los reportes no se pueden guardar.";
+            VaultPathStatusText.Text = "No folder configured: reports cannot be saved.";
             return;
         }
 
         try
         {
             VaultPathStatusText.Text = Directory.Exists(path)
-                ? "La carpeta existe."
-                : "La carpeta no existe todavía. Se creará al guardar el primer reporte, pero si la ruta está mal escrita no te vas a enterar hasta entonces.";
+                ? "The folder exists."
+                : "The folder does not exist yet. It will be created when the first report is saved, but a mistyped path will not show up until then.";
         }
         catch (Exception exception)
         {
-            VaultPathStatusText.Text = $"Ruta no válida: {exception.Message}";
+            VaultPathStatusText.Text = $"Invalid path: {exception.Message}";
         }
     }
 
@@ -170,13 +170,13 @@ public sealed partial class SettingsForm : UserControl
             UserSettings settings = ReadFields();
             await _userSettingsService.SaveAsync(settings);
             _savedFields = settings;
-            SaveStatusText.Text = $"Guardado {DateTime.Now:HH:mm:ss}. Reinicia la app para que los cambios tengan efecto.";
+            SaveStatusText.Text = $"Saved {DateTime.Now:HH:mm:ss}. Restart the app for the changes to take effect.";
             Saved?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception exception)
         {
             AppLog.Failure("SettingsForm.Save", exception);
-            SaveStatusText.Text = "No se pudo guardar.";
+            SaveStatusText.Text = "Could not save.";
             SaveErrorPanel.Details = exception.ToString();
         }
         finally

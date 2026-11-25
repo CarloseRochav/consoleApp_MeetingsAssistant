@@ -37,7 +37,7 @@ public sealed class UserSettingsService
     /// Lo que el modo local guardaba en esta máquina y desde el paso B no se usa: claves de
     /// proveedor, cadenas de conexión, conmutadores y ajustes que ahora son del servidor.
     /// </summary>
-    public static IReadOnlyList<string> LeftoverKeys { get; } =
+    public static IReadOnlyList<string> LeftoverKeys { get; } = (string[])
     [
         "Deepgram:ApiKey", "Deepgram:Keyterms", "Gemini:ApiKey", "Gemini:Model", "AzureFoundry:ApiKey", "AzureFoundry:Endpoint",
         "AzureFoundry:Deployment", "Llm:Provider", "Postgres:ConnectionString", "AzureStorage:ConnectionString",

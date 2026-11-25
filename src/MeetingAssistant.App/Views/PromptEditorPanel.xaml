@@ -39,10 +39,10 @@
         <InfoBar x:Name="StructuredWarning"
                  Severity="Warning"
                  IsClosable="False"
-                 Title="Formato de salida"
+                 Title="Output format"
                  Message="{Binding StructuredOutputWarning}" />
 
-        <TextBox Header="Texto del prompt"
+        <TextBox Header="Prompt text"
                  Text="{Binding EditorText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                  AcceptsReturn="True"
                  TextWrapping="Wrap"
@@ -55,21 +55,21 @@
                    TextWrapping="Wrap"
                    Opacity="0.75" />
 
-        <TextBox Header="Nombre de la versión"
+        <TextBox Header="Version name"
                  Text="{Binding VersionName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                  PlaceholderText="v1-mine-1" />
 
-        <TextBox Header="Qué cambió (opcional)"
+        <TextBox Header="What changed (optional)"
                  Text="{Binding Note, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                 PlaceholderText="Por ejemplo: pide los riesgos aparte de las tareas" />
+                 PlaceholderText="For example: ask for risks separately from the tasks" />
 
         <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="Guardar como versión nueva"
+            <Button Content="Save as a new version"
                     Command="{Binding SaveCommand}"
                     Style="{StaticResource PrimaryButtonStyle}" />
-            <Button Content="Descartar cambios"
+            <Button Content="Discard changes"
                     Command="{Binding DiscardCommand}" />
-            <Button Content="Volver al original"
+            <Button Content="Back to the original"
                     Command="{Binding RestoreOriginalCommand}" />
         </StackPanel>
 
@@ -78,9 +78,9 @@
                    Opacity="0.8" />
         <views:ErrorPanel Details="{Binding ErrorDetails}" />
 
-        <TextBlock Text="Versiones"
+        <TextBlock Text="Versions"
                    Style="{StaticResource BodyStrongTextBlockStyle}" />
-        <TextBlock Text="Elegir una versión la carga en el editor; para volver a usarla, guárdala."
+        <TextBlock Text="Choosing a version loads it into the editor. To use it again, save it."
                    TextWrapping="Wrap"
                    Opacity="0.75" />
         <!-- Clic y no selección: la misma fila se puede volver a cargar, y se pregunta antes de pisar el editor. -->

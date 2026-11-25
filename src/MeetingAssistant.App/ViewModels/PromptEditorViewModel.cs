@@ -70,7 +70,7 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
     private string? errorDetails;
 
     [ObservableProperty]
-    private string storageHint = "Cargando los prompts del servidor...";
+    private string storageHint = "Loading prompts from the server...";
 
     private string? _loadedText;
 
@@ -87,16 +87,16 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
     public Func<string, Task<bool>>? ConfirmDiscard { get; set; }
 
     public string DirtyHint => IsDirty
-        ? "Hay cambios sin guardar. Guardar crea una versión nueva en tu capa y vale para los reportes nuevos (también los del teléfono)."
-        : "Sin cambios: el editor muestra la versión que vale para ti.";
+        ? "There are unsaved changes. Saving creates a new version in your layer and applies to new reports (including the phone's)."
+        : "No changes: the editor shows the version in effect for you.";
 
     public bool HasStructuredOutputWarning =>
         string.Equals(SelectedPrompt?.Catalog.OutputKind, "StructuredMeetingReport", StringComparison.OrdinalIgnoreCase);
 
     public string? StructuredOutputWarning => HasStructuredOutputWarning
-        ? "Este prompt tiene que devolver JSON con el esquema que espera el servidor: summary, insights, " +
-          "taskList (task, priority alta/media/baja, context), requirements, indications y openQuestions. " +
-          "Puedes cambiar las instrucciones, pero si cambias el formato de salida, el próximo reporte va a fallar al interpretarse."
+        ? "This prompt has to return JSON with the schema the server expects: summary, insights, " +
+          "taskList (task, priority high/medium/low, context), requirements, indications, and openQuestions. " +
+          "You can change the instructions, but if you change the output format, the next report will fail when it is read."
         : null;
 
     /// <summary>Carga el catálogo y mis ediciones. Lo llama el panel al abrirse.</summary>
@@ -109,7 +109,7 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
             IReadOnlyList<PromptEntry> entries = await library.LoadAsync();
             Prompts.Clear();
             foreach (PromptEntry entry in entries) Prompts.Add(entry);
-            StorageHint = "Los prompts vienen del servidor. Tus ediciones se guardan en tu capa y valen para tus reportes nuevos de todos los dispositivos.";
+            StorageHint = "Prompts come from the server. Your edits are saved in your layer and apply to new reports on every device.";
             SelectedPrompt = Prompts.FirstOrDefault(prompt => string.Equals(prompt.PromptId, keepPromptId ?? SelectedPrompt?.PromptId, StringComparison.OrdinalIgnoreCase))
                 ?? Prompts.FirstOrDefault();
             LoadActive();
@@ -117,7 +117,7 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
         catch (Exception exception)
         {
             AppLog.Failure("PromptEditor.Load", exception);
-            StorageHint = "No se pudieron leer los prompts del servidor: " + (exception is ApiException api ? api.Error.Describe() : exception.Message);
+            StorageHint = "Could not read prompts from the server: " + (exception is ApiException api ? api.Error.Describe() : exception.Message);
             ErrorDetails = exception.ToString();
         }
         finally
@@ -129,7 +129,7 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
     public async Task<bool> ConfirmLeaveAsync()
     {
         if (!HasUnsavedEdits || ConfirmDiscard is null) return true;
-        return await ConfirmDiscard(SelectedPrompt?.DisplayName ?? "el prompt");
+        return await ConfirmDiscard(SelectedPrompt?.DisplayName ?? "this prompt");
     }
 
     public async Task<bool> TrySelectPromptAsync(PromptEntry prompt)
@@ -144,14 +144,14 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
     {
         if (item.Text is null)
         {
-            StatusMessage = "Esa fila es una vuelta al original: no tiene texto propio.";
+            StatusMessage = "That row is a return to the original: it has no text of its own.";
             return;
         }
 
         if (!await ConfirmLeaveAsync()) return;
         EditorText = item.Text;
         _loadedText = item.Text;
-        StatusMessage = $"Cargada {item.Title} en el editor. Para que valga, guárdala como versión nueva.";
+        StatusMessage = $"Loaded {item.Title} into the editor. To put it in effect, save it as a new version.";
     }
 
     partial void OnSelectedPromptChanged(PromptEntry? value)
@@ -184,7 +184,7 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
         catch (Exception exception)
         {
             AppLog.Failure("PromptEditor.Save", exception);
-            StatusMessage = "No se pudo guardar. El prompt que vale no cambió.";
+            StatusMessage = "Could not save. The prompt in effect did not change.";
             ErrorDetails = exception.ToString();
         }
         finally
@@ -199,7 +199,7 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
     private void Discard()
     {
         LoadActive();
-        StatusMessage = "Cambios descartados.";
+        StatusMessage = "Changes discarded.";
     }
 
     private bool CanRestoreOriginal() => !IsBusy && SelectedPrompt?.CanUseBuiltIn == true;
@@ -221,7 +221,7 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
         catch (Exception exception)
         {
             AppLog.Failure("PromptEditor.RestoreOriginal", exception);
-            StatusMessage = "No se pudo volver al original. El prompt que vale no cambió.";
+            StatusMessage = "Could not go back to the original. The prompt in effect did not change.";
             ErrorDetails = exception.ToString();
         }
         finally
@@ -247,28 +247,28 @@ public partial class PromptEditorViewModel(PromptLibraryService library) : Obser
 
         ActiveVersionText = prompt.InEffect switch
         {
-            null when prompt.BuiltInChosen => $"Vale el original ({prompt.Catalog.Version}): volviste a él.",
-            null => $"Vale el original ({prompt.Catalog.Version}), definido en el worker.",
-            { IsMine: true } row => $"Vale tu versión {row.Version}, del {Local(row.CreatedAt)}.",
-            { } row => $"Vale la versión compartida {row.Version}, del {Local(row.CreatedAt)} (no tienes una propia)."
+            null when prompt.BuiltInChosen => $"The original ({prompt.Catalog.Version}) is in effect: you went back to it.",
+            null => $"The original ({prompt.Catalog.Version}) is in effect, as defined in the worker.",
+            { IsMine: true } row => $"Your version {row.Version} is in effect, from {Local(row.CreatedAt)}.",
+            { } row => $"The shared version {row.Version} is in effect, from {Local(row.CreatedAt)} (you do not have your own)."
         };
 
-        Versions.Add(new PromptVersionItem(prompt.Catalog.Version, prompt.InEffect is null ? "original, definido en el worker · vale" : "original, definido en el worker", prompt.Catalog.SystemPrompt));
+        Versions.Add(new PromptVersionItem(prompt.Catalog.Version, prompt.InEffect is null ? "original, defined in the worker · in effect" : "original, defined in the worker", prompt.Catalog.SystemPrompt));
         if (prompt.InEffect is { IsMine: false } shared)
         {
-            Versions.Add(new PromptVersionItem(shared.Version ?? "(compartida)", $"compartida · {Local(shared.CreatedAt)} · vale", shared.SystemPrompt));
+            Versions.Add(new PromptVersionItem(shared.Version ?? "(shared)", $"shared · {Local(shared.CreatedAt)} · in effect", shared.SystemPrompt));
         }
 
         foreach (PromptVersionRow row in prompt.Own)
         {
             bool active = prompt.InEffect?.IdPromptVersion == row.IdPromptVersion;
-            string subtitle = string.Join(" · ", new[] { row.IsRevert ? "vuelta al original" : "tuya", Local(row.CreatedAt), active ? "vale" : null, row.Note }
+            string subtitle = string.Join(" · ", new[] { row.IsRevert ? "back to the original" : "yours", Local(row.CreatedAt), active ? "in effect" : null, row.Note }
                 .Where(part => !string.IsNullOrWhiteSpace(part)));
             Versions.Add(new PromptVersionItem(row.Version ?? "(original)", subtitle, row.SystemPrompt));
         }
     }
 
-    private static string Local(DateTimeOffset value) => value.ToLocalTime().ToString("dd/MM/yyyy HH:mm", SessionListItem.DisplayCulture);
+    private static string Local(DateTimeOffset value) => value.ToLocalTime().ToString("MMM d, yyyy, HH:mm", SessionListItem.DisplayCulture);
 
     private static string Normalize(string? text) => (text ?? string.Empty).Replace("\r\n", "\n").Trim();
 }

@@ -55,19 +55,19 @@ public sealed class MeetingHistoryService(IDevLogApi api, DeviceAuthService auth
 /// </summary>
 public sealed record CostAmount(long? KnownMicroUsd, long UnknownCount = 0)
 {
-    private static readonly CultureInfo Display = CultureInfo.GetCultureInfo("es-ES");
+    private static readonly CultureInfo Display = CultureInfo.GetCultureInfo("en-US");
 
     /// <summary>Nada que costear: ni transcripción ni reporte (no es un precio desconocido).</summary>
     public bool IsNothing => KnownMicroUsd is null && UnknownCount == 0;
 
     public bool IsPartlyUnknown => UnknownCount > 0;
 
-    /// <summary>"US$1,23", "desconocido", "US$1,23 + 2 sin precio" o "nada".</summary>
+    /// <summary>"US$1.23", "unknown", "US$1.23 + 2 unpriced", or "nothing".</summary>
     public string Text() => (KnownMicroUsd, UnknownCount) switch
     {
-        (null, 0) => "nada",
-        (null, _) => UnknownCount == 1 ? "desconocido (1 sin precio)" : $"desconocido ({UnknownCount} sin precio)",
-        ({ } known, > 0) => $"{Usd(known)} + {UnknownCount} sin precio",
+        (null, 0) => "nothing",
+        (null, _) => UnknownCount == 1 ? "unknown (1 unpriced)" : $"unknown ({UnknownCount} unpriced)",
+        ({ } known, > 0) => $"{Usd(known)} + {UnknownCount} unpriced",
         ({ } known, _) => Usd(known)
     };
 
@@ -171,18 +171,18 @@ public sealed class PromptLibraryService(IDevLogApi api, DeviceAuthService auth)
     public async Task<PromptSaveResult> SaveAsync(PromptEntry entry, string version, string text, string? note, CancellationToken cancellationToken = default)
     {
         string name = version.Trim();
-        if (name.Length == 0) return new PromptSaveResult(false, "Ponle un nombre a esta versión.");
-        if (string.IsNullOrWhiteSpace(text)) return new PromptSaveResult(false, "El prompt no puede quedar vacío.");
+        if (name.Length == 0) return new PromptSaveResult(false, "Give this version a name.");
+        if (string.IsNullOrWhiteSpace(text)) return new PromptSaveResult(false, "The prompt cannot be empty.");
 
         return await SaveOfAsync(token => api.InsertPromptVersionAsync(
             token, entry.PromptId, entry.Catalog.Version, name, text, string.IsNullOrWhiteSpace(note) ? null : note.Trim(), cancellationToken),
-            $"Guardada como {name}. Los reportes nuevos (también los del teléfono) la usan.");
+            $"Saved as {name}. New reports (including the phone's) use it.");
     }
 
     /// <summary>Vuelta al original en mi capa (nunca choca en el servidor).</summary>
     public Task<PromptSaveResult> UseBuiltInAsync(PromptEntry entry, CancellationToken cancellationToken = default) =>
         SaveOfAsync(token => api.InsertPromptVersionAsync(token, entry.PromptId, entry.Catalog.Version, null, null, null, cancellationToken),
-            $"Vuelve a valer el original ({entry.Catalog.Version}). Tus ediciones siguen en la lista.");
+            $"The original ({entry.Catalog.Version}) is in effect again. Your edits stay in the list.");
 
     private async Task<PromptSaveResult> SaveOfAsync(Func<string, Task<ApiResult<long>>> call, string success)
     {
@@ -193,11 +193,11 @@ public sealed class PromptLibraryService(IDevLogApi api, DeviceAuthService auth)
         }
         catch (ApiException exception) when (exception.Error is ApiError.Rejected { Code: 409 })
         {
-            return new PromptSaveResult(false, "Ya tienes una versión con ese nombre. Elige otro.");
+            return new PromptSaveResult(false, "You already have a version with that name. Choose another.");
         }
         catch (ApiException exception) when (exception.Error is ApiError.Rejected { Code: 400 } rejected)
         {
-            return new PromptSaveResult(false, string.IsNullOrWhiteSpace(rejected.Message) ? "El servidor rechazó este prompt." : rejected.Message.Trim().Trim('"'));
+            return new PromptSaveResult(false, string.IsNullOrWhiteSpace(rejected.Message) ? "The server rejected this prompt." : rejected.Message.Trim().Trim('"'));
         }
     }
 
@@ -239,11 +239,11 @@ public sealed class ServerSettingsService(IDevLogApi api, DeviceAuthService auth
     /// <summary>Los que el escritorio deja editar, en este orden.</summary>
     public static IReadOnlyList<(string Key, string Label, string Hint)> Editable { get; } =
     [
-        ("Llm:Provider", "Proveedor del LLM", "Gemini o AzureFoundry. El servidor sólo acepta un modelo que la base tenga con precio."),
-        ("Gemini:Model", "Modelo de Gemini", "Vale cuando el proveedor es Gemini."),
-        ("AzureFoundry:Deployment", "Deployment de Azure AI Foundry", "Vale cuando el proveedor es AzureFoundry."),
-        ("Deepgram:Keyterms", "Términos clave de Deepgram", "Separados por ';'. Hasta 100; con al menos uno Deepgram cobra un extra por minuto."),
-        ("Audio:RetentionDays", "Días que se guarda el audio en la nube", "Entero de 0 a 365. Sin valor, 30. Vale para las reuniones que terminen desde ahora.")
+        ("Llm:Provider", "LLM provider", "Gemini or AzureFoundry. The server only accepts a model the shared settings already price."),
+        ("Gemini:Model", "Gemini model", "Used when the provider is Gemini."),
+        ("AzureFoundry:Deployment", "Azure AI Foundry deployment", "Used when the provider is AzureFoundry."),
+        ("Deepgram:Keyterms", "Deepgram key terms", "Separated by ';'. Up to 100. With at least one, Deepgram charges an extra per minute."),
+        ("Audio:RetentionDays", "Days the audio is kept in the cloud", "An integer from 0 to 365. With no value, 30. Applies to meetings that finish from now on.")
     ];
 
     /// <summary>Lo que se puede escribir en mi capa: ni secretos, ni precios, ni un Endpoint.</summary>
@@ -267,7 +267,7 @@ public sealed class ServerSettingsService(IDevLogApi api, DeviceAuthService auth
         // también se muestra, para poder verlo y borrarlo.
         foreach (ApiSetting extra in mine.Where(row => IsAllowed(row.Key) && result.All(item => !string.Equals(item.Key, row.Key, StringComparison.OrdinalIgnoreCase))))
         {
-            result.Add(new ServerSetting(extra.Key, extra.Key, "Escrito desde otro cliente.", Find(shared, extra.Key), extra.Value));
+            result.Add(new ServerSetting(extra.Key, extra.Key, "Written from another client.", Find(shared, extra.Key), extra.Value));
         }
 
         return result;
@@ -279,7 +279,7 @@ public sealed class ServerSettingsService(IDevLogApi api, DeviceAuthService auth
     /// </summary>
     public async Task<string?> SaveAsync(string key, string? value, string? previousOwnValue, CancellationToken cancellationToken = default)
     {
-        if (!IsAllowed(key)) return $"{key} no se puede guardar desde aquí (es secreto, un precio o un Endpoint).";
+        if (!IsAllowed(key)) return $"{key} cannot be saved from here (it is a secret, a price, or an endpoint).";
 
         string? trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         if (trimmed is null && previousOwnValue is null) return null;
@@ -296,7 +296,50 @@ public sealed class ServerSettingsService(IDevLogApi api, DeviceAuthService auth
         }
         catch (ApiException exception) when (exception.Error is ApiError.Rejected rejected)
         {
-            return $"{key}: {(string.IsNullOrWhiteSpace(rejected.Message) ? "el servidor lo rechazó." : rejected.Message.Trim().Trim('"'))}";
+            return $"{key}: {(string.IsNullOrWhiteSpace(rejected.Message) ? "the server rejected it." : rejected.Message.Trim().Trim('"'))}";
         }
     }
+}
+
+/// <summary>Una opción del selector de tipo de conversación. <see cref="PromptId"/> null = el de por defecto.</summary>
+public sealed record ConversationTypeOption(string? PromptId, string Label)
+{
+    public override string ToString() => Label;
+}
+
+/// <summary>
+/// Los tipos de conversación que se pueden elegir al grabar (Spec A, migración 019): el catálogo vivo
+/// (los del código y los que crea un admin, sin los archivados) en el orden del servidor, precedidos
+/// por "Default", que no manda <c>prompt_id</c> y deja que el servidor use
+/// <c>Meetings:DefaultPromptId</c> del usuario (o el del worker).
+/// </summary>
+public sealed class ConversationTypesService(IDevLogApi api, DeviceAuthService auth)
+{
+    public const string DefaultSettingKey = "Meetings:DefaultPromptId";
+    private const int EffectiveSettings = 2;
+
+    public async Task<IReadOnlyList<ConversationTypeOption>> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<CatalogPrompt> catalog = await auth.CallAsync(token => api.GetPromptCatalogAsync(token, cancellationToken));
+        IReadOnlyList<ApiSetting> effective = await auth.CallAsync(token => api.GetSettingsAsync(token, EffectiveSettings, cancellationToken));
+        string? defaultId = effective.FirstOrDefault(row => string.Equals(row.Key, DefaultSettingKey, StringComparison.OrdinalIgnoreCase))?.Value;
+        return Build(catalog, defaultId);
+    }
+
+    /// <summary>Pura, para probarla sin red.</summary>
+    public static IReadOnlyList<ConversationTypeOption> Build(IReadOnlyList<CatalogPrompt> catalog, string? defaultPromptId)
+    {
+        CatalogPrompt? chosenDefault = string.IsNullOrWhiteSpace(defaultPromptId)
+            ? null
+            : catalog.FirstOrDefault(prompt => string.Equals(prompt.PromptId, defaultPromptId.Trim(), StringComparison.OrdinalIgnoreCase));
+        var options = new List<ConversationTypeOption>
+        {
+            // Un default archivado después de guardarlo cuenta como ninguno (así lo trata el servidor).
+            new(null, chosenDefault is null ? "Default (the server's)" : $"Default ({NameOf(chosenDefault)})")
+        };
+        options.AddRange(catalog.Select(prompt => new ConversationTypeOption(prompt.PromptId, NameOf(prompt))));
+        return options;
+    }
+
+    private static string NameOf(CatalogPrompt prompt) => string.IsNullOrWhiteSpace(prompt.Name) ? prompt.PromptId : prompt.Name;
 }

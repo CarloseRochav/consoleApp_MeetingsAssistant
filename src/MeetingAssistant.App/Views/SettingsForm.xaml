@@ -14,37 +14,40 @@
     <StackPanel Spacing="16">
 
         <!-- Vault -->
-        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Vault de Obsidian" />
+        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Obsidian vault" />
         <Grid ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Name="VaultPathBox"
-                     Header="Carpeta del vault"
-                     PlaceholderText="C:\ruta\a\tu\vault"
+                     Header="Vault folder"
+                     PlaceholderText="C:\path\to\your\vault"
                      TextChanged="VaultPathBox_TextChanged" />
             <Button Grid.Column="1"
                     VerticalAlignment="Bottom"
                     Click="BrowseVaultButton_Click"
-                    Content="Examinar..." />
+                    Content="Browse..." />
         </Grid>
         <TextBlock x:Name="VaultPathStatusText" MaxWidth="600" Opacity="0.75" TextWrapping="Wrap" />
         <TextBox x:Name="SubFolderBox"
-                 Header="Subcarpeta para los reportes"
+                 Header="Subfolder for the reports"
                  PlaceholderText="MeetingReports" />
 
-        <!-- Endpoint local -->
-        <TextBlock Margin="0,16,0,0" Style="{StaticResource SubtitleTextBlockStyle}" Text="Endpoint HTTP local" />
-        <PasswordBox x:Name="ApiTokenBox"
-                     Header="Token (cabecera X-Api-Token)"
-                     PlaceholderText="vacío = se genera uno nuevo al reiniciar" />
+        <Expander Header="Advanced" HorizontalAlignment="Stretch" Margin="0,8,0,0">
+            <StackPanel Spacing="8">
+                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Local HTTP endpoint" />
+                <PasswordBox x:Name="ApiTokenBox"
+                             Header="Token (X-Api-Token header)"
+                             PlaceholderText="empty = a new one is generated on restart" />
+            </StackPanel>
+        </Expander>
 
         <!-- Guardar -->
         <Button x:Name="SaveButton"
                 Margin="0,16,0,0"
                 Click="SaveButton_Click"
-                Content="Guardar cambios"
+                Content="Save changes"
                 Style="{StaticResource PrimaryButtonStyle}" />
         <TextBlock x:Name="SaveStatusText" MaxWidth="600" Opacity="0.75" TextWrapping="Wrap" />
         <views:ErrorPanel x:Name="SaveErrorPanel" />
@@ -54,7 +57,7 @@
             <TextBlock x:Name="LeftoverText" MaxWidth="600" TextWrapping="Wrap" />
             <Button x:Name="DeleteLeftoverButton"
                     Click="DeleteLeftoverButton_Click"
-                    Content="Borrar las claves viejas de esta máquina" />
+                    Content="Delete this machine's old keys" />
         </StackPanel>
 
         <TextBlock x:Name="SettingsFilePathText"

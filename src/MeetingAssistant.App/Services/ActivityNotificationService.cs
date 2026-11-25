@@ -37,20 +37,20 @@ public sealed class ActivityNotificationService : IDisposable
     }
 
     private void OnRecordingStarted(object? sender, EventArgs e) =>
-        Show("RecordingStarted", "Grabación iniciada", "MeetingAssistant está capturando el audio de la reunión.");
+        Show("RecordingStarted", "Recording started", "Meeting Assistant is capturing the meeting audio.");
 
     private void OnRecordingQueued(object? sender, QueuedMeeting meeting) =>
-        Show("RecordingQueued", "Grabación guardada",
-            "Se envía al servidor; el reporte llega al vault cuando esté listo.",
-            meeting.DurationSeconds is { } seconds ? $"{seconds / 60:F0} min de audio" : null);
+        Show("RecordingQueued", "Recording saved",
+            "It is sent to the server; the report reaches the vault when it is ready.",
+            meeting.DurationSeconds is { } seconds ? $"{seconds / 60:F0} min of audio" : null);
 
     private void OnReportReady(object? sender, QueuedMeeting meeting) =>
-        Show("ReportReady", meeting.Kind == QueuedMeetingKind.Reextract ? "Re-extracción lista" : "Reporte listo",
-            meeting.ReportPath ?? "(sin ruta)");
+        Show("ReportReady", meeting.Kind == QueuedMeetingKind.Reextract ? "New report ready" : "Report ready",
+            meeting.ReportPath ?? "(no path)");
 
     private void OnMeetingFailed(object? sender, QueuedMeeting meeting) =>
-        Show("MeetingFailed", "No se pudo crear el reporte", meeting.Error ?? "Error desconocido.",
-            "La grabación sigue guardada: se puede reintentar desde Grabar.");
+        Show("MeetingFailed", "Could not create the report", meeting.Error ?? "Unknown error.",
+            "The recording is still saved: you can retry it from Record.");
 
     private void OnRecordingFailed(object? sender, RecordingFailedEventArgs e) =>
         Show("RecordingFailed", e.Operation, e.Exception.Message);
@@ -58,8 +58,8 @@ public sealed class ActivityNotificationService : IDisposable
     private void OnSignedOut(object? sender, SignedOutReason reason)
     {
         if (reason != SignedOutReason.Revoked) return;
-        Show("DeviceRevoked", "Sesión cerrada por el servidor",
-            "Este dispositivo fue revocado. Vuelve a iniciar sesión; las grabaciones pendientes se envían después.");
+        Show("DeviceRevoked", "Signed out by the server",
+            "This device was revoked. Sign in again; pending recordings are sent afterwards.");
     }
 
     /// <summary><paramref name="eventName"/> existe sólo para la traza en el log.</summary>

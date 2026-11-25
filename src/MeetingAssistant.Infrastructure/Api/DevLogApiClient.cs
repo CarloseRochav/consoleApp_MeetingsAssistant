@@ -28,7 +28,7 @@ public sealed class DevLogApiClient : IDevLogApi
             (uri.Scheme != Uri.UriSchemeHttps && !uri.IsLoopback))
         {
             // Sólo HTTPS (o localhost, para pruebas contra una API local): el token viaja en cada llamada.
-            throw new ArgumentException("DevLog:BaseUrl tiene que ser una dirección https:// (o http://localhost para pruebas).", nameof(baseUrl));
+            throw new ArgumentException("DevLog:BaseUrl has to be an https:// address (or http://localhost for tests).", nameof(baseUrl));
         }
 
         _http = http;
@@ -72,8 +72,8 @@ public sealed class DevLogApiClient : IDevLogApi
     public Task<ApiResult<DeviceIdentity>> MeAsync(string deviceToken, CancellationToken cancellationToken = default) =>
         SendAsync<DeviceIdentity>(HttpMethod.Get, "Devices/Select_Me", content: null, deviceToken, cancellationToken);
 
-    public Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, CancellationToken cancellationToken = default) =>
-        PostAsync<JobUpload>("Jobs/InsertUpdate_Jobs", new { option = 0, source }, deviceToken, cancellationToken);
+    public Task<ApiResult<JobUpload>> CreateJobAsync(string deviceToken, string source, string? promptId = null, CancellationToken cancellationToken = default) =>
+        PostAsync<JobUpload>("Jobs/InsertUpdate_Jobs", new { option = 0, source, prompt_id = promptId }, deviceToken, cancellationToken);
 
     public Task<ApiResult<JobRow>> ConfirmJobAsync(string deviceToken, long idJob, CancellationToken cancellationToken = default) =>
         PostAsync<JobRow>("Jobs/InsertUpdate_Jobs", new { option = 1, idJob }, deviceToken, cancellationToken);

@@ -32,7 +32,7 @@ public sealed partial class SignInWindow : Window
         }
 
         UsernameBox.Text = lastUsername ?? string.Empty;
-        DeviceText.Text = $"Este dispositivo se registra como «{auth.DeviceName}».";
+        DeviceText.Text = $"This device registers as \"{auth.DeviceName}\".";
     }
 
     private async void SignInButton_Click(object sender, RoutedEventArgs e) => await SignInAsync();
@@ -63,7 +63,7 @@ public sealed partial class SignInWindow : Window
         catch (Exception exception)
         {
             AppLog.Failure("SignInWindow.SignIn", exception);
-            ResultText.Text = $"No se pudo iniciar sesión: {exception.Message}";
+            ResultText.Text = $"Could not sign in: {exception.Message}";
         }
         finally
         {

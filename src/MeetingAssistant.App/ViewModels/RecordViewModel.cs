@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MeetingAssistant.App.Services;
 using MeetingAssistant.App.Startup;
+using MeetingAssistant.Core.Abstractions;
 using MeetingAssistant.Core.Models;
 using MeetingAssistant.Core.Services;
 using Microsoft.UI.Dispatching;
@@ -15,11 +16,11 @@ public sealed partial class QueueItemViewModel : ObservableObject
 {
     private static readonly Dictionary<string, string> TriggerLabels = new(StringComparer.OrdinalIgnoreCase)
     {
-        [SessionSource.Hotkey] = "atajo de teclado",
-        [SessionSource.Tray] = "bandeja",
-        [SessionSource.Http] = "endpoint HTTP",
-        [SessionSource.Window] = "ventana",
-        [SessionSource.Import] = "archivo importado",
+        [SessionSource.Hotkey] = "keyboard shortcut",
+        [SessionSource.Tray] = "tray",
+        [SessionSource.Http] = "HTTP endpoint",
+        [SessionSource.Window] = "window",
+        [SessionSource.Import] = "imported file",
         [SessionSource.Harness] = "harness"
     };
 
@@ -63,21 +64,22 @@ public sealed partial class QueueItemViewModel : ObservableObject
     public void Update(QueuedMeeting meeting)
     {
         Meeting = meeting;
-        string when = meeting.CreatedAtUtc.ToLocalTime().ToString("dddd d 'de' MMMM, HH:mm", SessionListItem.DisplayCulture);
+        string when = meeting.CreatedAtUtc.ToLocalTime().ToString("dddd, d MMMM, HH:mm", SessionListItem.DisplayCulture);
         string what = meeting.Kind == QueuedMeetingKind.Reextract
-            ? $"Re-extracción de la reunión {meeting.IdSession} con {meeting.PromptId}"
-            : $"Grabación ({(TriggerLabels.TryGetValue(meeting.Trigger, out string? label) ? label : meeting.Trigger)}" +
-              (meeting.DurationSeconds is { } seconds ? $", {seconds / 60:F0} min" : string.Empty) + ")";
+            ? $"Extract again, meeting {meeting.IdSession} with {meeting.PromptId}"
+            : $"Recording ({(TriggerLabels.TryGetValue(meeting.Trigger, out string? label) ? label : meeting.Trigger)}" +
+              (meeting.DurationSeconds is { } seconds ? $", {seconds / 60:F0} min" : string.Empty) + ")" +
+              (meeting.PromptId is { } type ? $" · {type}" : string.Empty);
         Title = $"{when} · {what}";
         UpdateProgress(meeting.SentBytes, meeting.TotalBytes);
         StatusText = meeting.Status switch
         {
-            QueuedMeetingStatus.Waiting => "Esperando para enviar",
-            QueuedMeetingStatus.Uploading => $"Enviando {Progress:F0}%",
-            QueuedMeetingStatus.Processing => "En el servidor (transcribiendo y escribiendo el reporte)",
-            QueuedMeetingStatus.WritingReport => "Escribiendo el reporte en el vault",
-            QueuedMeetingStatus.Ready => "Listo",
-            QueuedMeetingStatus.Failed => "Falló",
+            QueuedMeetingStatus.Waiting => "Waiting to send",
+            QueuedMeetingStatus.Uploading => $"Sending {Progress:F0}%",
+            QueuedMeetingStatus.Processing => "On the server (transcribing and writing the report)",
+            QueuedMeetingStatus.WritingReport => "Writing the report to the vault",
+            QueuedMeetingStatus.Ready => "Ready",
+            QueuedMeetingStatus.Failed => "Failed",
             _ => meeting.Status.ToString()
         };
         Detail = meeting.Status switch
@@ -104,7 +106,7 @@ public sealed partial class QueueItemViewModel : ObservableObject
     public void UpdateProgress(long sent, long total)
     {
         Progress = total <= 0 ? 0 : Math.Min(100, sent * 100.0 / total);
-        if (Meeting.Status == QueuedMeetingStatus.Uploading) StatusText = $"Enviando {Progress:F0}%";
+        if (Meeting.Status == QueuedMeetingStatus.Uploading) StatusText = $"Sending {Progress:F0}%";
     }
 
     public override string ToString() => $"{Title}. {StatusText}. {Detail}";
@@ -116,10 +118,17 @@ public sealed partial class QueueItemViewModel : ObservableObject
 /// </summary>
 public partial class RecordViewModel : ObservableObject
 {
+    /// <summary>El tipo de conversación elegido, en los ajustes de ESTA máquina (SQLite). Vacío = el de por defecto.</summary>
+    public const string ConversationTypeKey = "Recording:ConversationType";
+
     private readonly RecordingCoordinator _coordinator;
     private readonly MeetingUploadQueue _queue;
     private readonly DeviceAuthService _auth;
+    private readonly MeetingRecorder _recorder;
+    private readonly ConversationTypesService _conversationTypes;
+    private readonly ISettingsStore _settingsStore;
     private readonly DispatcherQueue? _dispatcherQueue;
+    private bool _fillingTypes;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ButtonText))]
@@ -136,7 +145,7 @@ public partial class RecordViewModel : ObservableObject
     private bool isProcessing;
 
     [ObservableProperty]
-    private string statusMessage = "Listo para grabar.";
+    private string statusMessage = "Ready to record.";
 
     [ObservableProperty]
     private string? errorDetails;
@@ -153,10 +162,19 @@ public partial class RecordViewModel : ObservableObject
 
     public ObservableCollection<QueueItemViewModel> Meetings { get; } = [];
 
-    public string ButtonText => IsRecording ? "Detener grabación" : "Grabar reunión";
+    /// <summary>Spec A: "Default" y el catálogo vivo. Vale para las grabaciones que se guarden desde ahora.</summary>
+    public ObservableCollection<ConversationTypeOption> ConversationTypes { get; } = [];
+
+    [ObservableProperty]
+    private ConversationTypeOption? selectedConversationType;
+
+    [ObservableProperty]
+    private string conversationTypeHint = "Applies to the recordings you save from now on, from any trigger.";
+
+    public string ButtonText => IsRecording ? "Stop recording" : "Record meeting";
 
     /// <summary>La palabra grande de la tarjeta de grabación.</summary>
-    public string StageTitle => IsRecording ? "Grabando" : IsProcessing ? "Guardando" : "Listo";
+    public string StageTitle => IsRecording ? "Recording" : IsProcessing ? "Saving" : "Ready";
 
     /// <summary>waiting no aplica: uploading mientras graba, processing mientras guarda, ready en reposo.</summary>
     public string StageTone => IsRecording ? "uploading" : IsProcessing ? "processing" : "ready";
@@ -176,15 +194,25 @@ public partial class RecordViewModel : ObservableObject
 
     public bool CanLoadExternalSource => !IsRecording && !IsProcessing;
 
-    public RecordViewModel(RecordingCoordinator coordinator, MeetingUploadQueue queue, DeviceAuthService auth)
+    public RecordViewModel(
+        RecordingCoordinator coordinator,
+        MeetingUploadQueue queue,
+        DeviceAuthService auth,
+        MeetingRecorder recorder,
+        ConversationTypesService conversationTypes,
+        ISettingsStore settingsStore)
     {
         _coordinator = coordinator;
         _queue = queue;
         _auth = auth;
+        _recorder = recorder;
+        _conversationTypes = conversationTypes;
+        _settingsStore = settingsStore;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        FillConversationTypes(new[] { new ConversationTypeOption(null, "Default") }, hint: null);
         IsRecording = coordinator.IsRecording;
         IsProcessing = coordinator.IsProcessing;
-        StatusMessage = IsRecording ? "Grabando..." : "Listo para grabar.";
+        StatusMessage = IsRecording ? "Recording..." : "Ready to record.";
         UpdateSessionText();
 
         foreach (QueuedMeeting meeting in queue.Items) Meetings.Add(new QueueItemViewModel(meeting));
@@ -209,22 +237,114 @@ public partial class RecordViewModel : ObservableObject
         _auth.SignedOut -= OnSessionChanged;
     }
 
-    private void OnSessionChanged(object? sender, DeviceSession e) => RunOnUiThread(UpdateSessionText);
+    private void OnSessionChanged(object? sender, DeviceSession e) => RunOnUiThread(() =>
+    {
+        UpdateSessionText();
+        _ = LoadConversationTypesAsync();
+    });
+
+    /// <summary>
+    /// Pide al servidor el catálogo vivo y el tipo por defecto del usuario. Sin sesión o sin red queda
+    /// "Default" (y el tipo guardado, si había uno): grabar nunca depende de esto.
+    /// </summary>
+    public async Task LoadConversationTypesAsync()
+    {
+        if (!_auth.IsSignedIn)
+        {
+            FillConversationTypes(OfflineTypes(), "Sign in to choose among every conversation type.");
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<ConversationTypeOption> options = await _conversationTypes.LoadAsync();
+            string? saved = _recorder.ConversationType;
+            if (saved is not null && options.All(option => !string.Equals(option.PromptId, saved, StringComparison.OrdinalIgnoreCase)))
+            {
+                // Archivado (o borrado) desde que se eligió: se vuelve al de por defecto, como hace el servidor.
+                AppLog.Diagnostic($"Tipo de conversación {saved} ya no está en el catálogo; vuelve al de por defecto.");
+                FillConversationTypes(options, $"\"{saved}\" is no longer available; new recordings use the default type.");
+                ChooseConversationType(null);
+                return;
+            }
+
+            FillConversationTypes(options, hint: null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AppLog.Failure("RecordViewModel.LoadConversationTypes", exception);
+            FillConversationTypes(OfflineTypes(), "Could not load the conversation types; the choice below still applies.");
+        }
+    }
+
+    private List<ConversationTypeOption> OfflineTypes()
+    {
+        var options = new List<ConversationTypeOption> { new(null, "Default") };
+        if (_recorder.ConversationType is { } saved) options.Add(new ConversationTypeOption(saved, saved));
+        return options;
+    }
+
+    private void FillConversationTypes(IReadOnlyList<ConversationTypeOption> options, string? hint)
+    {
+        _fillingTypes = true;
+        try
+        {
+            ConversationTypes.Clear();
+            foreach (ConversationTypeOption option in options) ConversationTypes.Add(option);
+            SelectedConversationType =
+                ConversationTypes.FirstOrDefault(option => string.Equals(option.PromptId, _recorder.ConversationType, StringComparison.OrdinalIgnoreCase))
+                ?? ConversationTypes.FirstOrDefault();
+        }
+        finally
+        {
+            _fillingTypes = false;
+        }
+
+        ConversationTypeHint = hint ?? "Applies to the recordings you save from now on, from any trigger.";
+    }
+
+    partial void OnSelectedConversationTypeChanged(ConversationTypeOption? value)
+    {
+        if (_fillingTypes || value is null) return;
+        ChooseConversationType(value.PromptId);
+    }
+
+    /// <summary>Lo fija en el grabador (vale ya, para cualquier disparador) y lo guarda en esta máquina.</summary>
+    private void ChooseConversationType(string? promptId)
+    {
+        if (string.Equals(_recorder.ConversationType, promptId, StringComparison.OrdinalIgnoreCase)) return;
+        _recorder.ConversationType = promptId;
+        AppLog.Diagnostic($"Tipo de conversación para las próximas grabaciones: {promptId ?? "por defecto"}.");
+        _ = SaveConversationTypeAsync(promptId);
+    }
+
+    private async Task SaveConversationTypeAsync(string? promptId)
+    {
+        try
+        {
+            // Vacío borra la clave (ISettingsStore): vuelve a "Default".
+            await _settingsStore.SetAsync(ConversationTypeKey, promptId);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Failure("RecordViewModel.SaveConversationType", exception);
+        }
+    }
 
     private void OnSessionChanged(object? sender, SignedOutReason e) => RunOnUiThread(UpdateSessionText);
 
     private void UpdateSessionText() =>
         SessionText = _auth.Current is { } session
-            ? $"Conectado al servidor como {session.Username}, dispositivo «{session.DeviceName}»."
-            : "Sin sesión en el servidor: se puede grabar igual; lo grabado se envía al iniciar sesión.";
+            ? $"Signed in on the server as {session.Username}, device \"{session.DeviceName}\"."
+            : "Not signed in on the server: you can still record; what you record is sent when you sign in.";
 
     private void OnCoordinatorStateChanged(object? sender, EventArgs e) => RunOnUiThread(() =>
     {
         IsRecording = _coordinator.IsRecording;
         IsProcessing = _coordinator.IsProcessing;
-        if (IsRecording) StatusMessage = "Grabando...";
-        else if (IsProcessing) StatusMessage = "Guardando la grabación...";
-        else if (StatusMessage is "Grabando..." or "Guardando la grabación...") StatusMessage = "Listo para grabar.";
+        if (IsRecording) StatusMessage = "Recording...";
+        else if (IsProcessing) StatusMessage = "Saving the recording...";
+        else if (StatusMessage is "Recording..." or "Saving the recording...") StatusMessage = "Ready to record.";
         UpdatePhases();
     });
 
@@ -345,12 +465,12 @@ public partial class RecordViewModel : ObservableObject
             if (_coordinator.IsRecording)
             {
                 QueuedMeeting queued = await _coordinator.StopRecordingAndQueueAsync();
-                StatusMessage = $"Grabación guardada ({queued.TotalBytes / 1048576.0:F1} MB para enviar). El reporte llega al vault cuando el servidor termine.";
+                StatusMessage = $"Recording saved ({queued.TotalBytes / 1048576.0:F1} MB to send). The report reaches the vault when the server finishes.";
             }
             else
             {
                 await _coordinator.StartRecordingAsync(SessionSource.Window);
-                StatusMessage = "Grabando...";
+                StatusMessage = "Recording...";
             }
         }
         catch (Exception exception)
@@ -363,22 +483,22 @@ public partial class RecordViewModel : ObservableObject
     public async Task ProcessExistingAudioAsync(string audioPath)
     {
         ErrorDetails = null;
-        StatusMessage = "Convirtiendo el archivo...";
+        StatusMessage = "Converting the file...";
         try
         {
             QueuedMeeting queued = await _coordinator.QueueExistingAudioAsync(audioPath);
-            StatusMessage = $"{Path.GetFileName(audioPath)} en la cola ({queued.TotalBytes / 1048576.0:F1} MB para enviar).";
+            StatusMessage = $"{Path.GetFileName(audioPath)} is in the queue ({queued.TotalBytes / 1048576.0:F1} MB to send).";
         }
         catch (Exception exception)
         {
-            StatusMessage = $"No se pudo encolar el archivo: {exception.Message}";
+            StatusMessage = $"Could not queue the file: {exception.Message}";
             ErrorDetails = exception.ToString();
         }
     }
 
     public void Retry(QueueItemViewModel item)
     {
-        if (_queue.Retry(item.Id)) StatusMessage = "Se reintenta ahora.";
+        if (_queue.Retry(item.Id)) StatusMessage = "Retrying now.";
     }
 
     public void Remove(QueueItemViewModel item)
@@ -403,6 +523,6 @@ public partial class RecordViewModel : ObservableObject
     private void SendNow()
     {
         _queue.Kick(resetBackoff: true);
-        StatusMessage = _auth.IsSignedIn ? "Enviando lo pendiente..." : "Primero hay que iniciar sesión (Configuración).";
+        StatusMessage = _auth.IsSignedIn ? "Sending what is waiting..." : "Sign in first (Settings).";
     }
 }

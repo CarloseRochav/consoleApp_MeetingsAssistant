@@ -256,8 +256,8 @@ public partial class App : Application
     {
         AppLog.Diagnostic($"Sesión cerrada: {reason}.");
         string message = reason == SignedOutReason.Revoked
-            ? "El servidor ya no acepta este dispositivo (fue revocado, o el usuario desactivado). Vuelve a iniciar sesión. Lo grabado espera en la cola y se envía después."
-            : "Cerraste la sesión en esta máquina. Lo grabado espera en la cola hasta que vuelvas a entrar.";
+            ? "The server no longer accepts this device (it was revoked, or the user was deactivated). Sign in again. What is recorded waits in the queue and is sent afterwards."
+            : "You signed out on this machine. What is recorded waits in the queue until you sign in again.";
         _window?.DispatcherQueue.TryEnqueue(() => ShowSignIn(message, exitIfClosedFirst: false));
     }
 
@@ -376,10 +376,10 @@ public partial class App : Application
             var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
             {
                 XamlRoot = ((FrameworkElement)window.Content).XamlRoot,
-                Title = "Hay una grabación en curso",
-                Content = "¿Salir de todas formas? Se perderá la grabación.",
-                PrimaryButtonText = "Salir sin guardar",
-                CloseButtonText = "Cancelar",
+                Title = "A recording is in progress",
+                Content = "Exit anyway? The recording will be lost.",
+                PrimaryButtonText = "Exit without saving",
+                CloseButtonText = "Cancel",
                 DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close
             };
 

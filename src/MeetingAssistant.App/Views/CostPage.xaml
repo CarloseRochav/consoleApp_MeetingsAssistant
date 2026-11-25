@@ -15,13 +15,13 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Padding="32" Spacing="16" MaxWidth="760" HorizontalAlignment="Center">
 
-            <TextBlock Text="Costos" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="Costs" Style="{StaticResource PageTitleStyle}" />
 
-            <TextBlock Text="Los calcula el servidor con sus precios (tokens y minutos de audio), para tus reuniones de todos los dispositivos. Son estimaciones: no se compararon con ninguna factura. Un precio desconocido nunca se cuenta como 0."
+            <TextBlock Text="The server calculates these from its prices (tokens and minutes of audio), for your meetings on every device. They are estimates: they were not compared with any invoice. An unknown price is never counted as 0."
                        Style="{StaticResource BodyCopyStyle}" />
 
             <StackPanel Spacing="8">
-                <Button Content="Actualizar"
+                <Button Content="Refresh"
                         Command="{Binding RefreshCommand}"
                         HorizontalAlignment="Left"
                         MinWidth="140" />
@@ -34,10 +34,10 @@
             </StackPanel>
 
             <StackPanel x:Name="EmptyStatePanel" Spacing="8" Visibility="Collapsed">
-                <TextBlock Text="Todavía no hay nada que sumar"
+                <TextBlock Text="Nothing to add up yet"
                            Style="{StaticResource SectionTitleStyle}"
                            TextWrapping="Wrap" />
-                <TextBlock Text="Los costos aparecen cuando una reunión llega a tener transcripción o reporte. Graba una desde la pestaña Grabar, con el atajo Ctrl+Alt+F9, o desde la bandeja."
+                <TextBlock Text="Costs appear when a meeting gets a transcript or a report. Record one from the Record page, with the Ctrl+Alt+F9 shortcut, or from the tray."
                            Style="{StaticResource BodyCopyStyle}" />
             </StackPanel>
 
@@ -58,10 +58,10 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="LLM (reportes)" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="LLM (reports)" Style="{StaticResource CaptionTextStyle}" />
                             <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding LlmCostText}" TextWrapping="Wrap" />
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Transcripción" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Transcription" Style="{StaticResource CaptionTextStyle}" />
                             <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TranscriptionCostText}" TextWrapping="Wrap" />
                         </Grid>
 
@@ -72,7 +72,7 @@
 
                 <Border x:Name="CaveatsPanel" Background="Transparent" BorderThickness="0" Padding="0" Visibility="Collapsed">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Lo que estos números no incluyen"
+                        <TextBlock Text="What these numbers leave out"
                                    Style="{StaticResource SectionTitleStyle}" />
                         <ItemsControl ItemsSource="{Binding Caveats}">
                             <ItemsControl.ItemTemplate>
@@ -88,7 +88,7 @@
 
                 <Border Padding="0" Background="Transparent" BorderThickness="0">
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Por mes" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="By month" Style="{StaticResource SectionTitleStyle}" />
                         <ItemsControl ItemsSource="{Binding MonthRows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:CostMonthRow">
