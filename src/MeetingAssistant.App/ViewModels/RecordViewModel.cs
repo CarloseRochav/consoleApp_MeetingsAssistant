@@ -209,7 +209,7 @@ public partial class RecordViewModel : ObservableObject
         _conversationTypes = conversationTypes;
         _settingsStore = settingsStore;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        FillConversationTypes([new ConversationTypeOption(null, "Default")], hint: null);
+        FillConversationTypes(new[] { new ConversationTypeOption(null, "Default") }, hint: null);
         IsRecording = coordinator.IsRecording;
         IsProcessing = coordinator.IsProcessing;
         StatusMessage = IsRecording ? "Recording..." : "Ready to record.";
