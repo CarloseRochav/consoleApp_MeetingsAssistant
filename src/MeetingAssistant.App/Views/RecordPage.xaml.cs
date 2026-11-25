@@ -27,6 +27,7 @@ public sealed partial class RecordPage : Page
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         ViewModel.Meetings.CollectionChanged += (_, _) => ApplyEmpty();
         ApplyEmpty();
+        _ = ViewModel.LoadConversationTypesAsync();
         try
         {
             await ReportPreview.EnsureCoreWebView2Async();

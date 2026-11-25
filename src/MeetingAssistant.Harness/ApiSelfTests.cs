@@ -47,6 +47,18 @@ internal static class ApiSelfTests
         checks.Check("la respuesta se lee (v_id, maxBytes, expiresAt)",
             created is ApiResult<JobUpload>.Success { Value: { IdJob: 41, MaxBytes: 1073741824 } job } && job.ExpiresAt.Hour == 20);
         checks.Check("el ToString del trabajo no muestra el enlace", created is ApiResult<JobUpload>.Success s && !s.Value.ToString().Contains("SECRET"));
+        using (JsonDocument body = JsonDocument.Parse(request.Body))
+        {
+            checks.Check("crear trabajo sin tipo: prompt_id ausente o null (el servidor usa el de por defecto)",
+                !body.RootElement.TryGetProperty("prompt_id", out JsonElement none) || none.ValueKind == JsonValueKind.Null);
+        }
+
+        await api.CreateJobAsync("dlg_token", "desktop", "custom-daily-standup");
+        using (JsonDocument body = JsonDocument.Parse(handler.Requests[^1].Body))
+        {
+            checks.Check("crear trabajo con tipo: prompt_id va en el cuerpo (Spec A)",
+                body.RootElement.TryGetProperty("prompt_id", out JsonElement type) && type.GetString() == "custom-daily-standup");
+        }
 
         handler.Respond = (_, _) => FakeHttpHandler.Json(HttpStatusCode.OK, """{"idUser":"1","username":"carlos","idDevice":"7","deviceName":"PC"}""");
         await api.MeAsync("dlg_token");
@@ -500,6 +512,47 @@ internal static class ApiSelfTests
             checks.Check("vuelve la red → sube", step == QueueStep.Waiting && queue.Items.Single(item => item.Id == offline.Id).Status == QueuedMeetingStatus.Processing);
             api.CompleteJob(queue.Items.Single(item => item.Id == offline.Id).IdJob!.Value);
             checks.Check("y termina", await queue.AdvanceAsync(offline.Id) == QueueStep.Done);
+            checks.Check("sin tipo elegido: los trabajos se crearon sin prompt_id", api.CreatedPromptIds.All(id => id is null));
+
+            // 2b. Tipo de conversación (Spec A): el elegido llega al trabajo; uno archivado entre la
+            // grabación y el envío no pierde la reunión, se manda con el de por defecto.
+            api.CreatedPromptIds.Clear();
+            string typedAudio = Audio("typed.wav", 1024);
+            QueuedMeeting typed = queue.EnqueueAudio(typedAudio, typedAudio, 10, SessionSource.Window, "custom-daily-standup");
+            checks.Check("encolada con su tipo", typed.PromptId == "custom-daily-standup");
+            step = await queue.AdvanceAsync(typed.Id);
+            checks.Check("el trabajo se creó con ese prompt_id",
+                step == QueueStep.Waiting && api.CreatedPromptIds.SequenceEqual(["custom-daily-standup"]));
+            checks.Check("el tipo sobrevive en la cola guardada (otra cola lo lee igual)",
+                NewQueue().Items.Single(item => item.Id == typed.Id).PromptId == "custom-daily-standup");
+            api.CompleteJob(queue.Items.Single(item => item.Id == typed.Id).IdJob!.Value);
+            checks.Check("y termina", await queue.AdvanceAsync(typed.Id) == QueueStep.Done);
+
+            api.CreatedPromptIds.Clear();
+            api.UnknownPrompts.Add("custom-archived");
+            string archivedAudio = Audio("archived.wav", 1024);
+            QueuedMeeting archived = queue.EnqueueAudio(archivedAudio, archivedAudio, 10, SessionSource.Hotkey, "custom-archived");
+            step = await queue.AdvanceAsync(archived.Id);
+            current = queue.Items.Single(item => item.Id == archived.Id);
+            checks.Check("tipo archivado → 400 → no falla: vuelve a intentar sin tipo, ya",
+                step == QueueStep.Retry && current is { Status: QueuedMeetingStatus.Waiting, PromptId: null } && current.Notice?.Contains("no longer available") == true);
+            step = await queue.AdvanceAsync(archived.Id);
+            checks.Check("el segundo intento va sin prompt_id y sube",
+                step == QueueStep.Waiting && api.CreatedPromptIds.SequenceEqual(["custom-archived", null]) &&
+                queue.Items.Single(item => item.Id == archived.Id).Status == QueuedMeetingStatus.Processing);
+            api.CompleteJob(queue.Items.Single(item => item.Id == archived.Id).IdJob!.Value);
+            checks.Check("y termina con el de por defecto", await queue.AdvanceAsync(archived.Id) == QueueStep.Done);
+
+            // El selector: "Default" primero (con el nombre del default del usuario, si sigue vivo) y el catálogo en su orden.
+            CatalogPrompt Prompt(string id, string name) => new(id, "1", name, "", "Markdown", "text");
+            IReadOnlyList<CatalogPrompt> catalog = [Prompt("assignment", "Work assignment"), Prompt("custom-daily-standup", "Daily standup")];
+            IReadOnlyList<ConversationTypeOption> options = ConversationTypesService.Build(catalog, "CUSTOM-DAILY-STANDUP");
+            checks.Check("selector: Default con el nombre del default (sin distinguir mayúsculas), luego el catálogo",
+                options.Select(option => option.Label).SequenceEqual(["Default (Daily standup)", "Work assignment", "Daily standup"]) &&
+                options[0].PromptId is null && options[2].PromptId == "custom-daily-standup");
+            checks.Check("selector: sin default, o con uno archivado, dice \"the server's\"",
+                ConversationTypesService.Build(catalog, null)[0].Label == "Default (the server's)" &&
+                ConversationTypesService.Build(catalog, "custom-gone")[0].Label == "Default (the server's)");
 
             // 3. Reinicio a mitad de la subida: otra cola sobre la misma carpeta sigue donde quedó.
             uploader.BlocksSent.Clear();

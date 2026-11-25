@@ -2799,6 +2799,40 @@ sesión. Lo que no se pueda medir se reporta como no medido.
    escribe ahí su historial. Después de borrarla, `--migrate-to-devlog`, `Postgres:ConnectionString`
    del harness y Npgsql quedan sin uso (quitarlos es otro cambio).
 
+### Tipos de conversación (Spec A) en el escritorio (hecho 2026-11-23, rama `conversation-type-picker`)
+
+Decisiones del dueño (2026-11-19, en la sesión de DevLog; servidor en la migración 019 de
+DevLog_Backend, en producción desde 2026-11-22): sólo un admin crea, renombra o archiva tipos
+(compartidos para todos); **un reporte por grabación**, del tipo elegido al subirla; el selector
+va en la web, el escritorio y Android. Revierte en parte la decisión del 2026-11-11 que quitó
+"elegir el prompt antes del primer reporte".
+
+- **Selector en Grabar** ("Conversation type", bajo los botones): "Default (nombre)" primero
+  (no manda `prompt_id`; el servidor usa `Meetings:DefaultPromptId` del usuario o el del
+  worker), luego el catálogo vivo (`Select_Prompt_Catalog` opción 0: los del código y los
+  personalizados, sin archivados). Sin sesión o sin red queda "Default" y el tipo guardado.
+- **Vale para las grabaciones que se guarden desde ahora, desde cualquier disparador** (ventana,
+  atajo, bandeja, endpoint, "Process existing audio"): `MeetingRecorder.ConversationType` lo lee
+  al guardar. Se guarda **en esta máquina** (SQLite, `Recording:ConversationType`; vacío = Default)
+  y se restaura al arrancar, sin abrir la página.
+- La cola guarda el tipo en la reunión (`QueuedMeeting.PromptId`) y lo manda en
+  `Jobs/InsertUpdate_Jobs` opción 0. **Un tipo archivado entre la grabación y el envío no pierde
+  la reunión:** el 400 hace que se mande otra vez, en seguida, sin tipo (el de por defecto), y la
+  fila lo dice. Un tipo guardado que ya no está en el catálogo vuelve a Default al abrir Grabar.
+- La fila de la cola muestra el tipo (` · custom-...`).
+- Probado sin red (2026-11-23): build con warnings como errores; todos los self-tests de CI pasan
+  (143 checks), 10 nuevos: `prompt_id` ausente o null sin tipo y en el cuerpo con tipo; la cola
+  manda el elegido, lo conserva al reabrirse, y con uno archivado reintenta sin tipo y termina; el
+  armado del selector. **Sin probar:** la app real (la página, el guardado y una grabación de verdad
+  con un tipo personalizado), que hace el dueño.
+
+**Android (hecho 2026-11-23, `MeetingAssistant_App`, rama `conversation-type-picker`):** fila
+"Conversation type" en Meetings (junto a "Reports folder") con una lista de opciones: "Default
+(nombre)" y el catálogo vivo. Se guarda en el teléfono y se lee **al empezar** cada grabación (el
+teléfono guarda la reunión al empezar), así que vale también para el tile. Mismo respaldo con un
+tipo archivado (se manda sin tipo, con una nota en la fila). Probado: 64 tests de `:core` (6
+nuevos) y `assembleDebug`. **Sin probar en el teléfono** (no había uno conectado).
+
 ### Consecuencias de Container Apps para el paso A
 
 - **Arranque en frío:** Container Apps puede escalar a cero sin uso, así que la

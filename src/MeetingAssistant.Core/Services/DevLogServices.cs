@@ -300,3 +300,46 @@ public sealed class ServerSettingsService(IDevLogApi api, DeviceAuthService auth
         }
     }
 }
+
+/// <summary>Una opción del selector de tipo de conversación. <see cref="PromptId"/> null = el de por defecto.</summary>
+public sealed record ConversationTypeOption(string? PromptId, string Label)
+{
+    public override string ToString() => Label;
+}
+
+/// <summary>
+/// Los tipos de conversación que se pueden elegir al grabar (Spec A, migración 019): el catálogo vivo
+/// (los del código y los que crea un admin, sin los archivados) en el orden del servidor, precedidos
+/// por "Default", que no manda <c>prompt_id</c> y deja que el servidor use
+/// <c>Meetings:DefaultPromptId</c> del usuario (o el del worker).
+/// </summary>
+public sealed class ConversationTypesService(IDevLogApi api, DeviceAuthService auth)
+{
+    public const string DefaultSettingKey = "Meetings:DefaultPromptId";
+    private const int EffectiveSettings = 2;
+
+    public async Task<IReadOnlyList<ConversationTypeOption>> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<CatalogPrompt> catalog = await auth.CallAsync(token => api.GetPromptCatalogAsync(token, cancellationToken));
+        IReadOnlyList<ApiSetting> effective = await auth.CallAsync(token => api.GetSettingsAsync(token, EffectiveSettings, cancellationToken));
+        string? defaultId = effective.FirstOrDefault(row => string.Equals(row.Key, DefaultSettingKey, StringComparison.OrdinalIgnoreCase))?.Value;
+        return Build(catalog, defaultId);
+    }
+
+    /// <summary>Pura, para probarla sin red.</summary>
+    public static IReadOnlyList<ConversationTypeOption> Build(IReadOnlyList<CatalogPrompt> catalog, string? defaultPromptId)
+    {
+        CatalogPrompt? chosenDefault = string.IsNullOrWhiteSpace(defaultPromptId)
+            ? null
+            : catalog.FirstOrDefault(prompt => string.Equals(prompt.PromptId, defaultPromptId.Trim(), StringComparison.OrdinalIgnoreCase));
+        var options = new List<ConversationTypeOption>
+        {
+            // Un default archivado después de guardarlo cuenta como ninguno (así lo trata el servidor).
+            new(null, chosenDefault is null ? "Default (the server's)" : $"Default ({NameOf(chosenDefault)})")
+        };
+        options.AddRange(catalog.Select(prompt => new ConversationTypeOption(prompt.PromptId, NameOf(prompt))));
+        return options;
+    }
+
+    private static string NameOf(CatalogPrompt prompt) => string.IsNullOrWhiteSpace(prompt.Name) ? prompt.PromptId : prompt.Name;
+}
