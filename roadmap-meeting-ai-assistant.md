@@ -1304,7 +1304,7 @@ con actualizaciones automáticas, y sin que el instalador lleve una sola clave.
 
 ---
 
-## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A hecho 2026-10-30; pasos B y D cerrados 2026-11-12)
+## Fase 8 — API dedicada y app Android (decidida 2026-10-15; servidor en DevLog_Backend desde 2026-10-18; paso A hecho 2026-10-30; pasos B y D cerrados 2026-11-12; paso E cerrado 2026-11-27)
 
 **UI en inglés (2026-11-16).** El escritorio y el teléfono usan un solo idioma, inglés
 (decisión del dueño, `decision-log.md`). El teléfono ya lo estaba. El escritorio
@@ -2832,6 +2832,41 @@ va en la web, el escritorio y Android. Revierte en parte la decisión del 2026-1
 teléfono guarda la reunión al empezar), así que vale también para el tile. Mismo respaldo con un
 tipo archivado (se manda sin tipo, con una nota en la fila). Probado: 64 tests de `:core` (6
 nuevos) y `assembleDebug`. **Sin probar en el teléfono** (no había uno conectado).
+**Probado en el teléfono el 2026-11-27** con la primera release firmada (paso E, abajo): elegir un
+tipo antes de grabar funcionó (reporte del dueño).
+
+### Paso E — distribución (decidido 2026-11-25; ✅ cerrado 2026-11-27)
+
+Decisiones del dueño del 2026-11-25 (`decision-log.md`): **APK firmado de release, instalado a
+mano (sideload)**, sin Play; la clave de firma en la PC del dueño (con respaldo) y como secretos de
+GitHub Actions; y **primero la página Devices** de la web.
+
+- **Revocar un dispositivo perdido:** página Devices de DevLog (`DevLog_Frontend` PR #9, en
+  producción 2026-11-26): lista los dispositivos del usuario y revoca uno.
+- **CI** (`MeetingAssistant_App`, `ci.yml`, 2026-11-25): tests de `:core` y locales, lint y
+  `assembleDebug` en cada PR; desde el PR #6 también un `assembleRelease` sin firmar, para que un
+  error de R8 aparezca antes de una release.
+- **Build de release** (`MeetingAssistant_App` PR #6, `e21bb5e`, 2026-11-26): R8 y reducción de
+  recursos (48 MB debug → 5.8 MB), reglas en `app/proguard-rules.pro`; firma con cuatro valores
+  `MA_RELEASE_*` (entorno o `~/.gradle/gradle.properties`, nunca el repo); el debug es otra app
+  (`….debug`, "Meeting Assistant (debug)") y convive con la release. `release.yml` (a mano o con
+  un tag `android-v*`, nunca en un PR) arma el APK firmado, verifica la firma y lo guarda 30 días.
+  PR #7 (`30fc3ce`): la verificación usa el código de salida de `apksigner` (build-tools 37 cambió
+  el texto que se buscaba, y las tres primeras corridas fallaron después de firmar bien).
+- **Clave:** creada por el dueño el 2026-11-27 (alias `meeting-assistant`, RSA 4096), con respaldo
+  fuera de la PC; los cuatro secretos en el repo. La corrida 45940519818 firmó con ella y
+  `apksigner` la verificó.
+- **Cierre (2026-11-27, reporte del dueño):** el debug viejo desinstalado, la release instalada en
+  el teléfono y las siete pruebas pasaron: iniciar sesión; grabar una reunión corta (sube y llega el
+  reporte); historial, reporte, búsqueda y "Extract again"; elegir un tipo de conversación antes de
+  grabar; grabar un video (sube por Wi-Fi, se reproduce, las miniaturas salen al arrastrar); grabar
+  desde el tile de Configuración rápida con la app cerrada; el teléfono en la página Devices.
+- **Cada release nueva:** subir `versionCode` en `app/build.gradle.kts`, correr `release`, bajar
+  el APK, instalarlo y repetir las pruebas.
+
+Con esto los pasos A-E de la Fase 8 están cerrados. Quedan al dueño, del paso B: instalar la
+1.0.4.0 firmada del escritorio en cada máquina (con una build nueva: la 1.0.4.0 trae la dirección
+vieja de la API, arreglada en el PR #8 del 2026-11-26) y borrar la base vieja `neondb`.
 
 ### Consecuencias de Container Apps para el paso A
 
